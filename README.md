@@ -26,6 +26,65 @@ Open your browser at:
 
 ---
 
+## 🔄 How to Forever Run the Application (Auto-Start / Background Service)
+
+To run the data pipeline continuously in production so that you **never need to manually open a command prompt or keep a terminal window open**, choose any of the options below:
+
+### Option 1: Automatic Windows Scheduled Task (Recommended — No Extra Software)
+Runs silently in the background every time Windows boots up, before or without user login, with zero console windows visible.
+
+1. Right-click [`scripts/install_windows_task.bat`](file:///C:/Users/Fuad/Documents/dev/pidatapipeline/scripts/install_windows_task.bat) and select **"Run as Administrator"**.
+2. That's it! Windows Task Scheduler will now automatically launch the pipeline on system startup.
+3. **Control Commands** (via Command Prompt / PowerShell):
+   - Start immediately: `schtasks /run /tn "PIDataPipeline"`
+   - Stop: Double-click [`scripts/stop_background.bat`](file:///C:/Users/Fuad/Documents/dev/pidatapipeline/scripts/stop_background.bat)
+   - Remove auto-start: `schtasks /delete /tn "PIDataPipeline" /f`
+
+---
+
+### Option 2: Run as a Native Windows Service (Using NSSM)
+If your organization requires management via the standard Windows Services manager (`services.msc`) with automatic crash recovery:
+
+1. Download **[NSSM (Non-Sucking Service Manager)](https://nssm.cc/download)** and place `nssm.exe` in your system PATH (or in the project folder).
+2. Open Command Prompt as Administrator and run:
+   ```cmd
+   nssm install PIDataPipeline "C:\Users\Fuad\AppData\Local\Python\pythoncore-3.14-64\python.exe" "C:\Users\Fuad\Documents\dev\pidatapipeline\run.py"
+   nssm set PIDataPipeline AppDirectory "C:\Users\Fuad\Documents\dev\pidatapipeline"
+   nssm set PIDataPipeline Description "AVEVA PI Web API to Oracle ERP Cloud Data Pipeline"
+   nssm set PIDataPipeline Start SERVICE_AUTO_START
+   nssm start PIDataPipeline
+   ```
+3. The pipeline will now run 24/7 as an official Windows Service, restart automatically on system reboot or failures, and can be paused/started from `services.msc`.
+
+---
+
+### Option 3: Silent Launcher & Windows Startup Folder (Quick & Simple)
+If you want the pipeline to run silently whenever you log in to Windows without requiring Administrator privileges:
+
+1. Press `Win + R`, type `shell:startup`, and hit Enter to open the Windows Startup folder.
+2. Right-click [`scripts/start_background.vbs`](file:///C:/Users/Fuad/Documents/dev/pidatapipeline/scripts/start_background.vbs) and select **"Create shortcut"**.
+3. Move that shortcut into the `shell:startup` folder.
+4. It will now execute invisibly in the background every time you log in to Windows.
+5. To stop it at any time, double-click [`scripts/stop_background.bat`](file:///C:/Users/Fuad/Documents/dev/pidatapipeline/scripts/stop_background.bat).
+
+---
+
+### Option 4: Linux / Server Deployment (systemd)
+If deploying onto a Linux server or VM:
+
+1. Copy [`scripts/pidatapipeline.service`](file:///C:/Users/Fuad/Documents/dev/pidatapipeline/scripts/pidatapipeline.service) to `/etc/systemd/system/`:
+   ```bash
+   sudo cp scripts/pidatapipeline.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now pidatapipeline
+   ```
+2. Check live status:
+   ```bash
+   sudo systemctl status pidatapipeline
+   ```
+
+---
+
 ## 🧭 Application Features & Pages
 
 ### 1. 📊 Dashboard Page (`/`)
@@ -167,6 +226,11 @@ pidatapipeline/
 │   ├── pull_history.json     # Telemetry readings history pulled from PI Web API
 │   ├── publish_history.json  # Dispatch records & ERP response payloads
 │   └── logs.json             # Structured application and error audit log
+├── scripts/
+│   ├── install_windows_task.bat # 1-click Windows Scheduled Task auto-start installer
+│   ├── start_background.vbs     # Invisible silent background runner (no CMD window)
+│   ├── stop_background.bat      # 1-click pipeline stop script
+│   └── pidatapipeline.service   # Linux systemd service unit
 ├── app/
 │   ├── config.py             # Reentrant thread-safe JSON settings & mappings manager
 │   ├── pi_client.py          # AVEVA PI Web API client with simulation engine

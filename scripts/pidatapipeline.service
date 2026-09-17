@@ -1,0 +1,15 @@
+[Unit]
+Description=AVEVA PI to Oracle ERP Cloud Data Pipeline
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/pidatapipeline
+ExecStart=/usr/bin/python3 run.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

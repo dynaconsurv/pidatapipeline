@@ -6,9 +6,9 @@
     "password": "",
     "bearer_token": "",
     "verify_ssl": false,
+    "simulation_mode": false,
     "af_server": "PISRV01",
     "af_database": "Plant_Operations",
-    "simulation_mode": false,
     "timeout_seconds": 10
   },
   "oracle_erp": {
@@ -24,6 +24,7 @@
     "bearer_token": "",
     "resource_endpoint": "/fscmRestApi/resources/11.13.18.05/standardReceipts",
     "http_method": "POST",
+    "dry_run": false,
     "custom_headers": {
       "Content-Type": "application/vnd.oracle.adf.resourceitem+json",
       "REST-Framework-Version": "4"
@@ -31,7 +32,7 @@
     "timeout_seconds": 15
   },
   "pipeline": {
-    "interval_seconds": 30,
+    "interval_seconds": 120,
     "auto_start": true,
     "max_history_items": 100
   }
