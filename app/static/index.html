@@ -573,6 +573,46 @@
         </div>
 
         <div class="form-grid">
+          
+          <!-- Local Oracle ERP Cloud Mock Simulator Sub-Application Control -->
+          <div class="form-group full-width" style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 4px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+              <div>
+                <span style="font-weight: 600; font-size: 13px; color: var(--ink-primary); display: flex; align-items: center; gap: 6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                  Local Oracle ERP Cloud Simulator (Port 8080)
+                </span>
+                <span class="form-help">Dedicated sub-application running on port 8080 to test OAuth 2.0 token requests, connection handshakes, and telemetry POST ingestion offline.</span>
+              </div>
+              <span id="mock-erp-status-badge" class="badge badge-pending">
+                <span class="badge-dot"></span> <span id="mock-erp-status-text">Stopped</span>
+              </span>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" id="btn-start-mock-erp" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Start Simulator (Port 8080)
+              </button>
+              <button type="button" id="btn-stop-mock-erp" class="btn btn-secondary btn-sm" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                Stop Simulator
+              </button>
+              <button type="button" id="btn-autofill-mock-erp" class="btn btn-primary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                Auto-Fill Mock Credentials & Activate
+              </button>
+              <button type="button" id="btn-view-mock-txns" class="btn btn-outline btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                Inspect Ingested Data (<span id="mock-txns-count">0</span>)
+              </button>
+            </div>
+
+            <div id="mock-erp-transactions-preview" class="json-preview" style="display: none; margin-top: 10px; max-height: 160px;">
+              No transactions received yet.
+            </div>
+          </div>
+
           <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
             <label class="form-check" style="font-weight: 500;">
               <input type="checkbox" id="setting-erp-enabled">

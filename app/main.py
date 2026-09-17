@@ -15,6 +15,7 @@ from app.pi_client import PIWebApiClient
 from app.oracle_erp_client import OracleERPCloudClient
 from app.pipeline import pipeline_engine
 from app.storage import get_pull_history, get_publish_history, get_logs, add_log
+from app.mock_erp_server import mock_erp_manager
 
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 
@@ -27,8 +28,9 @@ async def lifespan(app: FastAPI):
         pipeline_engine.start()
     add_log("INFO", "SYSTEM", "AVEVA PI to Oracle ERP Cloud Pipeline Server ready.")
     yield
-    # Shutdown: stop pipeline
+    # Shutdown: stop pipeline and mock server if running
     pipeline_engine.stop()
+    mock_erp_manager.stop()
 
 
 app = FastAPI(
@@ -197,3 +199,66 @@ def get_all_publish_history(limit: int = 20):
 @app.get("/api/logs")
 def get_pipeline_logs(limit: int = 50, category: str = "ALL"):
     return get_logs(limit, category)
+
+
+# -------------------------------------------------------------
+# Oracle ERP Cloud Mock Simulator Management API
+# -------------------------------------------------------------
+@app.get("/api/mock-erp/status")
+def get_mock_erp_status():
+    """Check running status, port, and stats of the Oracle ERP Mock Simulator."""
+    return mock_erp_manager.get_status()
+
+
+@app.post("/api/mock-erp/start")
+def start_mock_erp():
+    """Spawn the Oracle ERP Mock Simulator on port 8080."""
+    mock_erp_manager.start()
+    add_log("INFO", "SYSTEM", f"Started Oracle ERP Cloud Mock Simulator sub-app on port {mock_erp_manager.port}")
+    return mock_erp_manager.get_status()
+
+
+@app.post("/api/mock-erp/stop")
+def stop_mock_erp():
+    """Stop the Oracle ERP Mock Simulator sub-app."""
+    mock_erp_manager.stop()
+    add_log("INFO", "SYSTEM", "Stopped Oracle ERP Cloud Mock Simulator")
+    return mock_erp_manager.get_status()
+
+
+@app.post("/api/mock-erp/apply-to-settings")
+def apply_mock_erp_to_settings():
+    """Auto-fill and save pipeline settings to connect to the local mock ERP simulator."""
+    settings = load_settings()
+    mock_status = mock_erp_manager.get_status()
+    settings["oracle_erp"] = {
+        "enabled": True,
+        "auth_type": "oauth2",
+        "base_url": mock_status["base_url"],
+        "token_url": mock_status["token_url"],
+        "client_id": mock_status["client_id"],
+        "client_secret": mock_status["client_secret"],
+        "scope": "urn:opc:resource:consumer::all",
+        "username": "",
+        "password": "",
+        "bearer_token": "",
+        "resource_endpoint": mock_status["resource_endpoint"],
+        "http_method": "POST",
+        "dry_run": False,
+        "custom_headers": {
+            "Content-Type": "application/vnd.oracle.adf.resourceitem+json",
+            "REST-Framework-Version": "4"
+        },
+        "timeout_seconds": 15
+    }
+    save_settings(settings)
+    add_log("INFO", "SYSTEM", "Applied Oracle ERP Cloud Mock Simulator credentials to settings.json")
+    return {"success": True, "settings": settings, "mock_status": mock_status}
+
+
+@app.get("/api/mock-erp/transactions")
+def get_mock_erp_transactions(limit: int = 20):
+    """Retrieve telemetry payloads received by the mock ERP server."""
+    from app.mock_erp_server import _received_transactions
+    return {"total": len(_received_transactions), "items": _received_transactions[:limit]}
+

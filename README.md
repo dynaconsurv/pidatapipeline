@@ -163,6 +163,22 @@ Configure which attributes to extract from PI AF and where to map them in Oracle
   - Interval in seconds (e.g. 10, 30, 60, 300).
 - Persisted to: `config/settings.json`.
 
+### 4. 🧪 Local Oracle ERP Cloud Simulation Sub-Application (Port 8080)
+For offline development, testing, and client demos without live Oracle Cloud tenant access, a dedicated sub-application runs on **port 8080**:
+- **Simulates Oracle Identity Cloud Service (IDCS/IAM)**: Provides the standard `/oauth2/v1/token` endpoint accepting Client Credentials grant with Basic Auth or form body.
+- **Simulates Oracle Fusion REST Resources**: Endpoints like `/fscmRestApi/resources/11.13.18.05/standardReceipts` handle OPTIONS handshake probes and HTTP 201 Created ingestion responses with unique `TransactionId` tokens.
+- **One-Click Controls in Settings Page**:
+  - **"Start Simulator (Port 8080)"**: Spawns the simulation sub-app asynchronously in the background.
+  - **"Auto-Fill Mock Credentials & Activate"**: Automatically populates Settings with the simulator endpoints and credentials (`DEMO_ORCL_CLIENT_ID`, `DEMO_ORCL_SECRET_KEY_9982`), starts the simulator, and executes an immediate connection handshake test.
+  - **"Inspect Ingested Data"**: Live view of telemetry payloads received and processed by the simulator.
+  - **"Stop Simulator"**: Shuts down the sub-application cleanly.
+- **Standalone CLI Runner**: Can also be executed independently in a separate console:
+  ```bash
+  python run_mock_erp.py
+  # or custom port:
+  python run_mock_erp.py 8080
+  ```
+
 ---
 
 ## 🔍 Oracle ERP Cloud API Integration Research
@@ -235,14 +251,16 @@ pidatapipeline/
 │   ├── config.py             # Reentrant thread-safe JSON settings & mappings manager
 │   ├── pi_client.py          # AVEVA PI Web API client with simulation engine
 │   ├── oracle_erp_client.py  # Oracle ERP Cloud OAuth 2.0 & REST client
+│   ├── mock_erp_server.py    # Oracle ERP Cloud REST API mock simulation server
 │   ├── pipeline.py           # Background pipeline scheduler & extraction engine
 │   ├── storage.py            # File-backed operational logging & history manager
 │   ├── main.py               # FastAPI application & REST endpoints
 │   └── static/
 │       ├── index.html        # Interactive Single Page Application
-│       ├── css/style.css     # Clean enterprise industrial telemetry theme
+│       ├── css/style.css     # Clean editorial minimalist theme
 │       └── js/app.js         # Real-time dashboard polling & modal logic
-├── run.py                    # Startup launcher
+├── run.py                    # Main pipeline application startup launcher (Port 8000)
+├── run_mock_erp.py           # Standalone Oracle ERP Cloud mock server launcher (Port 8080)
 ├── requirements.txt          # Python dependencies
 └── README.md                 # Complete documentation
 ```

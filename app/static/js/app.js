@@ -826,6 +826,8 @@ function initSettings() {
   document.getElementById("setting-pi-auth-type")?.addEventListener("change", handlePiAuthChange);
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
 
+  initMockERPSimulator();
+
   loadSettingsIntoForm();
 }
 
@@ -869,8 +871,123 @@ async function loadSettingsIntoForm() {
 
     handlePiAuthChange();
     handleErpAuthChange();
+
+    await refreshMockERPStatus();
   } catch (e) {
     console.error("Error loading settings:", e);
+  }
+}
+
+// ============================================================
+// LOCAL ORACLE ERP CLOUD MOCK SIMULATOR CONTROLLER
+// ============================================================
+function initMockERPSimulator() {
+  const btnStart = document.getElementById("btn-start-mock-erp");
+  const btnStop = document.getElementById("btn-stop-mock-erp");
+  const btnAutofill = document.getElementById("btn-autofill-mock-erp");
+  const btnViewTxns = document.getElementById("btn-view-mock-txns");
+
+  btnStart?.addEventListener("click", handleStartMockERP);
+  btnStop?.addEventListener("click", handleStopMockERP);
+  btnAutofill?.addEventListener("click", handleAutofillMockERP);
+  btnViewTxns?.addEventListener("click", handleToggleMockTxns);
+}
+
+async function refreshMockERPStatus() {
+  try {
+    const res = await fetch("/api/mock-erp/status");
+    if (!res.ok) return;
+    const status = await res.json();
+
+    const badge = document.getElementById("mock-erp-status-badge");
+    const statusText = document.getElementById("mock-erp-status-text");
+    const btnStart = document.getElementById("btn-start-mock-erp");
+    const btnStop = document.getElementById("btn-stop-mock-erp");
+    const txnsCount = document.getElementById("mock-txns-count");
+
+    if (badge && statusText) {
+      if (status.running) {
+        badge.className = "badge badge-success";
+        statusText.textContent = `Running (Port ${status.port})`;
+      } else {
+        badge.className = "badge badge-pending";
+        statusText.textContent = "Stopped";
+      }
+    }
+
+    if (btnStart) btnStart.style.display = status.running ? "none" : "inline-flex";
+    if (btnStop) btnStop.style.display = status.running ? "inline-flex" : "none";
+    if (txnsCount) txnsCount.textContent = status.transactions_count || 0;
+
+    return status;
+  } catch (e) {
+    console.warn("Could not fetch mock ERP status:", e);
+  }
+}
+
+async function handleStartMockERP() {
+  try {
+    const res = await fetch("/api/mock-erp/start", { method: "POST" });
+    const data = await res.json();
+    await refreshMockERPStatus();
+    showToast(`Oracle ERP Cloud Simulator online on port ${data.port || 8080}`, "success");
+  } catch (e) {
+    showToast("Failed to start Oracle ERP simulator: " + e.message, "danger");
+  }
+}
+
+async function handleStopMockERP() {
+  try {
+    const res = await fetch("/api/mock-erp/stop", { method: "POST" });
+    await refreshMockERPStatus();
+    showToast("Oracle ERP Cloud Simulator stopped.", "info");
+  } catch (e) {
+    showToast("Failed to stop Oracle ERP simulator: " + e.message, "danger");
+  }
+}
+
+async function handleAutofillMockERP() {
+  try {
+    // 1. Start mock ERP server if not already running
+    await fetch("/api/mock-erp/start", { method: "POST" });
+
+    // 2. Apply mock configuration to settings.json
+    const res = await fetch("/api/mock-erp/apply-to-settings", { method: "POST" });
+    if (!res.ok) throw new Error("Server returned HTTP " + res.status);
+
+    // 3. Reload settings into form so all input fields are updated
+    await loadSettingsIntoForm();
+    await refreshMockERPStatus();
+
+    showToast("Mock ERP credentials filled & activated!", "success");
+
+    // 4. Automatically trigger ERP connection test so the user immediately sees the green handshake
+    setTimeout(handleTestErpSettings, 400);
+  } catch (e) {
+    showToast("Error configuring mock ERP settings: " + e.message, "danger");
+  }
+}
+
+async function handleToggleMockTxns() {
+  const preview = document.getElementById("mock-erp-transactions-preview");
+  if (!preview) return;
+
+  if (preview.style.display === "none" || !preview.style.display) {
+    preview.style.display = "block";
+    preview.textContent = "Loading received transactions...";
+    try {
+      const res = await fetch("/api/mock-erp/transactions");
+      const data = await res.json();
+      if (!data.items || data.items.length === 0) {
+        preview.textContent = "No transactions received yet. Trigger a Pipeline Run from the Dashboard to dispatch telemetry.";
+      } else {
+        preview.textContent = JSON.stringify(data.items, null, 2);
+      }
+    } catch (e) {
+      preview.textContent = "Failed to load transactions: " + e.message;
+    }
+  } else {
+    preview.style.display = "none";
   }
 }
 
