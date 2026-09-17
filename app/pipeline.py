@@ -150,9 +150,10 @@ class DataPipelineEngine:
 
         # Update PI status
         if pi_pull_success:
+            is_sim = bool(pi_cfg.get("simulation_mode", False))
             self.pi_status = {
-                "status": "CONNECTED",
-                "message": f"Successfully pulled {len(pull_items)} attributes from AVEVA PI Web API",
+                "status": "SIMULATED" if is_sim else "CONNECTED",
+                "message": f"Simulating telemetry for {len(pull_items)} attributes (Offline Plant Simulator)" if is_sim else f"Successfully pulled {len(pull_items)} attributes from AVEVA PI Web API",
                 "last_check": now_iso,
                 "latency_ms": avg_latency,
                 "error": None

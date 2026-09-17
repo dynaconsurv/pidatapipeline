@@ -1,39 +1,37 @@
 """
 Quick verification test for AVEVA PI to Oracle ERP Cloud Data Pipeline.
+Tests genuine connection failure when URL is unreachable or placeholder.
 """
-import sys
 from app.config import load_settings, load_mappings
 from app.pipeline import pipeline_engine
+from app.pi_client import PIWebApiClient
 
 def main():
-    print("1. Loading settings and mappings...")
     settings = load_settings()
     mappings = load_mappings()
-    print(f"   Settings keys: {list(settings.keys())}")
-    print(f"   Configured mappings: {len(mappings)}")
+    print("Simulation mode:", settings["pi_web_api"]["simulation_mode"])
+    print("PI Web API URL:", settings["pi_web_api"]["url"])
 
-    print("\n2. Executing pipeline extraction & push cycle...")
+    client = PIWebApiClient(settings["pi_web_api"])
+    res = client.test_connection()
+    print("\nPI test_connection result:")
+    print("  Success:", res.get("success"))
+    print("  Message:", res.get("message"))
+    print("  Error:", res.get("error"))
+
+    print("\nExecuting pipeline cycle...")
     result = pipeline_engine.execute_cycle()
-    pull = result.get("pull", {})
-    publish = result.get("publish", {})
-
-    print(f"   Pull Batch ID: {result.get('batch_id')}")
-    print(f"   Pull Success: {pull.get('success')}")
-    print(f"   Items Pulled: {pull.get('count')}")
-    print(f"   ERP Publish Status: {publish.get('status')} ({publish.get('message')})")
-
-    print("\n3. Inspecting pulled attributes:")
-    for idx, item in enumerate(pull.get("items", [])[:5], 1):
-        print(f"   [{idx}] {item.get('attribute_name')}: {item.get('value')} {item.get('uom')} (Quality: {item.get('quality')})")
-
-    print("\n4. Getting dashboard status object...")
     status = pipeline_engine.get_status()
-    print(f"   PI Status: {status.get('pi_connection', {}).get('status')}")
-    print(f"   Oracle ERP Status: {status.get('oracle_erp_connection', {}).get('status')}")
-    print(f"   Last 5 pulls count: {len(status.get('last_5_pulls', []))}")
-    print(f"   Scheduler next run in: {status.get('scheduler', {}).get('seconds_remaining')}s")
 
-    print("\n[SUCCESS] Pipeline engine operational!")
+    print("\nPipeline Engine PI Status:")
+    print("  Status:", status["pi_connection"]["status"])
+    print("  Message:", status["pi_connection"]["message"])
+    print("  Error:", status["pi_connection"]["error"])
+    print("  Last 5 pulls count:", len(status["last_5_pulls"]))
+
+    print("\nOracle ERP Status:")
+    print("  Status:", status["oracle_erp_connection"]["status"])
+    print("  Message:", status["oracle_erp_connection"]["message"])
 
 if __name__ == "__main__":
     main()

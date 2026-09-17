@@ -1,5 +1,135 @@
 [
   {
+    "pull_id": "batch-1789638031-eeb369",
+    "timestamp": "2026-09-17T09:40:31.634900+00:00",
+    "success": false,
+    "count": 5,
+    "duration_ms": 12004.6,
+    "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Temperature (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))",
+    "items": [
+      {
+        "attribute_name": "Steam Temperature",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+        "success": false,
+        "value": null,
+        "uom": "deg C",
+        "timestamp": "2026-09-17T09:40:34.021527+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Temperature (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Steam Pressure",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+        "success": false,
+        "value": null,
+        "uom": "bar",
+        "timestamp": "2026-09-17T09:40:36.279086+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Pressure (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Feedwater Flow",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+        "success": false,
+        "value": null,
+        "uom": "m3/h",
+        "timestamp": "2026-09-17T09:40:38.570178+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CTurbines%5CTurbine-TG01%7CFeedwater%20Flow (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Active Power",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Generators\\Gen-01|Active Power",
+        "success": false,
+        "value": null,
+        "uom": "MW",
+        "timestamp": "2026-09-17T09:40:40.835894+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CGenerators%5CGen-01%7CActive%20Power (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Vibration Overall",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+        "success": false,
+        "value": null,
+        "uom": "mm/s",
+        "timestamp": "2026-09-17T09:40:43.577890+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUtilities%5CPumps%5CPump-2A%7CVibration%20Overall (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      }
+    ]
+  },
+  {
+    "pull_id": "batch-1789638007-2dcc4b",
+    "timestamp": "2026-09-17T09:40:07.730000+00:00",
+    "success": false,
+    "count": 5,
+    "duration_ms": 11442.3,
+    "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Temperature (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))",
+    "items": [
+      {
+        "attribute_name": "Steam Temperature",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+        "success": false,
+        "value": null,
+        "uom": "deg C",
+        "timestamp": "2026-09-17T09:40:10.030968+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Temperature (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Steam Pressure",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+        "success": false,
+        "value": null,
+        "uom": "bar",
+        "timestamp": "2026-09-17T09:40:12.312534+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CBoilers%5CBoiler-101%7CSteam%20Pressure (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Feedwater Flow",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+        "success": false,
+        "value": null,
+        "uom": "m3/h",
+        "timestamp": "2026-09-17T09:40:14.598974+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CTurbines%5CTurbine-TG01%7CFeedwater%20Flow (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Active Power",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Generators\\Gen-01|Active Power",
+        "success": false,
+        "value": null,
+        "uom": "MW",
+        "timestamp": "2026-09-17T09:40:16.874320+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUnit%201%5CGenerators%5CGen-01%7CActive%20Power (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      },
+      {
+        "attribute_name": "Vibration Overall",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+        "success": false,
+        "value": null,
+        "uom": "mm/s",
+        "timestamp": "2026-09-17T09:40:19.164640+00:00",
+        "quality": "Bad",
+        "status": "Error",
+        "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/attributes?path=%5C%5CPISRV01%5CPlant_Operations%5CUtilities%5CPumps%5CPump-2A%7CVibration%20Overall (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+      }
+    ]
+  },
+  {
     "pull_id": "batch-1789637831-138d29",
     "timestamp": "2026-09-17T09:37:11.436214+00:00",
     "success": true,

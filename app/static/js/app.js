@@ -114,15 +114,20 @@ function renderDashboard(data) {
     piBadge.innerHTML = '<span class="badge-dot"></span> Connected';
     piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
     piErrorBox.style.display = "none";
+  } else if (pi.status === "SIMULATED") {
+    piBadge.className = "badge badge-info";
+    piBadge.innerHTML = '<span class="badge-dot"></span> Simulated Demo';
+    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+    piErrorBox.style.display = "none";
   } else if (pi.status === "PARTIAL_ERROR" || pi.status === "FAILED") {
     piBadge.className = "badge badge-danger";
     piBadge.innerHTML = `<span class="badge-dot"></span> ${pi.status === 'FAILED' ? 'Failed' : 'Partial Error'}`;
-    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+    piLatency.textContent = "--";
     piErrorBox.style.display = "block";
     piErrorText.textContent = pi.error || pi.message || "Unknown error connecting to PI Web API";
   } else {
     piBadge.className = "badge badge-pending";
-    piBadge.innerHTML = '<span class="badge-dot"></span> Initializing';
+    piBadge.innerHTML = '<span class="badge-dot"></span> Checking';
   }
 
   if (pi.last_check) {

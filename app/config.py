@@ -23,7 +23,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "verify_ssl": False,
         "af_server": "PISRV01",
         "af_database": "Plant_Operations",
-        "simulation_mode": True,  # Allows out-of-the-box data pulling even if real PI server is offline
+        "simulation_mode": False,  # Default to real connection testing; only simulates if user explicitly enables it
         "timeout_seconds": 10
     },
     "oracle_erp": {

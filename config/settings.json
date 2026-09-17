@@ -8,7 +8,7 @@
     "verify_ssl": false,
     "af_server": "PISRV01",
     "af_database": "Plant_Operations",
-    "simulation_mode": true,
+    "simulation_mode": false,
     "timeout_seconds": 10
   },
   "oracle_erp": {

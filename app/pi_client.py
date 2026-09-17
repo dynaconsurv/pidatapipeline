@@ -47,15 +47,16 @@ class PIWebApiClient:
         if self.simulation_mode:
             return {
                 "success": True,
+                "is_simulation": True,
                 "status_code": 200,
                 "latency_ms": 18.5,
-                "message": "Connected to AVEVA PI Web API (Simulation Engine Active)",
+                "message": "PI Simulation Mode Active (Simulated Plant Data Engine - Not connected to a physical PI server)",
                 "details": {
-                    "productTitle": "OSIsoft PI Web API (Simulated)",
+                    "productTitle": "OSIsoft PI Web API (Simulation Engine)",
                     "serverVersion": "2023 SP1 (1.18.0.450)",
                     "afServer": self.config.get("af_server", "PISRV01"),
                     "afDatabase": self.config.get("af_database", "Plant_Operations"),
-                    "simulation": True
+                    "note": "Turn off 'Simulation Mode' in Settings to connect to your live AVEVA PI Web API server URL."
                 }
             }
 
