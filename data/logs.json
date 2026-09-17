@@ -1,0 +1,37 @@
+[
+  {
+    "timestamp": "2026-09-17T09:35:39.477675+00:00",
+    "level": "INFO",
+    "category": "PIPELINE",
+    "message": "Updated 5 attribute mappings in config/mappings.json",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-17T09:34:39.192779+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "AVEVA PI to Oracle ERP Cloud Pipeline Server ready.",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-17T09:34:39.190914+00:00",
+    "level": "INFO",
+    "category": "PIPELINE",
+    "message": "Data pipeline engine started. Interval: 30s",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-17T09:32:17.144037+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "AVEVA PI to Oracle ERP Cloud Pipeline Server ready.",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-17T09:32:17.142828+00:00",
+    "level": "INFO",
+    "category": "PIPELINE",
+    "message": "Data pipeline engine started. Interval: 30s",
+    "details": null
+  }
+]
