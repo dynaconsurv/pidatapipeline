@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMappings();
   initSettings();
   initAFBrowser();
+  initInfoToggles();
 
   // Start polling dashboard status every 2 seconds
   loadDashboardData();
@@ -59,6 +60,36 @@ function switchTab(tabName) {
   } else if (tabName === "dashboard") {
     loadDashboardData();
   }
+}
+
+function initInfoToggles() {
+  document.querySelectorAll(".btn-info-trigger").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-target");
+      const card = document.getElementById(targetId);
+      if (!card) return;
+      const isOpen = card.style.display === "block";
+      if (isOpen) {
+        card.style.display = "none";
+        btn.classList.remove("active");
+      } else {
+        card.style.display = "block";
+        btn.classList.add("active");
+      }
+    });
+  });
+
+  document.querySelectorAll(".info-card-close").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-close");
+      const card = document.getElementById(targetId);
+      if (card) {
+        card.style.display = "none";
+      }
+      const trigger = document.querySelector(`.btn-info-trigger[data-target="${targetId}"]`);
+      if (trigger) trigger.classList.remove("active");
+    });
+  });
 }
 
 // ============================================================
@@ -151,8 +182,9 @@ function renderDashboard(data) {
     erpResource.title = currentSettings.oracle_erp.resource_endpoint || "";
   }
 
+  if (erpBanner) erpBanner.style.display = "none";
+
   if (erp.status === "PENDING_SETUP") {
-    erpBanner.style.display = "flex";
     erpBadge.className = "badge badge-pending";
     erpBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
     erpHeadline.textContent = "Pending Setup";

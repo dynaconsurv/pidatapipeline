@@ -43,7 +43,39 @@
          ======================================================== -->
     <section id="view-dashboard" class="page-view active">
       
-      <!-- Quiet Pending Notice Banner -->
+      <!-- Page Top Bar with Info Trigger -->
+      <div class="page-top-bar">
+        <div class="page-title-group">
+          <h1 class="page-heading">Pipeline Telemetry & Monitoring</h1>
+          <div class="page-subheading">Live extraction from AVEVA PI Web API and ingestion into Oracle ERP Cloud</div>
+        </div>
+        <button type="button" class="btn-info-trigger" data-target="dashboard-info-card" title="Page Information">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Page Info</span>
+        </button>
+      </div>
+
+      <!-- Collapsible Dashboard Info Card (Hidden by default) -->
+      <div id="dashboard-info-card" class="collapsible-info-card" style="display: none;">
+        <div class="info-card-header">
+          <div class="info-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            How the Dashboard Works
+          </div>
+          <button type="button" class="info-card-close" data-close="dashboard-info-card">✕</button>
+        </div>
+        <div class="info-card-body">
+          <p>The Dashboard displays real-time operational status, connection health, and telemetry streams:</p>
+          <ul>
+            <li><strong>AVEVA PI Web API Status:</strong> Monitors live HTTP connectivity and latency against your PI Web API endpoint. If unreachable, the error console displays exact diagnostic traces.</li>
+            <li><strong>Oracle ERP Cloud Status:</strong> Reflects destination integration state. Shows "Pending connection setup" while awaiting credentials.</li>
+            <li><strong>Scheduler Countdown:</strong> Real-time timer indicating when the next background extraction cycle executes. Can be paused or triggered on demand.</li>
+            <li><strong>Last 5 Telemetry Pulls:</strong> Details the most recent 5 attributes pulled from the Asset Framework (AF) including timestamps, quality, and values.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Hidden Pending Notice Banner -->
       <div id="dashboard-erp-banner" class="alert-banner alert-pending" style="display: none;">
         <div class="alert-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -302,15 +334,36 @@
          ======================================================== -->
     <section id="view-mappings" class="page-view">
       
-      <div class="alert-banner alert-info">
-        <div class="alert-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      <!-- Page Top Bar with Info Trigger -->
+      <div class="page-top-bar">
+        <div class="page-title-group">
+          <h1 class="page-heading">Attribute Mapping & Destination Schema</h1>
+          <div class="page-subheading">Select PI AF attributes and map them to target Oracle ERP meter tags and fields</div>
         </div>
-        <div>
-          <div class="alert-title">Attribute Mapping Configuration</div>
-          <div class="alert-desc">
-            Map attributes from your AVEVA PI Asset Framework (AF) database into target Oracle ERP Cloud fields and meter tags. Saved to <code>config/mappings.json</code>.
+        <button type="button" class="btn-info-trigger" data-target="mappings-info-card" title="Page Information">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Page Info</span>
+        </button>
+      </div>
+
+      <!-- Collapsible Mappings Info Card (Hidden by default) -->
+      <div id="mappings-info-card" class="collapsible-info-card" style="display: none;">
+        <div class="info-card-header">
+          <div class="info-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            How Attribute Mapping Works
           </div>
+          <button type="button" class="info-card-close" data-close="mappings-info-card">✕</button>
+        </div>
+        <div class="info-card-body">
+          <p>Map telemetry attributes from your AVEVA PI Asset Framework (AF) databases to corresponding target fields in Oracle ERP Cloud:</p>
+          <ul>
+            <li><strong>PI AF Hierarchy Explorer:</strong> Browse servers, databases, and elements to select and map attributes directly with one click.</li>
+            <li><strong>Field Mapping:</strong> Assign each attribute an Oracle ERP Meter Code (e.g. <code>BLR101_STM_TEMP</code>) and destination value field (<code>readingValue</code>).</li>
+            <li><strong>Transformations:</strong> Configure linear multipliers and decimal rounding for unit conversions.</li>
+            <li><strong>Live Payload Preview:</strong> Inspect the structured JSON payload dispatched to Oracle ERP Cloud REST API.</li>
+            <li><strong>Storage:</strong> All mappings are persisted directly to <code>config/mappings.json</code>.</li>
+          </ul>
         </div>
       </div>
 
@@ -403,16 +456,35 @@
          ======================================================== -->
     <section id="view-settings" class="page-view">
       
-      <!-- Guidance Banner -->
-      <div class="alert-banner alert-info">
-        <div class="alert-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      <!-- Page Top Bar with Info Trigger -->
+      <div class="page-top-bar">
+        <div class="page-title-group">
+          <h1 class="page-heading">Pipeline & Connection Settings</h1>
+          <div class="page-subheading">Configure AVEVA PI Web API, Oracle ERP Cloud OAuth 2.0 / Basic auth, and schedule interval</div>
         </div>
-        <div>
-          <div class="alert-title">Oracle ERP Cloud REST Authentication</div>
-          <div class="alert-desc">
-            OAuth 2.0 (Client Credentials Grant) via Oracle IDCS / IAM is recommended for production. Alternatively, HTTP Basic Auth is supported for testing. Leave the transmission toggle OFF until credentials are provided.
+        <button type="button" class="btn-info-trigger" data-target="settings-info-card" title="Page Information">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Page Info</span>
+        </button>
+      </div>
+
+      <!-- Collapsible Settings Info Card (Hidden by default) -->
+      <div id="settings-info-card" class="collapsible-info-card" style="display: none;">
+        <div class="info-card-header">
+          <div class="info-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            How Connection & Authentication Settings Work
           </div>
+          <button type="button" class="info-card-close" data-close="settings-info-card">✕</button>
+        </div>
+        <div class="info-card-body">
+          <p>Configure and test connections to both endpoints independently:</p>
+          <ul>
+            <li><strong>AVEVA PI Web API:</strong> Supports Basic Auth, Bearer Token, Windows Integrated (Kerberos/NTLM), or Anonymous. Toggle SSL verification if using plant self-signed certificates. Use the Simulation Mode toggle for offline testing.</li>
+            <li><strong>Oracle ERP Cloud:</strong> Supports <strong>OAuth 2.0 (Client Credentials Grant)</strong> via Oracle IDCS / IAM (recommended) and HTTP Basic Auth. Leave "Enable Transmission" unchecked to keep the pipeline in a safe "Pending connection setup" state while staging data locally.</li>
+            <li><strong>Diagnostics:</strong> Use the "Test Connection" buttons on each section to validate reachability and token exchange without triggering a full pipeline cycle.</li>
+            <li><strong>Storage:</strong> All configuration is stored directly in <code>config/settings.json</code>.</li>
+          </ul>
         </div>
       </div>
 
