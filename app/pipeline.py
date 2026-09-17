@@ -137,13 +137,34 @@ class DataPipelineEngine:
             record_pull_batch(batch_record)
             return {"batch_id": batch_id, "pull_count": 0, "status": "NO_MAPPINGS"}
 
-        for m in enabled_mappings:
-            item_result = pi_client.fetch_attribute_value(m)
-            pull_items.append(item_result)
-            if not item_result.get("success"):
-                pi_failures += 1
-            if item_result.get("latency_ms"):
-                total_pi_latency += item_result["latency_ms"]
+        # Fast server probe: avoid multi-second repeated DNS timeouts if host is down
+        conn_test = pi_client.test_connection()
+        if not conn_test.get("success"):
+            err_msg = conn_test.get("error") or conn_test.get("message") or "PI Web API host unreachable"
+            for m in enabled_mappings:
+                pull_items.append({
+                    "attribute_name": m.get("attribute_name", "Unknown Attribute"),
+                    "full_path": m.get("full_path", ""),
+                    "web_id": m.get("web_id", ""),
+                    "success": False,
+                    "value": None,
+                    "uom": m.get("uom", ""),
+                    "timestamp": now_iso,
+                    "quality": "Bad",
+                    "status": "Unreachable",
+                    "latency_ms": conn_test.get("latency_ms", 0),
+                    "error": err_msg
+                })
+            pi_failures = len(enabled_mappings)
+            total_pi_latency = conn_test.get("latency_ms", 0)
+        else:
+            for m in enabled_mappings:
+                item_result = pi_client.fetch_attribute_value(m)
+                pull_items.append(item_result)
+                if not item_result.get("success"):
+                    pi_failures += 1
+                if item_result.get("latency_ms"):
+                    total_pi_latency += item_result["latency_ms"]
 
         avg_latency = round(total_pi_latency / max(1, len(pull_items)), 1)
         pi_pull_success = (pi_failures == 0)

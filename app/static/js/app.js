@@ -274,35 +274,35 @@ function renderLastPullsTable(items) {
   tbody.innerHTML = items.map(item => {
     const isGood = item.quality === "Good";
     const qualityBadge = isGood
-      ? `<span class="badge badge-success" style="font-size: 0.7rem;"><span class="badge-dot"></span> Good</span>`
-      : `<span class="badge badge-danger" style="font-size: 0.7rem;"><span class="badge-dot"></span> ${item.quality || 'Bad'}</span>`;
+      ? `<span class="badge badge-success"><span class="badge-dot"></span> Good</span>`
+      : `<span class="badge badge-danger"><span class="badge-dot"></span> ${escapeHtml(item.quality || 'Bad')}</span>`;
 
     const valFormatted = item.value !== null && item.value !== undefined
-      ? `${item.value} <span style="font-size: 0.75rem; color: #64748b; font-weight: normal;">${item.uom || ''}</span>`
-      : `<span style="color: var(--danger); font-size: 0.8rem;">${item.error || 'N/A'}</span>`;
+      ? `${item.value} <span style="font-size: 11px; color: var(--ink-secondary);">${item.uom || ''}</span>`
+      : `<span style="color: var(--status-bad); font-size: 11px;">${item.error || 'N/A'}</span>`;
 
     return `
       <tr>
-        <td><strong>${escapeHtml(item.attribute_name || 'Tag')}</strong></td>
+        <td><span style="font-weight: 500;">${escapeHtml(item.attribute_name || 'Tag')}</span></td>
         <td><span class="path-code" title="${escapeHtml(item.full_path || '')}">${escapeHtml(item.full_path || '--')}</span></td>
         <td><span class="val-badge">${valFormatted}</span></td>
-        <td>${escapeHtml(item.uom || '--')}</td>
-        <td style="font-family: var(--font-mono); font-size: 0.78rem;">${formatTimestamp(item.timestamp)}</td>
+        <td style="color: var(--ink-secondary);">${escapeHtml(item.uom || '--')}</td>
+        <td style="font-family: var(--font-mono); font-size: 11px; color: var(--ink-secondary);">${formatTimestamp(item.timestamp)}</td>
         <td>${qualityBadge}</td>
-        <td><code>${escapeHtml(item.meter_tag || item.attribute_name || '--')}</code></td>
-        <td style="font-size: 0.75rem; color: #64748b;">${formatTimestamp(item.batch_timestamp || item.timestamp)}</td>
+        <td><code style="font-size: 11px; color: var(--ink-primary);">${escapeHtml(item.meter_tag || item.attribute_name || '--')}</code></td>
+        <td style="font-size: 11px; color: var(--ink-secondary);">${formatTimestamp(item.batch_timestamp || item.timestamp)}</td>
       </tr>
     `;
   }).join("");
 }
 
 async function triggerPullNow() {
-  showToast("Triggering immediate data pull cycle...", "info");
+  showToast("Triggering telemetry pull...", "info");
   try {
     const res = await fetch("/api/pipeline/run-now", { method: "POST" });
     const data = await res.json();
     if (data.success) {
-      showToast("Data pulled successfully from AVEVA PI Web API!", "success");
+      showToast("Telemetry pull cycle completed.", "success");
       loadDashboardData();
     } else {
       showToast("Data pull encountered an issue.", "danger");
@@ -341,7 +341,7 @@ async function testPiConnectionFromDashboard() {
 }
 
 async function testErpConnectionFromDashboard() {
-  showToast("Testing Oracle ERP Cloud connection & token...", "info");
+  showToast("Validating Oracle ERP Cloud connection & token...", "info");
   try {
     const res = await fetch("/api/settings/test-erp", { method: "POST" });
     const result = await res.json();
@@ -373,17 +373,17 @@ async function loadLogs() {
     }
 
     box.innerHTML = logs.map(l => {
-      let color = "#cbd5e1";
-      if (l.level === "ERROR") color = "#f87171";
-      else if (l.level === "WARNING") color = "#fde047";
-      else if (l.level === "SUCCESS") color = "#4ade80";
+      let color = "var(--ink-primary)";
+      if (l.level === "ERROR") color = "var(--status-bad)";
+      else if (l.level === "WARNING") color = "var(--status-warn)";
+      else if (l.level === "SUCCESS") color = "var(--status-good)";
 
       const timeStr = l.timestamp ? l.timestamp.substring(11, 19) : "";
-      return `<div style="margin-bottom: 0.35rem; color: ${color};">
-        <span style="color: #64748b;">[${timeStr}]</span> 
-        <span style="font-weight: bold;">[${l.category}] [${l.level}]</span> 
+      return `<div style="margin-bottom: 4px; color: ${color};">
+        <span style="color: var(--ink-secondary);">[${timeStr}]</span> 
+        <span style="font-weight: 500;">[${l.category}] [${l.level}]</span> 
         ${escapeHtml(l.message)}
-        ${l.details ? `<div style="color: #94a3b8; font-size: 0.72rem; margin-left: 1rem;">${escapeHtml(typeof l.details === 'string' ? l.details : JSON.stringify(l.details))}</div>` : ''}
+        ${l.details ? `<div style="color: var(--ink-secondary); font-size: 11px; margin-left: 16px;">${escapeHtml(typeof l.details === 'string' ? l.details : JSON.stringify(l.details))}</div>` : ''}
       </div>`;
     }).join("");
   } catch (e) {

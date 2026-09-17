@@ -7,6 +7,124 @@
     "http_code": null,
     "payload_sample": {
       "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-17T10:11:59.121722+00:00",
+      "itemCount": 5,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.237348+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.237348+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.237348+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "GEN01_ACT_PWR",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.237348+00:00",
+          "unitOfMeasure": "MW",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Generators\\Gen-01|Active Power",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.237348+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": null,
+    "timestamp": "2026-09-17T10:11:59.121828+00:00",
+    "publish_id": "pub-1789639919-ec8d4c",
+    "batch_id": "batch-1789639916-ceea9d"
+  },
+  {
+    "status": "PENDING_SETUP",
+    "message": "Pending connection setup: Oracle ERP Cloud integration is toggled off.",
+    "record_count": 5,
+    "target_endpoint": "https://your-pod.fa.oraclecloud.com/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-17T10:11:59.045354+00:00",
+      "itemCount": 5,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.203100+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.203100+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.203100+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "GEN01_ACT_PWR",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.203100+00:00",
+          "unitOfMeasure": "MW",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Generators\\Gen-01|Active Power",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-17T10:11:56.203100+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": null,
+    "timestamp": "2026-09-17T10:11:59.045444+00:00",
+    "publish_id": "pub-1789639919-fbd61f",
+    "batch_id": "batch-1789639916-c333bf"
+  },
+  {
+    "status": "PENDING_SETUP",
+    "message": "Pending connection setup: Oracle ERP Cloud integration is toggled off.",
+    "record_count": 5,
+    "target_endpoint": "https://your-pod.fa.oraclecloud.com/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
       "batchTimestamp": "2026-09-17T10:00:40.546371+00:00",
       "itemCount": 5,
       "items": [

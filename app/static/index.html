@@ -3,55 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AVEVA PI to Oracle ERP Cloud Data Pipeline</title>
+  <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
   <link rel="stylesheet" href="/static/css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
 </head>
 <body>
 
-  <!-- App Header -->
+  <!-- Minimal Editorial Header -->
   <header class="app-header">
     <div class="header-container">
       <div class="brand">
-        <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
-        </div>
-        <div>
-          <div class="brand-title">
-            PI Data Pipeline
-            <span class="pipeline-flow-badge">
-              <span>AVEVA PI</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              <span>Pipeline</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              <span>Oracle ERP</span>
-            </span>
-          </div>
-          <div class="brand-subtitle">Telemetry Ingestion & ERP Cloud Integration Platform (JSON Storage)</div>
-        </div>
+        <span class="brand-title">PI Data Pipeline</span>
+        <span class="brand-divider">/</span>
+        <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
       </div>
 
       <!-- Navigation Tabs -->
       <nav class="nav-tabs">
         <button class="nav-tab active" data-tab="dashboard">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
           Dashboard
         </button>
         <button class="nav-tab" data-tab="mappings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path><path d="m15 9 6-6"></path></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3"></path><path d="m15 9 6-6"></path></svg>
           Attribute Mapping
         </button>
         <button class="nav-tab" data-tab="settings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           Settings
         </button>
       </nav>
     </div>
   </header>
 
-  <!-- Main Content Body -->
+  <!-- Main Container -->
   <main class="main-container">
 
     <!-- ========================================================
@@ -59,129 +43,122 @@
          ======================================================== -->
     <section id="view-dashboard" class="page-view active">
       
-      <!-- Pending ERP Connection Banner if applicable -->
+      <!-- Quiet Pending Notice Banner -->
       <div id="dashboard-erp-banner" class="alert-banner alert-pending" style="display: none;">
         <div class="alert-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
         </div>
         <div>
-          <strong>Oracle ERP Cloud Connection: Pending Setup</strong>
-          <p style="margin-top: 0.2rem; font-size: 0.85rem;">
-            AVEVA PI telemetry is currently being extracted and staged locally in JSON files. Push to Oracle ERP Cloud is set to <strong>Pending connection setup</strong> until the Oracle ERP Cloud REST endpoint, OAuth credentials, and resource schema are finalized. You can configure and activate this under the <strong>Settings</strong> tab.
-          </p>
+          <div class="alert-title">Oracle ERP Cloud: Pending Connection Setup</div>
+          <div class="alert-desc">
+            Telemetry is extracted from AVEVA PI and staged locally in JSON files. Push to Oracle ERP Cloud is held until destination credentials and endpoint are configured in Settings.
+          </div>
         </div>
       </div>
 
-      <!-- 4 High-Level KPI Status Cards -->
+      <!-- 4 Aligned Metric Cards -->
       <div class="grid-4">
         
-        <!-- Card 1: AVEVA PI Web API Connection -->
+        <!-- Card 1: AVEVA PI Web API -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
               AVEVA PI Web API
-            </div>
+            </span>
             <span id="pi-status-badge" class="badge badge-pending">
               <span class="badge-dot"></span> Checking
             </span>
           </div>
+
           <div class="kpi-value-row">
             <div id="pi-latency-val" class="kpi-number">--</div>
             <div class="kpi-unit">ms latency</div>
           </div>
+
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Endpoint:</span>
+              <span class="kpi-meta-label">Endpoint</span>
               <span id="pi-endpoint-val" class="kpi-meta-val" title="">--</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Last Successful Pull:</span>
+              <span class="kpi-meta-label">Last Pull</span>
               <span id="pi-last-pull-val" class="kpi-meta-val">--</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Mode:</span>
+              <span class="kpi-meta-label">Mode</span>
               <span id="pi-mode-val" class="kpi-meta-val">--</span>
             </div>
           </div>
 
-          <!-- Error log preview if failed -->
-          <div id="pi-error-box" class="error-console danger" style="display: none; margin-top: 0.75rem;">
+          <!-- Error console (clean terminal styling) -->
+          <div id="pi-error-box" class="error-console danger" style="display: none; margin-top: 12px;">
             <div class="error-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              PI Connection Error
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              Connection Error
             </div>
-            <div id="pi-error-text">No error</div>
+            <div id="pi-error-text">--</div>
           </div>
 
-          <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-            <button id="btn-test-pi" class="btn btn-secondary btn-sm" style="flex: 1;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-              Test PI
-            </button>
-            <button id="btn-run-pull-now" class="btn btn-primary btn-sm" style="flex: 1;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-              Pull Now
-            </button>
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="btn-test-pi" class="btn btn-secondary btn-sm" style="flex: 1;">Test PI</button>
+            <button id="btn-run-pull-now" class="btn btn-primary btn-sm" style="flex: 1;">Pull Now</button>
           </div>
         </div>
 
-        <!-- Card 2: Oracle ERP Cloud Connection -->
+        <!-- Card 2: Oracle ERP Cloud -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              Oracle ERP Cloud API
-            </div>
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Oracle ERP Cloud
+            </span>
             <span id="erp-status-badge" class="badge badge-pending">
               <span class="badge-dot"></span> Pending Setup
             </span>
           </div>
+
           <div class="kpi-value-row">
-            <div id="erp-status-headline" class="kpi-number" style="font-size: 1.25rem; font-weight: 700;">Pending Setup</div>
+            <div id="erp-status-headline" class="kpi-number" style="font-size: 18px;">Pending Setup</div>
           </div>
+
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Auth Method:</span>
-              <span id="erp-auth-val" class="kpi-meta-val">OAuth 2.0 (IDCS)</span>
+              <span class="kpi-meta-label">Auth Flow</span>
+              <span id="erp-auth-val" class="kpi-meta-val">OAuth 2.0</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Target Resource:</span>
+              <span class="kpi-meta-label">Resource</span>
               <span id="erp-resource-val" class="kpi-meta-val" title="">--</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Status Detail:</span>
-              <span id="erp-reason-val" class="kpi-meta-val" style="color: #92400e;">Pending credentials</span>
+              <span class="kpi-meta-label">State</span>
+              <span id="erp-reason-val" class="kpi-meta-val">Awaiting setup</span>
             </div>
           </div>
 
-          <!-- Error log preview if failed -->
-          <div id="erp-error-box" class="error-console danger" style="display: none; margin-top: 0.75rem;">
+          <!-- Error console -->
+          <div id="erp-error-box" class="error-console danger" style="display: none; margin-top: 12px;">
             <div class="error-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
               Oracle ERP Error
             </div>
-            <div id="erp-error-text">No error</div>
+            <div id="erp-error-text">--</div>
           </div>
 
-          <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-            <button id="btn-test-erp" class="btn btn-secondary btn-sm" style="flex: 1;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
-              Test ERP / Token
-            </button>
-            <button id="btn-goto-settings" class="btn btn-outline btn-sm" style="flex: 1;">
-              Configure
-            </button>
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="btn-test-erp" class="btn btn-secondary btn-sm" style="flex: 1;">Test Handshake</button>
+            <button id="btn-goto-settings" class="btn btn-outline btn-sm" style="flex: 1;">Configure</button>
           </div>
         </div>
 
-        <!-- Card 3: Pipeline Scheduler & Next Pull Countdown -->
+        <!-- Card 3: Scheduler Countdown -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              Scheduler & Next Pull
-            </div>
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Scheduler
+            </span>
             <span id="scheduler-badge" class="badge badge-success">
               <span class="badge-dot"></span> Active
             </span>
@@ -189,39 +166,35 @@
 
           <div class="countdown-box">
             <div id="countdown-clock" class="countdown-timer">00:00</div>
-            <div class="countdown-label">Time until next data pull</div>
+            <div class="countdown-label">Next Telemetry Pull</div>
           </div>
 
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Schedule Interval:</span>
+              <span class="kpi-meta-label">Interval</span>
               <span id="scheduler-interval-val" class="kpi-meta-val">Every 30s</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Next Run Timestamp:</span>
+              <span class="kpi-meta-label">Next Run</span>
               <span id="scheduler-next-val" class="kpi-meta-val">--</span>
             </div>
           </div>
 
-          <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-            <button id="btn-toggle-pause" class="btn btn-outline btn-sm" style="flex: 1;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="btn-toggle-pause" class="btn btn-secondary btn-sm" style="flex: 1;">
               <span id="btn-pause-text">Pause</span>
             </button>
-            <button id="btn-instant-run" class="btn btn-primary btn-sm" style="flex: 1;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-              Trigger Run
-            </button>
+            <button id="btn-instant-run" class="btn btn-primary btn-sm" style="flex: 1;">Trigger Run</button>
           </div>
         </div>
 
-        <!-- Card 4: Last Data Published to Oracle ERP -->
+        <!-- Card 4: Last Published -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
-              Last ERP Publish
-            </div>
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+              Last ERP Dispatch
+            </span>
             <span id="last-publish-badge" class="badge badge-pending">
               <span class="badge-dot"></span> Pending Setup
             </span>
@@ -234,45 +207,39 @@
 
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Publish Status:</span>
-              <span id="publish-status-val" class="kpi-meta-val" style="color: #92400e;">Pending Connection</span>
+              <span class="kpi-meta-label">Status</span>
+              <span id="publish-status-val" class="kpi-meta-val">Pending</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Timestamp:</span>
+              <span class="kpi-meta-label">Timestamp</span>
               <span id="publish-time-val" class="kpi-meta-val">--</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">HTTP Response:</span>
+              <span class="kpi-meta-label">HTTP Code</span>
               <span id="publish-http-val" class="kpi-meta-val">--</span>
             </div>
           </div>
 
-          <div style="margin-top: 1rem;">
-            <button id="btn-view-last-payload" class="btn btn-outline btn-sm" style="width: 100%;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              Inspect ERP Staged Payload
+          <div style="margin-top: 16px;">
+            <button id="btn-view-last-payload" class="btn btn-secondary btn-sm" style="width: 100%;">
+              Inspect Staged Payload
             </button>
           </div>
         </div>
 
       </div>
 
-      <!-- LAST 5 DATA PULLS TABLE -->
+      <!-- LAST 5 PULLS TABLE -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
               Last 5 Data Pulls from AVEVA PI Web API
             </div>
-            <div class="form-help">Real-time telemetry attributes pulled from AVEVA PI Web API / Asset Framework (AF)</div>
+            <div class="form-help">Telemetry attributes ingested from Asset Framework (AF)</div>
           </div>
-          <div class="btn-group">
-            <button id="btn-refresh-dashboard" class="btn btn-secondary btn-sm">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-              Refresh Table
-            </button>
-          </div>
+          <button id="btn-refresh-dashboard" class="btn btn-secondary btn-sm">Refresh Table</button>
         </div>
 
         <div class="table-responsive">
@@ -280,18 +247,18 @@
             <thead>
               <tr>
                 <th>PI Attribute Name</th>
-                <th>PI AF Full Path</th>
-                <th>Current Value</th>
+                <th>Full AF Path</th>
+                <th>Value</th>
                 <th>Unit</th>
                 <th>PI Timestamp</th>
-                <th>Quality / Status</th>
-                <th>Target ERP Code</th>
-                <th>Ingestion Time</th>
+                <th>Quality</th>
+                <th>ERP Meter Tag</th>
+                <th>Ingested</th>
               </tr>
             </thead>
             <tbody id="last-pulls-tbody">
               <tr>
-                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                <td colspan="8" style="text-align: center; color: var(--ink-secondary); padding: 32px;">
                   Waiting for initial data pull cycle...
                 </td>
               </tr>
@@ -300,29 +267,29 @@
         </div>
       </div>
 
-      <!-- DIAGNOSTIC & AUDIT LOGS -->
+      <!-- AUDIT LOGS -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-              Pipeline Activity & Error Logs
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              Activity & Diagnostic Logs
             </div>
-            <div class="form-help">Live execution log persisted to data/logs.json</div>
+            <div class="form-help">Audit records persisted in data/logs.json</div>
           </div>
           <div class="btn-group">
-            <select id="log-filter-category" class="form-control" style="padding: 0.3rem 0.6rem; font-size: 0.8rem; width: auto;">
+            <select id="log-filter-category" class="form-control" style="width: auto; height: 28px; font-size: 11px;">
               <option value="ALL">All Categories</option>
               <option value="PI_WEB_API">AVEVA PI Web API</option>
               <option value="ORACLE_ERP">Oracle ERP Cloud</option>
               <option value="PIPELINE">Pipeline Engine</option>
               <option value="SYSTEM">System</option>
             </select>
-            <button id="btn-refresh-logs" class="btn btn-secondary btn-sm">Refresh Logs</button>
+            <button id="btn-refresh-logs" class="btn btn-secondary btn-sm">Refresh</button>
           </div>
         </div>
 
-        <div id="activity-logs-box" class="json-preview" style="max-height: 200px; color: #cbd5e1;">
+        <div id="activity-logs-box" class="json-preview" style="max-height: 180px;">
           Loading log events...
         </div>
       </div>
@@ -331,49 +298,43 @@
 
 
     <!-- ========================================================
-         VIEW 2: ATTRIBUTE MAPPING (PI AF -> ORACLE ERP)
+         VIEW 2: ATTRIBUTE MAPPING
          ======================================================== -->
     <section id="view-mappings" class="page-view">
       
       <div class="alert-banner alert-info">
         <div class="alert-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
         </div>
         <div>
-          <strong>PI AF to Oracle ERP Destination Mapping</strong>
-          <p style="margin-top: 0.2rem; font-size: 0.85rem;">
-            Select attributes from your AVEVA PI Asset Framework (AF) databases, define scaling/transformations, and configure their corresponding target fields (e.g. meter tags, readings, UOM) in Oracle ERP Cloud. Stored cleanly in <code>config/mappings.json</code>.
-          </p>
+          <div class="alert-title">Attribute Mapping Configuration</div>
+          <div class="alert-desc">
+            Map attributes from your AVEVA PI Asset Framework (AF) database into target Oracle ERP Cloud fields and meter tags. Saved to <code>config/mappings.json</code>.
+          </div>
         </div>
       </div>
 
-      <!-- Quick AF Tree Browser Card -->
+      <!-- AF Tree Browser -->
       <div class="form-section">
         <div class="section-title-bar">
-          <div class="section-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-            AVEVA PI AF Hierarchy Explorer
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+              PI AF Hierarchy Explorer
+            </div>
+            <div class="form-help">Traverse AF servers, databases, elements, and attributes</div>
           </div>
-          <div class="btn-group">
-            <button id="btn-load-sample-templates" class="btn btn-secondary btn-sm">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-              Load Preset Templates
-            </button>
-          </div>
+          <button id="btn-load-sample-templates" class="btn btn-secondary btn-sm">Load Preset Assets</button>
         </div>
 
-        <p class="form-help" style="margin-bottom: 0.75rem;">
-          Click through your PI Asset Server, AF Database, and Elements below to view and select attributes directly:
-        </p>
-
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <input type="text" id="af-current-path-display" class="form-control form-control-mono" readonly value="\\" placeholder="Current AF Path">
-          <button id="btn-af-nav-up" class="btn btn-secondary btn-sm">Up Level</button>
+          <button id="btn-af-nav-up" class="btn btn-secondary btn-sm">Up</button>
           <button id="btn-af-browse-root" class="btn btn-secondary btn-sm">Root</button>
         </div>
 
         <div id="af-browser-nodes" class="af-tree-browser">
-          <div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem; text-align: center;">
+          <div style="color: var(--ink-secondary); font-size: 12px; padding: 16px; text-align: center;">
             Loading AF tree...
           </div>
         </div>
@@ -384,20 +345,14 @@
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
               Configured Attribute Mappings (<span id="mappings-count-badge">0</span>)
             </div>
-            <div class="form-help">Attributes queued for extraction and mapping into Oracle ERP Cloud payloads</div>
+            <div class="form-help">Attributes dispatched to Oracle ERP Cloud</div>
           </div>
           <div class="btn-group">
-            <button id="btn-add-mapping-modal" class="btn btn-primary btn-sm">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Add New Mapping
-            </button>
-            <button id="btn-save-all-mappings" class="btn btn-success btn-sm">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-              Save Mappings (JSON)
-            </button>
+            <button id="btn-add-mapping-modal" class="btn btn-secondary btn-sm">Add Attribute</button>
+            <button id="btn-save-all-mappings" class="btn btn-primary btn-sm">Save Mappings</button>
           </div>
         </div>
 
@@ -405,11 +360,11 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width: 40px;">Active</th>
+                <th style="width: 44px;">Active</th>
                 <th>PI Attribute Name</th>
-                <th>PI AF Full Path</th>
+                <th>Full AF Path</th>
                 <th>ERP Meter Tag</th>
-                <th>ERP Target Field</th>
+                <th>ERP Value Field</th>
                 <th>UOM</th>
                 <th>Scale / Round</th>
                 <th style="text-align: right;">Actions</th>
@@ -422,19 +377,17 @@
         </div>
       </div>
 
-      <!-- Live Generated Oracle ERP Cloud Payload Preview -->
+      <!-- Live Payload Preview -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-              Target Oracle ERP Cloud Payload Preview
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              Oracle ERP Cloud Payload Preview
             </div>
-            <div class="form-help">Live dynamic preview of the JSON payload constructed for Oracle ERP Cloud REST API</div>
+            <div class="form-help">Real-time inspection of the generated JSON payload</div>
           </div>
-          <button id="btn-refresh-payload-preview" class="btn btn-secondary btn-sm">
-            Refresh Payload Preview
-          </button>
+          <button id="btn-refresh-payload-preview" class="btn btn-secondary btn-sm">Refresh Preview</button>
         </div>
 
         <div id="erp-payload-preview-box" class="json-preview">
@@ -446,61 +399,55 @@
 
 
     <!-- ========================================================
-         VIEW 3: SETTINGS (PI WEB API & ORACLE ERP CLOUD)
+         VIEW 3: SETTINGS
          ======================================================== -->
     <section id="view-settings" class="page-view">
       
-      <!-- Oracle ERP Architecture & Research Advisory Banner -->
+      <!-- Guidance Banner -->
       <div class="alert-banner alert-info">
         <div class="alert-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
         </div>
         <div>
-          <strong>Oracle ERP Cloud API Authentication & Integration Architecture:</strong>
-          <ul style="margin-top: 0.35rem; padding-left: 1.25rem; font-size: 0.85rem; line-height: 1.4;">
-            <li><strong>OAuth 2.0 (Recommended for Production):</strong> Requests an access token from Oracle Identity Cloud Service (IDCS/IAM) using <code>grant_type=client_credentials</code> with your <em>Client ID</em> and <em>Client Secret</em>, then attaches <code>Authorization: Bearer &lt;access_token&gt;</code> to ERP REST calls.</li>
-            <li><strong>Basic Authentication:</strong> Alternative for dev/test instances, sending Base64-encoded <code>username:password</code> in the <code>Authorization: Basic ...</code> header.</li>
-            <li><strong>Pending Connection Setup:</strong> If you do not have the Oracle credentials yet, leave the ERP toggle OFF. The pipeline will pull AVEVA PI data safely and present "Pending connection setup" on the dashboard.</li>
-          </ul>
+          <div class="alert-title">Oracle ERP Cloud REST Authentication</div>
+          <div class="alert-desc">
+            OAuth 2.0 (Client Credentials Grant) via Oracle IDCS / IAM is recommended for production. Alternatively, HTTP Basic Auth is supported for testing. Leave the transmission toggle OFF until credentials are provided.
+          </div>
         </div>
       </div>
 
-      <!-- Form 1: AVEVA PI Web API Settings -->
+      <!-- AVEVA PI Settings -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
               AVEVA PI Web API Configuration
             </div>
-            <div class="form-help">Configure connection, authentication, and AF defaults for your OSIsoft/AVEVA PI System</div>
+            <div class="form-help">PI Web API endpoint and authentication credentials</div>
           </div>
-          <button type="button" id="btn-test-pi-settings" class="btn btn-secondary btn-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-            Test PI Connection
-          </button>
+          <button type="button" id="btn-test-pi-settings" class="btn btn-secondary btn-sm">Test PI Connection</button>
         </div>
 
         <div class="form-grid">
           <div class="form-group full-width">
-            <label class="form-label" for="setting-pi-url">PI Web API Base URL</label>
-            <input type="url" id="setting-pi-url" class="form-control" placeholder="https://your-pi-server.domain.com/piwebapi">
-            <span class="form-help">Default PI Web API root endpoint (e.g. <code>https://pi-server.local/piwebapi</code>)</span>
+            <label class="form-label" for="setting-pi-url">PI Web API URL</label>
+            <input type="url" id="setting-pi-url" class="form-control" placeholder="https://pi-server.local/piwebapi">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="setting-pi-auth-type">Authentication Method</label>
             <select id="setting-pi-auth-type" class="form-control">
               <option value="basic">Basic Authentication (Username / Password)</option>
-              <option value="bearer">Bearer Token / OAuth</option>
+              <option value="bearer">Bearer Token</option>
               <option value="kerberos">Windows Integrated (Kerberos/NTLM)</option>
               <option value="anonymous">Anonymous / None</option>
             </select>
           </div>
 
           <div class="form-group" id="group-pi-username">
-            <label class="form-label" for="setting-pi-username">Username / Service Account</label>
-            <input type="text" id="setting-pi-username" class="form-control" placeholder="DOMAIN\pi_service_user">
+            <label class="form-label" for="setting-pi-username">Username</label>
+            <input type="text" id="setting-pi-username" class="form-control" placeholder="DOMAIN\service_account">
           </div>
 
           <div class="form-group" id="group-pi-password">
@@ -510,62 +457,56 @@
 
           <div class="form-group" id="group-pi-bearer" style="display: none;">
             <label class="form-label" for="setting-pi-bearer">Bearer Token</label>
-            <input type="text" id="setting-pi-bearer" class="form-control form-control-mono" placeholder="eyJhbGciOi...">
+            <input type="text" id="setting-pi-bearer" class="form-control form-control-mono" placeholder="Bearer eyJ...">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-pi-af-server">Default PI AF Server Name</label>
+            <label class="form-label" for="setting-pi-af-server">Default AF Server</label>
             <input type="text" id="setting-pi-af-server" class="form-control" placeholder="PISRV01">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-pi-af-db">Default PI AF Database Name</label>
+            <label class="form-label" for="setting-pi-af-db">Default AF Database</label>
             <input type="text" id="setting-pi-af-db" class="form-control" placeholder="Plant_Operations">
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Security & Simulation Options</label>
-            <label class="form-check">
-              <input type="checkbox" id="setting-pi-verify-ssl">
-              <span>Verify SSL Certificate (Uncheck if using internal plant self-signed cert)</span>
-            </label>
-            <label class="form-check" style="margin-top: 0.4rem;">
-              <input type="checkbox" id="setting-pi-simulation">
-              <span style="color: var(--primary); font-weight: 600;">Enable Built-in Plant Telemetry Simulator</span>
-            </label>
-            <span class="form-help">Generates live realistic industrial data if physical PI server is offline or on restricted plant network.</span>
+          <div class="form-group full-width">
+            <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 4px;">
+              <label class="form-check">
+                <input type="checkbox" id="setting-pi-verify-ssl">
+                <span>Verify SSL Certificate (Disable for plant self-signed certificates)</span>
+              </label>
+              <label class="form-check">
+                <input type="checkbox" id="setting-pi-simulation">
+                <span>Enable Telemetry Simulation Engine (Offline Demo Mode)</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        <div id="pi-test-result-box" class="error-console" style="display: none; margin-top: 1rem;">
-          <!-- Result from test connection -->
-        </div>
+        <div id="pi-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
-      <!-- Form 2: Oracle ERP Cloud API Settings -->
+      <!-- Oracle ERP Settings -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              Oracle ERP Cloud API Configuration
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Oracle ERP Cloud Configuration
             </div>
-            <div class="form-help">Configure Oracle ERP Cloud REST endpoint, OAuth 2.0 / Basic credentials, and resource targets</div>
+            <div class="form-help">Destination pod endpoint, OAuth 2.0 credentials, and REST resource</div>
           </div>
-          <button type="button" id="btn-test-erp-settings" class="btn btn-secondary btn-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
-            Test ERP Handshake / Token
-          </button>
+          <button type="button" id="btn-test-erp-settings" class="btn btn-secondary btn-sm">Test Handshake / Token</button>
         </div>
 
         <div class="form-grid">
-          
-          <div class="form-group full-width" style="background: #f8fafc; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color);">
-            <label class="form-check" style="font-weight: 600;">
+          <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-check" style="font-weight: 500;">
               <input type="checkbox" id="setting-erp-enabled">
               <span>Enable Oracle ERP Cloud Transmission</span>
             </label>
-            <span class="form-help">When unchecked, status remains <strong>"Pending connection setup"</strong> and data is safely staged locally.</span>
+            <span class="form-help" style="margin-left: 24px;">When unchecked, status remains "Pending connection setup" and data is safely staged locally.</span>
           </div>
 
           <div class="form-group">
@@ -573,42 +514,39 @@
             <select id="setting-erp-auth-type" class="form-control">
               <option value="oauth2">OAuth 2.0 (Oracle IDCS Client Credentials - Recommended)</option>
               <option value="basic">Basic Authentication (Username / Password)</option>
-              <option value="bearer">Static Bearer Token / API Key</option>
+              <option value="bearer">Static Bearer Token</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-erp-base-url">Oracle ERP Cloud Pod Base URL</label>
-            <input type="url" id="setting-erp-base-url" class="form-control" placeholder="https://fa-xxxx-saasfaprod1.fa.ocs.oraclecloud.com">
-            <span class="form-help">Oracle Fusion application pod host</span>
+            <label class="form-label" for="setting-erp-base-url">Oracle ERP Pod URL</label>
+            <input type="url" id="setting-erp-base-url" class="form-control" placeholder="https://xxxx.fa.oraclecloud.com">
           </div>
 
-          <!-- OAuth 2.0 Fields -->
+          <!-- OAuth Fields -->
           <div class="form-group full-width erp-oauth-field">
             <label class="form-label" for="setting-erp-token-url">OAuth 2.0 Token Endpoint (IDCS / Identity Domain)</label>
             <input type="url" id="setting-erp-token-url" class="form-control form-control-mono" placeholder="https://idcs-xxxx.identity.oraclecloud.com/oauth2/v1/token">
-            <span class="form-help">IDCS or Oracle Cloud Infrastructure (OCI) Identity Domain OAuth 2.0 token URL</span>
           </div>
 
           <div class="form-group erp-oauth-field">
             <label class="form-label" for="setting-erp-client-id">Client ID</label>
-            <input type="text" id="setting-erp-client-id" class="form-control form-control-mono" placeholder="e.g. 748382910abcdef...">
+            <input type="text" id="setting-erp-client-id" class="form-control form-control-mono" placeholder="Client ID">
           </div>
 
           <div class="form-group erp-oauth-field">
             <label class="form-label" for="setting-erp-client-secret">Client Secret</label>
-            <input type="password" id="setting-erp-client-secret" class="form-control" placeholder="••••••••••••••••">
+            <input type="password" id="setting-erp-client-secret" class="form-control" placeholder="••••••••">
           </div>
 
-          <div class="form-group erp-oauth-field">
+          <div class="form-group erp-oauth-field full-width">
             <label class="form-label" for="setting-erp-scope">OAuth Scope</label>
             <input type="text" id="setting-erp-scope" class="form-control form-control-mono" value="urn:opc:resource:consumer::all">
-            <span class="form-help">Default: <code>urn:opc:resource:consumer::all</code></span>
           </div>
 
-          <!-- Basic Auth Fields -->
+          <!-- Basic Fields -->
           <div class="form-group erp-basic-field" style="display: none;">
-            <label class="form-label" for="setting-erp-username">Oracle Cloud ERP Username</label>
+            <label class="form-label" for="setting-erp-username">Username</label>
             <input type="text" id="setting-erp-username" class="form-control" placeholder="integration_user">
           </div>
 
@@ -619,47 +557,46 @@
 
           <!-- Bearer Field -->
           <div class="form-group erp-bearer-field full-width" style="display: none;">
-            <label class="form-label" for="setting-erp-bearer-token">Bearer Access Token</label>
-            <input type="text" id="setting-erp-bearer-token" class="form-control form-control-mono" placeholder="Bearer eyJhbGci...">
+            <label class="form-label" for="setting-erp-bearer-token">Bearer Token</label>
+            <input type="text" id="setting-erp-bearer-token" class="form-control form-control-mono" placeholder="Bearer eyJ...">
           </div>
 
-          <!-- Endpoint & Method -->
+          <!-- Resource Endpoint -->
           <div class="form-group full-width">
-            <label class="form-label" for="setting-erp-resource-endpoint">Resource Path / REST Endpoint</label>
+            <label class="form-label" for="setting-erp-resource-endpoint">Resource Path</label>
             <input type="text" id="setting-erp-resource-endpoint" class="form-control form-control-mono" value="/fscmRestApi/resources/11.13.18.05/standardReceipts">
-            <span class="form-help">Oracle Fusion REST Resource (e.g. <code>/fscmRestApi/resources/latest/inventoryTransactions</code> or <code>/fscmRestApi/resources/11.13.18.05/meterReadings</code>)</span>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="setting-erp-http-method">HTTP Method</label>
             <select id="setting-erp-http-method" class="form-control">
-              <option value="POST">POST (Create new record)</option>
-              <option value="PATCH">PATCH (Update existing item)</option>
-              <option value="PUT">PUT (Replace item)</option>
+              <option value="POST">POST</option>
+              <option value="PATCH">PATCH</option>
+              <option value="PUT">PUT</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Dry Run Mode</label>
-            <label class="form-check">
+            <label class="form-label">Dry Run Simulation</label>
+            <label class="form-check" style="margin-top: 6px;">
               <input type="checkbox" id="setting-erp-dry-run">
-              <span>Enable Dry Run Mode (Validates payload structure and simulates ERP 201 Created)</span>
+              <span>Simulate HTTP 201 Created Response</span>
             </label>
           </div>
-
         </div>
 
-        <div id="erp-test-result-box" class="error-console" style="display: none; margin-top: 1rem;">
-          <!-- Result from test connection -->
-        </div>
+        <div id="erp-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
-      <!-- Form 3: Pipeline Scheduler & Storage Settings -->
+      <!-- Scheduler & Persistence -->
       <div class="form-section">
         <div class="section-title-bar">
-          <div class="section-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            Pipeline Scheduling & Persistence
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Scheduler & Persistence
+            </div>
+            <div class="form-help">Automated cycle frequency and JSON file storage locations</div>
           </div>
         </div>
 
@@ -667,23 +604,19 @@
           <div class="form-group">
             <label class="form-label" for="setting-pipeline-interval">Pull & Dispatch Interval (Seconds)</label>
             <input type="number" id="setting-pipeline-interval" class="form-control" min="5" max="3600" value="30">
-            <span class="form-help">Frequency of automated telemetry extraction (Minimum: 5 seconds)</span>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Persistence Storage</label>
-            <div style="background: #f1f5f9; padding: 0.6rem; border-radius: 6px; font-size: 0.8rem; font-family: var(--font-mono);">
-              Config: ./config/settings.json, ./config/mappings.json<br>
-              Data: ./data/pull_history.json, ./data/publish_history.json, ./data/logs.json
+            <label class="form-label">Storage Architecture</label>
+            <div style="background: var(--bg-subtle); padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--ink-secondary);">
+              config/settings.json · config/mappings.json · data/pull_history.json
             </div>
-            <span class="form-help">Zero external database dependency. Pure thread-safe JSON persistence.</span>
           </div>
         </div>
 
-        <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
-          <button type="button" id="btn-save-settings" class="btn btn-primary" style="padding: 0.65rem 1.5rem; font-size: 0.95rem;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-            Save All Settings (JSON)
+        <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+          <button type="button" id="btn-save-settings" class="btn btn-primary" style="height: 36px; padding: 0 20px;">
+            Save Settings
           </button>
         </div>
       </div>
@@ -698,8 +631,8 @@
   <div id="mapping-modal" class="modal-backdrop">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 700;">Add Attribute Mapping</h3>
-        <button id="btn-close-modal" class="btn btn-outline btn-sm" style="border: none; font-size: 1.2rem; cursor: pointer;">✕</button>
+        <h3 id="modal-title" style="font-size: 14px; font-weight: 600;">Add Attribute Mapping</h3>
+        <button id="btn-close-modal" class="btn btn-outline btn-sm" style="border: none; cursor: pointer;">✕</button>
       </div>
 
       <form id="mapping-form">
@@ -722,7 +655,7 @@
           </div>
 
           <div class="form-group full-width">
-            <label class="form-label" for="modal-element-path">AF Element Hierarchy Path</label>
+            <label class="form-label" for="modal-element-path">AF Element Path</label>
             <input type="text" id="modal-element-path" class="form-control form-control-mono" placeholder="Unit 1\Boilers\Boiler-101">
           </div>
 
@@ -732,36 +665,34 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="modal-target-tag">Oracle ERP Meter Code / Tag *</label>
+            <label class="form-label" for="modal-target-tag">ERP Meter Code / Tag *</label>
             <input type="text" id="modal-target-tag" class="form-control form-control-mono" required placeholder="BLR101_STM_TEMP">
-            <span class="form-help">Destination meter tag or asset code in ERP</span>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="modal-target-field">Target Value Field Name</label>
             <input type="text" id="modal-target-field" class="form-control form-control-mono" value="readingValue">
-            <span class="form-help">JSON key in ERP payload</span>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="modal-uom">Unit of Measure (UOM)</label>
-            <input type="text" id="modal-uom" class="form-control" placeholder="deg C, bar, m3/h, MW">
+            <input type="text" id="modal-uom" class="form-control" placeholder="deg C, bar, MW">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="modal-scale">Multiplier / Scale Factor</label>
+            <label class="form-label" for="modal-scale">Scale Multiplier</label>
             <input type="number" id="modal-scale" class="form-control" step="0.0001" value="1.0">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="modal-decimals">Decimal Places (Rounding)</label>
+            <label class="form-label" for="modal-decimals">Decimal Places</label>
             <input type="number" id="modal-decimals" class="form-control" min="0" max="6" value="2">
           </div>
 
           <div class="form-group">
-            <label class="form-check" style="margin-top: 1.5rem;">
+            <label class="form-check" style="margin-top: 24px;">
               <input type="checkbox" id="modal-enabled" checked>
-              <span>Attribute Active in Pipeline</span>
+              <span>Active in Pipeline</span>
             </label>
           </div>
 
@@ -769,18 +700,18 @@
 
         <div class="modal-footer">
           <button type="button" id="btn-cancel-modal" class="btn btn-secondary">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Attribute Mapping</button>
+          <button type="submit" class="btn btn-primary">Save Mapping</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Toast Notification Container -->
+  <!-- Toast Notifications -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Footer -->
+  <!-- Minimal Footer -->
   <footer class="app-footer">
-    AVEVA PI Web API to Oracle ERP Cloud Integration Engine &bull; Storage: Pure JSON files &bull; Production IoT Pipeline
+    AVEVA PI Web API → Oracle ERP Cloud Data Pipeline · JSON Storage Architecture
   </footer>
 
   <script src="/static/js/app.js"></script>

@@ -150,13 +150,32 @@ def browse_af(path: str = ""):
 @app.get("/api/mappings/preview")
 def preview_erp_payload():
     """Generate a preview of the Oracle ERP Cloud payload based on currently configured mappings."""
-    settings = load_settings()
     mappings = load_mappings()
     enabled = [m for m in mappings if m.get("enabled", True)]
 
-    # Fetch sample/simulated readings for enabled mappings
-    client = PIWebApiClient(settings.get("pi_web_api", {}))
-    sample_items = [client.fetch_attribute_value(m) for m in enabled]
+    # Use the latest pulled values from pull history if available, else clean preview values
+    recent_batches = get_pull_history(limit=1)
+    cached_values = {}
+    if recent_batches and recent_batches[0].get("items"):
+        for it in recent_batches[0]["items"]:
+            if it.get("attribute_name"):
+                cached_values[it["attribute_name"]] = it
+
+    sample_items = []
+    for m in enabled:
+        attr_name = m.get("attribute_name", "Tag")
+        if attr_name in cached_values:
+            sample_items.append(cached_values[attr_name])
+        else:
+            sample_items.append({
+                "attribute_name": attr_name,
+                "full_path": m.get("full_path", ""),
+                "value": 100.0 * float(m.get("scale_factor", 1.0)),
+                "uom": m.get("uom", ""),
+                "timestamp": "2026-09-17T10:00:00Z",
+                "quality": "Good",
+                "status": "Sample"
+            })
 
     payload = pipeline_engine._build_erp_payload(sample_items, enabled)
     return payload
