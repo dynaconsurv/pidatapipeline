@@ -3,10 +3,12 @@ AVEVA PI Web API Client.
 Communicates with OSIsoft / AVEVA PI Web API to browse AF hierarchy and retrieve current/recorded stream values.
 Includes realistic plant simulation mode for offline development and testing.
 """
+import os
 import math
 import random
 import re
 import time
+import urllib
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -21,12 +23,14 @@ try:
     HAS_SSPI = True
 except ImportError:
     HAS_SSPI = False
+    HttpNegotiateAuth = None
 
 try:
     from requests_ntlm import HttpNtlmAuth
     HAS_NTLM = True
 except ImportError:
     HAS_NTLM = False
+    HttpNtlmAuth = None
 
 
 class PIWebApiClient:
@@ -348,6 +352,10 @@ class PIWebApiClient:
                                 "details": data
                             }
                         else:
+                            domain, user = self._parse_domain_and_user(self.username)
+                            has_domain = bool(domain)
+                            err_lines = []
+
                             if self.auth_type == "basic":
                                 if not has_domain and self.username:
                                     err_lines.append(
@@ -380,6 +388,9 @@ class PIWebApiClient:
                                         "Switch 'Authentication Method' to 'Basic Authentication' with 'DOMAIN\\username'."
                                     )
 
+                            if server_msg:
+                                err_lines.append(f"\nServer Message: {server_msg}")
+
                             if server_msg and ("denied" in server_msg.lower() or "identity" in server_msg.lower()):
                                 err_lines.append(
                                     "\nPI AF Identity Mapping:\n"
@@ -387,6 +398,16 @@ class PIWebApiClient:
                                     "Confirm in PI System Management Tools (SMT) or PI System Explorer that this Windows account is mapped "
                                     "to a PI Identity or PI AF Identity with Read permissions on the AF Database."
                                 )
+
+                            if not err_lines:
+                                err_lines.append(f"HTTP {resp.status_code} Unauthorized. Server accepted schemes: {server_methods_str}.")
+
+                        recommended_auth = alt_auth_success
+                        if not recommended_auth:
+                            if server_supports_negotiate and self.auth_type != "kerberos":
+                                recommended_auth = "kerberos"
+                            elif server_supports_basic and self.auth_type != "basic":
+                                recommended_auth = "basic"
 
                         return {
                             "success": False,
@@ -396,7 +417,7 @@ class PIWebApiClient:
                             "endpoint_tested": probe_url,
                             "www_authenticate": www_auth,
                             "server_message": server_msg,
-                            "recommended_auth": alt_auth_success,
+                            "recommended_auth": recommended_auth,
                             "message": f"PI Web API reachable, but authentication failed (HTTP {resp.status_code})",
                             "error": "\n".join(err_lines)
                         }
