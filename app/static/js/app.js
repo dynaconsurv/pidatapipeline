@@ -1369,6 +1369,13 @@ async function handleTestPiSettings() {
         document.getElementById("setting-pi-url").value = result.normalized_url;
         showToast("PI Web API URL updated to " + result.normalized_url, "info");
       }
+      if (result.recommended_auth && result.recommended_auth !== cfg.auth_type) {
+        const recLabel = result.recommended_auth === "kerberos" ? "Windows Integrated (Kerberos / NTLM / SSO)" : result.recommended_auth;
+        text += `\n\n[Auto-Detected Auth]: Server accepted '${escapeHtml(recLabel)}'. Updated authentication dropdown. Remember to click 'Save Settings'.`;
+        document.getElementById("setting-pi-auth-type").value = result.recommended_auth;
+        handlePiAuthChange();
+        showToast("PI Auth Method updated to " + recLabel, "info");
+      }
       if (result.details) {
         text += `\n\nResponse:\n${JSON.stringify(result.details, null, 2)}`;
       }

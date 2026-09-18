@@ -67,13 +67,20 @@ class PIWebApiClient:
         """Build Windows Integrated (Kerberos / NTLM / SSPI) auth handler with delegation and host matching."""
         if not HAS_SSPI:
             return None
-        parsed = urllib.parse.urlparse(self.url)
-        host = parsed.hostname
+        parsed = urllib.parse.urlparse(self.url) if self.url else None
+        host = parsed.hostname if parsed else None
 
         if not self.username and not self.password:
             # Single Sign-On using the current logged-in Windows user session (exactly like browser)
             return HttpNegotiateAuth(host=host, delegate=True)
         domain, user = self._parse_domain_and_user(self.username)
+        # If domain was omitted but machine is domain-joined, check USERDOMAIN
+        if not domain and os.environ.get("USERDOMAIN"):
+            win_domain = os.environ.get("USERDOMAIN")
+            computer_name = os.environ.get("COMPUTERNAME")
+            if win_domain and computer_name and win_domain.upper() != computer_name.upper():
+                domain = win_domain
+
         return HttpNegotiateAuth(
             username=user,
             domain=domain,
@@ -83,21 +90,23 @@ class PIWebApiClient:
         )
 
     def _get_auth(self):
-        if self.auth_type in ("kerberos", "ntlm", "windows"):
-            if not self.username and not self.password:
-                # Windows Single Sign-On (SSO) using the active logon session
-                if HAS_SSPI:
-                    return self._get_negotiate_auth()
-            else:
-                # When explicit credentials are supplied, NTLMv2 is the exact protocol browsers use
-                if HAS_NTLM:
-                    domain, user = self._parse_domain_and_user(self.username)
-                    ntlm_user = f"{domain}\\{user}" if domain else user
-                    return HttpNtlmAuth(ntlm_user, self.password)
-                elif HAS_SSPI:
-                    return self._get_negotiate_auth()
-                elif self.username:
-                    return requests.auth.HTTPBasicAuth(self.username, self.password)
+        if self.auth_type in ("kerberos", "windows"):
+            # Windows Integrated Authentication: Prioritize SSPI Negotiate (Kerberos with delegation to AF)
+            if HAS_SSPI:
+                return self._get_negotiate_auth()
+            elif HAS_NTLM and self.username and self.password:
+                domain, user = self._parse_domain_and_user(self.username)
+                ntlm_user = f"{domain}\\{user}" if domain else user
+                return HttpNtlmAuth(ntlm_user, self.password)
+            elif self.username and self.password:
+                return requests.auth.HTTPBasicAuth(self.username, self.password)
+        elif self.auth_type == "ntlm":
+            if HAS_NTLM and self.username and self.password:
+                domain, user = self._parse_domain_and_user(self.username)
+                ntlm_user = f"{domain}\\{user}" if domain else user
+                return HttpNtlmAuth(ntlm_user, self.password)
+            elif HAS_SSPI:
+                return self._get_negotiate_auth()
         elif self.auth_type == "basic":
             if self.username or self.password:
                 return requests.auth.HTTPBasicAuth(self.username, self.password)
@@ -257,8 +266,39 @@ class PIWebApiClient:
                         alt_method_name = ""
                         alt_resp = None
 
-                        # Probe 1: NTLMv2 with explicit domain credentials (exact protocol Chrome/Edge uses)
-                        if (server_supports_ntlm or server_supports_negotiate) and HAS_NTLM and self.username and self.password:
+                        # Probe 1: Windows SSPI Negotiate (Kerberos with delegation to AF) with explicit credentials
+                        if (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI and self.username and self.password:
+                            try:
+                                sspi_session = requests.Session()
+                                sspi_session.verify = self.verify_ssl
+                                sspi_session.headers.update(self._get_headers())
+                                sspi_session.auth = self._get_negotiate_auth()
+                                p_resp = sspi_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
+                                    alt_auth_success = "kerberos"
+                                    alt_method_name = "Windows Integrated (Kerberos / SSPI)"
+                                    alt_resp = p_resp
+                            except Exception:
+                                pass
+
+                        # Probe 2: Windows SSPI Single Sign-On (SSO) using current active Windows session
+                        if not alt_auth_success and (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI:
+                            try:
+                                sso_session = requests.Session()
+                                sso_session.verify = self.verify_ssl
+                                sso_session.headers.update(self._get_headers())
+                                parsed_h = urllib.parse.urlparse(base).hostname if base else None
+                                sso_session.auth = HttpNegotiateAuth(host=parsed_h, delegate=True)
+                                p_resp = sso_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
+                                    alt_auth_success = "kerberos"
+                                    alt_method_name = "Windows Single Sign-On (SSO)"
+                                    alt_resp = p_resp
+                            except Exception:
+                                pass
+
+                        # Probe 3: NTLMv2 with explicit domain credentials
+                        if not alt_auth_success and (server_supports_ntlm or server_supports_negotiate) and HAS_NTLM and self.username and self.password:
                             try:
                                 domain, user = self._parse_domain_and_user(self.username)
                                 ntlm_user = f"{domain}\\{user}" if domain else user
@@ -269,27 +309,12 @@ class PIWebApiClient:
                                 p_resp = ntlm_session.get(probe_url, timeout=self.timeout)
                                 if p_resp.status_code in (200, 201):
                                     alt_auth_success = "kerberos"
-                                    alt_method_name = "Windows Integrated (NTLMv2 / Kerberos)"
+                                    alt_method_name = "Windows Integrated (NTLMv2)"
                                     alt_resp = p_resp
                             except Exception:
                                 pass
 
-                        # Probe 2: Kerberos Single Sign-On using active Windows logon session
-                        if not alt_auth_success and (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI:
-                            try:
-                                sso_session = requests.Session()
-                                sso_session.verify = self.verify_ssl
-                                sso_session.headers.update(self._get_headers())
-                                sso_session.auth = self._get_negotiate_auth()
-                                p_resp = sso_session.get(probe_url, timeout=self.timeout)
-                                if p_resp.status_code in (200, 201):
-                                    alt_auth_success = "kerberos"
-                                    alt_method_name = "Windows Single Sign-On (SSO)"
-                                    alt_resp = p_resp
-                            except Exception:
-                                pass
-
-                        # Probe 3: Basic Authentication
+                        # Probe 4: Basic Authentication
                         if not alt_auth_success and server_supports_basic and self.username and self.password and self.auth_type != "basic":
                             try:
                                 basic_session = requests.Session()
