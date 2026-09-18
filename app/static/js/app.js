@@ -1257,9 +1257,23 @@ window.triggerServerRestart = triggerServerRestart;
 
 function handlePiAuthChange() {
   const type = document.getElementById("setting-pi-auth-type").value;
-  document.getElementById("group-pi-username").style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
-  document.getElementById("group-pi-password").style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
-  document.getElementById("group-pi-bearer").style.display = (type === "bearer") ? "flex" : "none";
+  const userGroup = document.getElementById("group-pi-username");
+  const passGroup = document.getElementById("group-pi-password");
+  const bearerGroup = document.getElementById("group-pi-bearer");
+  const userInput = document.getElementById("setting-pi-username");
+  const userHelp = document.getElementById("help-pi-username");
+
+  userGroup.style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
+  passGroup.style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
+  bearerGroup.style.display = (type === "bearer") ? "flex" : "none";
+
+  if (type === "kerberos") {
+    if (userInput) userInput.placeholder = "Leave blank for Windows SSO, or DOMAIN\\username";
+    if (userHelp) userHelp.innerHTML = "Leave blank for <strong>Windows Single Sign-On (SSO)</strong>, or specify <code>DOMAIN\\username</code>.";
+  } else if (type === "basic") {
+    if (userInput) userInput.placeholder = "DOMAIN\\username or username@domain.com";
+    if (userHelp) userHelp.innerHTML = "For Basic Auth: specify <code>DOMAIN\\username</code> or <code>username@domain.com</code>.";
+  }
 }
 
 function handleErpAuthChange() {
@@ -1369,7 +1383,22 @@ async function handleTestPiSettings() {
         text += `\nTested Endpoint: ${escapeHtml(result.endpoint_tested)}`;
       }
       text += `\n\n${escapeHtml(result.error || '')}`;
+
+      if (result.recommended_auth) {
+        const recLabel = result.recommended_auth === "kerberos" ? "Windows Integrated (Kerberos / NTLM)" : "Basic Authentication";
+        text += `\n\n<button type="button" id="btn-switch-recommended-auth" class="btn btn-primary btn-sm" style="margin-top: 8px;">Switch to ${escapeHtml(recLabel)} &amp; Retest</button>`;
+      }
+
       box.innerHTML = text;
+
+      if (result.recommended_auth) {
+        document.getElementById("btn-switch-recommended-auth")?.addEventListener("click", async () => {
+          document.getElementById("setting-pi-auth-type").value = result.recommended_auth;
+          handlePiAuthChange();
+          await handleSaveSettings();
+          handleTestPiSettings();
+        });
+      }
     }
   } catch (e) {
     box.className = "error-console danger";

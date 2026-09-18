@@ -516,15 +516,21 @@
             <label class="form-label" for="setting-pi-auth-type">Authentication Method</label>
             <select id="setting-pi-auth-type" class="form-control">
               <option value="basic">Basic Authentication (Username / Password)</option>
+              <option value="kerberos">Windows Integrated (Kerberos / NTLM / SSO)</option>
               <option value="bearer">Bearer Token</option>
-              <option value="kerberos">Windows Integrated (Kerberos/NTLM)</option>
               <option value="anonymous">Anonymous / None</option>
             </select>
+            <div class="form-help" id="help-pi-auth-type" style="margin-top: 4px; font-size: 11px;">
+              Select Basic Auth or Windows Integrated. For Kerberos/NTLM, leave username blank for Windows SSO.
+            </div>
           </div>
 
           <div class="form-group" id="group-pi-username">
             <label class="form-label" for="setting-pi-username">Username</label>
             <input type="text" id="setting-pi-username" class="form-control" placeholder="DOMAIN\service_account">
+            <div class="form-help" id="help-pi-username" style="margin-top: 4px; font-size: 11px;">
+              For Basic Auth: specify <code>DOMAIN\username</code> or <code>username@domain.com</code>.
+            </div>
           </div>
 
           <div class="form-group" id="group-pi-password">

@@ -5,6 +5,7 @@ Includes realistic plant simulation mode for offline development and testing.
 """
 import math
 import random
+import re
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -43,14 +44,43 @@ class PIWebApiClient:
         self.timeout = config.get("timeout_seconds", 10)
         self.simulation_mode = config.get("simulation_mode", False)
 
+    def _parse_domain_and_user(self, username: str):
+        """Extract domain and user from strings like DOMAIN\\user or user@domain.com."""
+        if not username:
+            return None, None
+        u = username.strip()
+        if "\\" in u:
+            domain, user = u.split("\\", 1)
+            return domain.strip(), user.strip()
+        elif "@" in u:
+            user, domain = u.split("@", 1)
+            return domain.strip(), user.strip()
+        return None, u
+
+    def _get_negotiate_auth(self):
+        """Build Windows Integrated (Kerberos / NTLM / SSPI) auth handler."""
+        if not HAS_SSPI:
+            return None
+        if not self.username and not self.password:
+            # Single Sign-On using the current logged-in Windows user session
+            return HttpNegotiateAuth()
+        domain, user = self._parse_domain_and_user(self.username)
+        return HttpNegotiateAuth(
+            username=user,
+            domain=domain,
+            password=self.password or None
+        )
+
     def _get_auth(self):
         if self.auth_type == "kerberos":
-            if HAS_SSPI:
-                return HttpNegotiateAuth(username=self.username or None, password=self.password or None)
+            auth = self._get_negotiate_auth()
+            if auth:
+                return auth
             elif self.username:
                 return requests.auth.HTTPBasicAuth(self.username, self.password)
-        elif self.auth_type == "basic" and self.username:
-            return requests.auth.HTTPBasicAuth(self.username, self.password)
+        elif self.auth_type == "basic":
+            if self.username or self.password:
+                return requests.auth.HTTPBasicAuth(self.username, self.password)
         return None
 
     def _get_headers(self) -> Dict[str, str]:
@@ -161,20 +191,150 @@ class PIWebApiClient:
                     elif resp.status_code in (401, 403):
                         # Server and endpoint exist, but authentication failed
                         self.url = base
+                        www_auth = resp.headers.get("WWW-Authenticate", "")
+                        
+                        # Extract server error message (JSON or text)
+                        server_msg = ""
+                        try:
+                            json_body = resp.json()
+                            if isinstance(json_body, dict):
+                                server_msg = json_body.get("Message") or json_body.get("message") or ""
+                        except Exception:
+                            pass
+                        
+                        if not server_msg and resp.text:
+                            clean_text = re.sub(r'<[^>]+>', ' ', resp.text[:400]).strip()
+                            clean_text = " ".join(clean_text.split())
+                            if clean_text:
+                                server_msg = clean_text[:250]
+
+                        # Detect server-supported authentication methods from WWW-Authenticate
+                        schemes_lower = www_auth.lower()
+                        server_supports_negotiate = "negotiate" in schemes_lower or "kerberos" in schemes_lower
+                        server_supports_ntlm = "ntlm" in schemes_lower
+                        server_supports_basic = "basic" in schemes_lower
+
+                        server_methods = []
+                        if server_supports_negotiate:
+                            server_methods.append("Kerberos / Negotiate")
+                        if server_supports_ntlm:
+                            server_methods.append("NTLM")
+                        if server_supports_basic:
+                            server_methods.append("Basic Authentication")
+                        
+                        server_methods_str = ", ".join(server_methods) if server_methods else (www_auth or "Unspecified by server")
+
+                        # AUTO-TRIAL: Test alternative authentication scheme if supported by server!
+                        alt_auth_success = None
+                        alt_method_name = ""
+
+                        # Probe 1: If user configured Basic, but server supports Negotiate, test Kerberos/SSPI probe
+                        if self.auth_type == "basic" and (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI:
+                            try:
+                                alt_auth = self._get_negotiate_auth()
+                                alt_resp = requests.get(
+                                    probe_url,
+                                    auth=alt_auth,
+                                    headers=self._get_headers(),
+                                    verify=self.verify_ssl,
+                                    timeout=self.timeout
+                                )
+                                if alt_resp.status_code in (200, 201):
+                                    alt_auth_success = "kerberos"
+                                    alt_method_name = "Windows Integrated (Kerberos/NTLM)"
+                            except Exception:
+                                pass
+
+                        # Probe 2: If user configured Kerberos, but server supports Basic, test Basic probe if username & password provided
+                        elif self.auth_type == "kerberos" and server_supports_basic and self.username and self.password:
+                            try:
+                                alt_auth = requests.auth.HTTPBasicAuth(self.username, self.password)
+                                alt_resp = requests.get(
+                                    probe_url,
+                                    auth=alt_auth,
+                                    headers=self._get_headers(),
+                                    verify=self.verify_ssl,
+                                    timeout=self.timeout
+                                )
+                                if alt_resp.status_code in (200, 201):
+                                    alt_auth_success = "basic"
+                                    alt_method_name = "Basic Authentication"
+                            except Exception:
+                                pass
+
+                        # Build tailored diagnostic message
+                        domain, user = self._parse_domain_and_user(self.username)
+                        has_domain = bool(domain)
+
+                        err_lines = [
+                            f"HTTP {resp.status_code} Unauthorized / Access Denied at {probe_url}.",
+                            f"• Server Authentication Methods Accepted: {server_methods_str}",
+                            f"• Current Client Configuration: Method='{self.auth_type.upper()}', User='{self.username or '(Current Windows User)'}'"
+                        ]
+
+                        if server_msg:
+                            err_lines.append(f"• Server Message: \"{server_msg}\"")
+
+                        err_lines.append("\nDiagnostic & Recommended Actions:")
+
+                        if alt_auth_success:
+                            err_lines.append(
+                                f"★ AUTOMATIC DETECTION: While '{self.auth_type.upper()}' was rejected by the server, "
+                                f"'{alt_method_name}' SUCCEEDED!\n"
+                                f"→ Recommendation: Switch 'Authentication Method' to '{alt_method_name}' and click 'Save Settings'."
+                            )
+                        else:
+                            if self.auth_type == "basic":
+                                if not has_domain and self.username:
+                                    err_lines.append(
+                                        f"1. Domain Qualification (Most Common): In Windows IIS / PI Web API, Basic Auth requires the domain. "
+                                        f"Update your username from '{self.username}' to 'YOUR_DOMAIN\\{self.username}' or '{self.username}@yourdomain.com' "
+                                        f"(or '.\\{self.username}' for a local server account)."
+                                    )
+                                if not self.password:
+                                    err_lines.append("2. Password: Ensure the password field is entered.")
+                                if not self.url.lower().startswith("https://"):
+                                    err_lines.append("3. HTTPS Required: PI Web API automatically blocks Basic Authentication over unencrypted http://. Use https://.")
+                                if server_supports_negotiate or server_supports_ntlm:
+                                    err_lines.append(
+                                        "4. Try Windows Integrated Auth: The server accepts Kerberos/NTLM. "
+                                        "Switch 'Authentication Method' to 'Windows Integrated (Kerberos/NTLM)'. "
+                                        "If your PC is on the domain, you can leave Username and Password blank to use Windows Single Sign-On (SSO)."
+                                    )
+                            elif self.auth_type == "kerberos":
+                                if not HAS_SSPI:
+                                    err_lines.append("1. Python SSPI: 'requests-negotiate-sspi' is required on Windows for Kerberos/NTLM authentication.")
+                                err_lines.append(
+                                    "1. Windows SSO: If logged in as a domain user with PI permissions, leave Username and Password blank in Settings."
+                                )
+                                err_lines.append(
+                                    "2. Explicit Credentials: If typing a username, ensure domain format 'DOMAIN\\username'."
+                                )
+                                if server_supports_basic:
+                                    err_lines.append(
+                                        "3. Try Basic Auth: The server also accepts Basic Authentication. "
+                                        "Switch 'Authentication Method' to 'Basic Authentication' with 'DOMAIN\\username'."
+                                    )
+
+                            if server_msg and ("denied" in server_msg.lower() or "identity" in server_msg.lower()):
+                                err_lines.append(
+                                    "\nPI AF Identity Mapping:\n"
+                                    "The Windows credentials reached the server, but PI Web API reported 'Authorization denied'. "
+                                    "Confirm in PI System Management Tools (SMT) or PI System Explorer that this Windows account is mapped "
+                                    "to a PI Identity or PI AF Identity with Read permissions on the AF Database."
+                                )
+
                         return {
                             "success": False,
                             "status_code": resp.status_code,
                             "latency_ms": latency,
                             "normalized_url": base,
                             "endpoint_tested": probe_url,
+                            "www_authenticate": www_auth,
+                            "server_message": server_msg,
+                            "recommended_auth": alt_auth_success,
                             "message": f"PI Web API reachable, but authentication failed (HTTP {resp.status_code})",
-                            "error": (
-                                f"HTTP {resp.status_code} Unauthorized / Access Denied at {probe_url}.\n"
-                                "Troubleshooting:\n"
-                                "1. Verify your Username and Password.\n"
-                                "2. For Windows Integrated / Kerberos authentication, ensure the account has permissions in PI AF and IIS.\n"
-                                "3. If using Basic Auth, confirm Basic Authentication is enabled in IIS for the PI Web API application."
-                            )
+                            "error": "\n".join(err_lines)
                         }
                     elif resp.status_code != 404:
                         # Non-404 error (e.g. 500 Internal Server Error, 503 Service Unavailable)
