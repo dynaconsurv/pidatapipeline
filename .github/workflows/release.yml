@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g. 1.0.5)'
+        required: true
+        default: '1.0.5'
 
 jobs:
   release:
@@ -15,6 +21,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,11 +36,16 @@ jobs:
 
       - name: Extract Tag Version
         id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build Standard & Offline Packages
         run: |
-          python package_release.py --version ${{ steps.get_version.outputs.VERSION }}
+          python package_release.py --version ${{ steps.get_version.outputs.VERSION }} --no-push
           python build_offline_package.py --version ${{ steps.get_version.outputs.VERSION }}
 
       - name: Create GitHub Release & Attach Artifacts

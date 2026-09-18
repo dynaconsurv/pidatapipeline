@@ -150,21 +150,65 @@ def build_package(version: str, output_dir: str = "dist") -> str:
     print(f"  Archive:     {zip_path} ({size_kb} KB, {files_added} files)")
     print(f"  SHA-256:     {sha256}")
     print(f"  Checksum:    {sha_file}")
-    print(f"\nHow to publish this patch for your users:")
-    print(f"  1. Go to: https://github.com/dynaconsurv/pidatapipeline/releases/new")
-    print(f"  2. Tag version: v{version}")
-    print(f"  3. Release title: Release v{version}")
-    print(f"  4. Attach binary: Drag and drop '{zip_path}' into the release assets.")
-    print(f"  5. Click 'Publish release'.")
-    print(f"  => End users can now click 'Check for Updates' in their Web UI or double-click 'update.bat'!")
     print(f"========================================================\n")
     return zip_path
 
 
+def push_git_release(version: str) -> bool:
+    """Commit version files, tag git commit, and push to GitHub to trigger Actions."""
+    tag = f"v{version}"
+    print(f"\n[*] Preparing to push git tag '{tag}' to GitHub to trigger release workflow...")
+    try:
+        # Check if git is available
+        subprocess.run(["git", "--version"], cwd=ROOT_DIR, check=True, capture_output=True)
+
+        # Stage updated version files
+        subprocess.run(["git", "add", "app/version.py", "app/main.py"], cwd=ROOT_DIR, check=True)
+
+        # Commit if modified
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT_DIR, capture_output=True, text=True)
+        if "app/version.py" in status.stdout or "app/main.py" in status.stdout:
+            subprocess.run(["git", "commit", "-m", f"chore(release): bump version to {version}"], cwd=ROOT_DIR, check=True)
+            print(f"[OK] Committed version bump to {version}")
+
+        # Create tag
+        print(f"[*] Creating local git tag '{tag}'...")
+        tag_proc = subprocess.run(["git", "tag", "-a", tag, "-m", f"Release {tag}"], cwd=ROOT_DIR, capture_output=True, text=True)
+        if tag_proc.returncode != 0:
+            if "already exists" in tag_proc.stderr:
+                print(f"[!] Git tag '{tag}' already exists locally. Updating tag...")
+                subprocess.run(["git", "tag", "-f", "-a", tag, "-m", f"Release {tag}"], cwd=ROOT_DIR, check=True)
+            else:
+                print(f"[ERROR] Could not create tag: {tag_proc.stderr}")
+                return False
+
+        # Push to remote
+        print(f"[*] Pushing 'main' branch and tag '{tag}' to GitHub...")
+        subprocess.run(["git", "push", "origin", "main"], cwd=ROOT_DIR, check=True)
+        subprocess.run(["git", "push", "origin", tag, "--force"], cwd=ROOT_DIR, check=True)
+
+        print("\n" + "=" * 65)
+        print(f"  [SUCCESS] Git tag '{tag}' pushed to GitHub!")
+        print(f"  GitHub Actions workflow 'Package & Publish Release' is now triggered!")
+        print(f"  Track live build & release at:")
+        print(f"    https://github.com/dynaconsurv/pidatapipeline/actions")
+        print(f"    https://github.com/dynaconsurv/pidatapipeline/releases")
+        print("=" * 65 + "\n")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"\n[ERROR] Git push failed: {e}")
+        return False
+    except Exception as ex:
+        print(f"\n[ERROR] Failed to push git tag: {ex}")
+        return False
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Package PIDataPipeline into a release zip.")
-    parser.add_argument("--version", type=str, help="Version tag to package (e.g. 1.0.1).")
+    parser.add_argument("--version", type=str, help="Version tag to package (e.g. 1.0.5).")
     parser.add_argument("--output-dir", type=str, default="dist", help="Target output folder (default: dist).")
+    parser.add_argument("--push", action="store_true", help="Automatically commit, tag, and push to GitHub to trigger GitHub Actions release.")
+    parser.add_argument("--no-push", action="store_true", help="Do not push git tag or prompt.")
     args = parser.parse_args()
 
     target_ver = args.version.lstrip("v") if args.version else get_current_version()
@@ -172,3 +216,15 @@ if __name__ == "__main__":
         set_version(target_ver)
 
     build_package(target_ver, args.output_dir)
+
+    if args.push:
+        push_git_release(target_ver)
+    elif not args.no_push:
+        try:
+            prompt = input(f"Do you want to push git tag 'v{target_ver}' to GitHub to trigger GitHub Actions release now? [Y/n]: ").strip().lower()
+            if prompt in ("", "y", "yes"):
+                push_git_release(target_ver)
+            else:
+                print("Skipped GitHub push. Git tag was not pushed.")
+        except (EOFError, KeyboardInterrupt):
+            pass
