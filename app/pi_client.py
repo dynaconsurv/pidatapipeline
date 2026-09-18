@@ -22,6 +22,12 @@ try:
 except ImportError:
     HAS_SSPI = False
 
+try:
+    from requests_ntlm import HttpNtlmAuth
+    HAS_NTLM = True
+except ImportError:
+    HAS_NTLM = False
+
 
 class PIWebApiClient:
     def __init__(self, config: Dict[str, Any]):
@@ -77,12 +83,21 @@ class PIWebApiClient:
         )
 
     def _get_auth(self):
-        if self.auth_type == "kerberos":
-            auth = self._get_negotiate_auth()
-            if auth:
-                return auth
-            elif self.username:
-                return requests.auth.HTTPBasicAuth(self.username, self.password)
+        if self.auth_type in ("kerberos", "ntlm", "windows"):
+            if not self.username and not self.password:
+                # Windows Single Sign-On (SSO) using the active logon session
+                if HAS_SSPI:
+                    return self._get_negotiate_auth()
+            else:
+                # When explicit credentials are supplied, NTLMv2 is the exact protocol browsers use
+                if HAS_NTLM:
+                    domain, user = self._parse_domain_and_user(self.username)
+                    ntlm_user = f"{domain}\\{user}" if domain else user
+                    return HttpNtlmAuth(ntlm_user, self.password)
+                elif HAS_SSPI:
+                    return self._get_negotiate_auth()
+                elif self.username:
+                    return requests.auth.HTTPBasicAuth(self.username, self.password)
         elif self.auth_type == "basic":
             if self.username or self.password:
                 return requests.auth.HTTPBasicAuth(self.username, self.password)
@@ -237,65 +252,76 @@ class PIWebApiClient:
                         
                         server_methods_str = ", ".join(server_methods) if server_methods else (www_auth or "Unspecified by server")
 
-                        # AUTO-TRIAL: Test alternative authentication scheme if supported by server!
+                        # AUTO-TRIAL: Test alternative authentication schemes supported by server!
                         alt_auth_success = None
                         alt_method_name = ""
+                        alt_resp = None
 
-                        # Probe 1: If user configured Basic, but server supports Negotiate, test Kerberos/SSPI probe
-                        if self.auth_type == "basic" and (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI:
+                        # Probe 1: NTLMv2 with explicit domain credentials (exact protocol Chrome/Edge uses)
+                        if (server_supports_ntlm or server_supports_negotiate) and HAS_NTLM and self.username and self.password:
                             try:
-                                alt_auth = self._get_negotiate_auth()
-                                alt_resp = requests.get(
-                                    probe_url,
-                                    auth=alt_auth,
-                                    headers=self._get_headers(),
-                                    verify=self.verify_ssl,
-                                    timeout=self.timeout
-                                )
-                                if alt_resp.status_code in (200, 201):
+                                domain, user = self._parse_domain_and_user(self.username)
+                                ntlm_user = f"{domain}\\{user}" if domain else user
+                                ntlm_session = requests.Session()
+                                ntlm_session.verify = self.verify_ssl
+                                ntlm_session.headers.update(self._get_headers())
+                                ntlm_session.auth = HttpNtlmAuth(ntlm_user, self.password)
+                                p_resp = ntlm_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
                                     alt_auth_success = "kerberos"
-                                    alt_method_name = "Windows Integrated (Kerberos/NTLM)"
+                                    alt_method_name = "Windows Integrated (NTLMv2 / Kerberos)"
+                                    alt_resp = p_resp
                             except Exception:
                                 pass
 
-                        # Probe 2: If user configured Kerberos, but server supports Basic, test Basic probe if username & password provided
-                        elif self.auth_type == "kerberos" and server_supports_basic and self.username and self.password:
+                        # Probe 2: Kerberos Single Sign-On using active Windows logon session
+                        if not alt_auth_success and (server_supports_negotiate or server_supports_ntlm) and HAS_SSPI:
                             try:
-                                alt_auth = requests.auth.HTTPBasicAuth(self.username, self.password)
-                                alt_resp = requests.get(
-                                    probe_url,
-                                    auth=alt_auth,
-                                    headers=self._get_headers(),
-                                    verify=self.verify_ssl,
-                                    timeout=self.timeout
-                                )
-                                if alt_resp.status_code in (200, 201):
+                                sso_session = requests.Session()
+                                sso_session.verify = self.verify_ssl
+                                sso_session.headers.update(self._get_headers())
+                                sso_session.auth = self._get_negotiate_auth()
+                                p_resp = sso_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
+                                    alt_auth_success = "kerberos"
+                                    alt_method_name = "Windows Single Sign-On (SSO)"
+                                    alt_resp = p_resp
+                            except Exception:
+                                pass
+
+                        # Probe 3: Basic Authentication
+                        if not alt_auth_success and server_supports_basic and self.username and self.password and self.auth_type != "basic":
+                            try:
+                                basic_session = requests.Session()
+                                basic_session.verify = self.verify_ssl
+                                basic_session.headers.update(self._get_headers())
+                                basic_session.auth = requests.auth.HTTPBasicAuth(self.username, self.password)
+                                p_resp = basic_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
                                     alt_auth_success = "basic"
                                     alt_method_name = "Basic Authentication"
+                                    alt_resp = p_resp
                             except Exception:
                                 pass
 
-                        # Build tailored diagnostic message
-                        domain, user = self._parse_domain_and_user(self.username)
-                        has_domain = bool(domain)
-
-                        err_lines = [
-                            f"HTTP {resp.status_code} Unauthorized / Access Denied at {probe_url}.",
-                            f"• Server Authentication Methods Accepted: {server_methods_str}",
-                            f"• Current Client Configuration: Method='{self.auth_type.upper()}', User='{self.username or '(Current Windows User)'}'"
-                        ]
-
-                        if server_msg:
-                            err_lines.append(f"• Server Message: \"{server_msg}\"")
-
-                        err_lines.append("\nDiagnostic & Recommended Actions:")
-
-                        if alt_auth_success:
-                            err_lines.append(
-                                f"★ AUTOMATIC DETECTION: While '{self.auth_type.upper()}' was rejected by the server, "
-                                f"'{alt_method_name}' SUCCEEDED!\n"
-                                f"→ Recommendation: Switch 'Authentication Method' to '{alt_method_name}' and click 'Save Settings'."
-                            )
+                        # If an alternative authentication probe succeeded, return SUCCESS immediately!
+                        if alt_auth_success and alt_resp is not None:
+                            self.url = base
+                            self.auth_type = alt_auth_success
+                            try:
+                                data = alt_resp.json()
+                            except Exception:
+                                data = {"raw": alt_resp.text[:200]}
+                            return {
+                                "success": True,
+                                "status_code": alt_resp.status_code,
+                                "latency_ms": round((time.time() - start_time) * 1000, 2),
+                                "normalized_url": base,
+                                "endpoint_tested": probe_url,
+                                "message": f"Successfully connected to AVEVA PI Web API via {alt_method_name}!",
+                                "recommended_auth": alt_auth_success,
+                                "details": data
+                            }
                         else:
                             if self.auth_type == "basic":
                                 if not has_domain and self.username:
