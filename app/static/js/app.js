@@ -1101,8 +1101,16 @@ function initUpdatesController() {
   document.getElementById("btn-check-updates")?.addEventListener("click", handleCheckUpdates);
   document.getElementById("btn-apply-update")?.addEventListener("click", handleApplyUpdate);
   document.getElementById("input-offline-patch")?.addEventListener("change", handleUploadOfflinePatch);
+  document.getElementById("btn-restart-app-action")?.addEventListener("click", handleManualRestartPrompt);
+  document.getElementById("btn-top-restart-server")?.addEventListener("click", handleManualRestartPrompt);
 
   fetchSystemVersion();
+}
+
+function handleManualRestartPrompt() {
+  if (confirm("Restart the application server process now?\n\nThe server will cleanly reboot and the dashboard will reconnect automatically in a few seconds.")) {
+    triggerServerRestart();
+  }
 }
 
 async function fetchSystemVersion() {
@@ -1232,7 +1240,9 @@ async function handleUploadOfflinePatch(e) {
 async function triggerServerRestart() {
   const box = document.getElementById("update-status-box");
   if (box) {
+    box.style.display = "block";
     box.innerHTML = `<span style="color: #f59e0b; font-weight: 600;">⟳ Restarting server...</span>\nServer is shutting down and relaunching with the updated code.\nReconnecting automatically in a few seconds...`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   showToast("Restarting server...", "info");
 
