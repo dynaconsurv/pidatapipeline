@@ -335,16 +335,22 @@
          ======================================================== -->
     <section id="view-mappings" class="page-view">
       
-      <!-- Page Top Bar with Info Trigger -->
+      <!-- Page Top Bar with Info Trigger & AF Explorer Toggle -->
       <div class="page-top-bar">
         <div class="page-title-group">
           <h1 class="page-heading">Attribute Mapping & Destination Schema</h1>
           <div class="page-subheading">Select PI AF attributes and map them to target Oracle ERP meter tags and fields</div>
         </div>
-        <button type="button" class="btn-info-trigger" data-target="mappings-info-card" title="Page Information">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-          <span>Page Info</span>
-        </button>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button type="button" id="btn-toggle-af-explorer" class="btn btn-secondary btn-sm" title="Show or hide the PI AF Hierarchy Explorer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 14px; height: 14px;"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+            <span id="btn-toggle-af-explorer-text">Show AF Explorer</span>
+          </button>
+          <button type="button" class="btn-info-trigger" data-target="mappings-info-card" title="Page Information">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>Page Info</span>
+          </button>
+        </div>
       </div>
 
       <!-- Collapsible Mappings Info Card (Hidden by default) -->
@@ -368,8 +374,8 @@
         </div>
       </div>
 
-      <!-- AF Tree Browser -->
-      <div class="form-section">
+      <!-- AF Tree Browser (Hidden by default, toggled via button above) -->
+      <div id="af-explorer-section" class="form-section" style="display: none;">
         <div class="section-title-bar">
           <div>
             <div class="section-title">

@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMappings();
   initSettings();
   initAFBrowser();
+  initAFExplorerToggle();
   initInfoToggles();
   fetchSystemVersion();
 
@@ -293,11 +294,11 @@ function renderLastPullsTable(items) {
   const tbody = document.getElementById("last-pulls-tbody");
   if (!tbody) return;
 
-  if (items.length === 0) {
+  if (!items || items.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-          No data pulled yet. Click <strong>"Pull Now"</strong> above to test ingestion.
+        <td colspan="8" style="text-align: center; color: var(--ink-secondary); padding: 2rem;">
+          No active telemetry data pulled yet. Ensure attribute mappings are active and click <strong>"Pull Now"</strong> above.
         </td>
       </tr>
     `;
@@ -726,6 +727,32 @@ async function refreshPayloadPreview() {
 function initAFBrowser() {
   document.getElementById("btn-af-browse-root")?.addEventListener("click", () => browseAFPath("\\"));
   document.getElementById("btn-af-nav-up")?.addEventListener("click", navAFUpLevel);
+}
+
+function initAFExplorerToggle() {
+  const btn = document.getElementById("btn-toggle-af-explorer");
+  const section = document.getElementById("af-explorer-section");
+  const text = document.getElementById("btn-toggle-af-explorer-text");
+  if (!btn || !section) return;
+
+  btn.addEventListener("click", () => {
+    const isHidden = section.style.display === "none" || !section.style.display;
+    if (isHidden) {
+      section.style.display = "block";
+      if (text) text.textContent = "Hide AF Explorer";
+      btn.classList.remove("btn-secondary");
+      btn.classList.add("btn-primary");
+      const currentVal = document.getElementById("af-current-path-display")?.value;
+      if (!currentVal || currentVal === "\\") {
+        browseAFPath("\\");
+      }
+    } else {
+      section.style.display = "none";
+      if (text) text.textContent = "Show AF Explorer";
+      btn.classList.remove("btn-primary");
+      btn.classList.add("btn-secondary");
+    }
+  });
 }
 
 async function browseAFPath(path) {

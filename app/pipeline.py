@@ -309,19 +309,62 @@ class DataPipelineEngine:
         if self.last_run_timestamp:
             last_run_iso = datetime.fromtimestamp(self.last_run_timestamp, tz=timezone.utc).isoformat()
 
-        pulls = get_pull_history(limit=5)
-        # Flatten last 5 items from latest batches
+        # Determine currently enabled (active) mappings from config/mappings.json
+        mappings = load_mappings()
+        active_names = set()
+        active_paths = set()
+        active_web_ids = set()
+        mapping_by_key = {}
+
+        for m in mappings:
+            if m.get("enabled", True):
+                attr_name = (m.get("attribute_name") or "").strip().lower()
+                full_path = (m.get("full_path") or "").strip().lower()
+                web_id = (m.get("web_id") or "").strip()
+                if attr_name:
+                    active_names.add(attr_name)
+                    mapping_by_key[attr_name] = m
+                if full_path:
+                    active_paths.add(full_path)
+                    mapping_by_key[full_path] = m
+                if web_id:
+                    active_web_ids.add(web_id)
+                    mapping_by_key[web_id] = m
+
+        # Retrieve up to 30 batches to find the last 5 pulls that belong to ACTIVE mappings
+        pulls = get_pull_history(limit=30)
         last_5_items = []
-        for batch in pulls:
-            for item in batch.get("items", []):
-                last_5_items.append({
-                    "batch_timestamp": batch.get("timestamp"),
-                    **item
-                })
+
+        if active_names or active_paths or active_web_ids:
+            for batch in pulls:
+                for item in batch.get("items", []):
+                    item_name = (item.get("attribute_name") or "").strip().lower()
+                    item_path = (item.get("full_path") or "").strip().lower()
+                    item_web_id = (item.get("web_id") or "").strip()
+
+                    # Exclude if attribute is inactive (enabled=False) or removed from mappings
+                    is_active = (
+                        (item_name and item_name in active_names) or
+                        (item_path and item_path in active_paths) or
+                        (item_web_id and item_web_id in active_web_ids)
+                    )
+
+                    if not is_active:
+                        continue
+
+                    # Enrich with meter_tag from mapping if missing or updated
+                    matched_m = mapping_by_key.get(item_name) or mapping_by_key.get(item_path) or mapping_by_key.get(item_web_id)
+                    meter_tag = matched_m.get("meter_tag") if matched_m else item.get("meter_tag")
+
+                    last_5_items.append({
+                        "batch_timestamp": batch.get("timestamp"),
+                        "meter_tag": meter_tag,
+                        **item
+                    })
+                    if len(last_5_items) >= 5:
+                        break
                 if len(last_5_items) >= 5:
                     break
-            if len(last_5_items) >= 5:
-                break
 
         publishes = get_publish_history(limit=1)
         last_publish = publishes[0] if publishes else None
