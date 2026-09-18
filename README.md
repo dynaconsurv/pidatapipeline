@@ -139,12 +139,13 @@ Configure which attributes to extract from PI AF and where to map them in Oracle
 
 ### 3. ⚙️ Settings Page
 - **AVEVA PI Web API Configuration**:
-  - Base URL (e.g. `https://pi-server.local/piwebapi`).
+  - Base URL (e.g. `https://pi-server.corp.local/piwebapi`).
+    > **Note**: Must include the IIS virtual directory path, typically `/piwebapi`. If omitted, the connection engine automatically auto-detects and normalizes the URL.
   - Authentication: **Basic Authentication**, **Bearer Token**, **Kerberos (Windows Integrated)**, or **Anonymous**.
   - Default AF Server and AF Database.
   - **Verify SSL toggle**: Turn off if your industrial plant uses internal/self-signed SSL certificates.
   - **Simulation Mode toggle**: Enables built-in telemetry simulation with realistic industrial data so you can test the pipeline completely offline.
-  - **"Test PI Connection"** button with diagnostic reporting.
+  - **"Test PI Connection"** button with multi-probe endpoint discovery (`/piwebapi`, `/piwebapi/`, `/system`, `/assetservers`) and comprehensive troubleshooting diagnostics.
 - **Oracle ERP Cloud Configuration**:
   - **Enable Oracle ERP Cloud Transmission toggle**: Leave unchecked to maintain the safe **"Pending connection setup"** state.
   - Authentication method selector:

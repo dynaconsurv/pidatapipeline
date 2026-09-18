@@ -15,21 +15,41 @@ import urllib3
 # Suppress insecure SSL warnings if user disables verify_ssl
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+try:
+    from requests_negotiate_sspi import HttpNegotiateAuth
+    HAS_SSPI = True
+except ImportError:
+    HAS_SSPI = False
+
 
 class PIWebApiClient:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.url = (config.get("url") or "").rstrip("/")
+        raw_url = (config.get("url") or "").strip()
+        if raw_url and not raw_url.startswith("http://") and not raw_url.startswith("https://"):
+            raw_url = f"https://{raw_url}"
+        raw_url = raw_url.rstrip("/")
+        # If user configured host without virtual directory (e.g. https://pi-srv.local), default to /piwebapi
+        parsed = urllib.parse.urlparse(raw_url)
+        if parsed.netloc and parsed.path in ("", "/"):
+            raw_url = f"{raw_url}/piwebapi"
+        self.url = raw_url
+
         self.auth_type = config.get("auth_type", "basic").lower()
-        self.username = config.get("username", "")
+        self.username = (config.get("username") or "").strip()
         self.password = config.get("password", "")
-        self.bearer_token = config.get("bearer_token", "")
+        self.bearer_token = (config.get("bearer_token") or "").strip()
         self.verify_ssl = config.get("verify_ssl", False)
         self.timeout = config.get("timeout_seconds", 10)
         self.simulation_mode = config.get("simulation_mode", False)
 
     def _get_auth(self):
-        if self.auth_type == "basic" and self.username:
+        if self.auth_type == "kerberos":
+            if HAS_SSPI:
+                return HttpNegotiateAuth(username=self.username or None, password=self.password or None)
+            elif self.username:
+                return requests.auth.HTTPBasicAuth(self.username, self.password)
+        elif self.auth_type == "basic" and self.username:
             return requests.auth.HTTPBasicAuth(self.username, self.password)
         return None
 
@@ -39,11 +59,36 @@ class PIWebApiClient:
             "X-Requested-With": "PIWebApiClient"
         }
         if self.auth_type == "bearer" and self.bearer_token:
-            headers["Authorization"] = f"Bearer {self.bearer_token}"
+            token = self.bearer_token
+            if not token.lower().startswith("bearer "):
+                headers["Authorization"] = f"Bearer {token}"
+            else:
+                headers["Authorization"] = token
         return headers
 
+    def _get_candidate_base_urls(self) -> List[str]:
+        """Generate candidate PI Web API base URLs to probe."""
+        if not self.url:
+            return []
+        candidates = [self.url]
+        if self.url.lower().endswith("/piwebapi"):
+            # Also test root in case IIS or reverse proxy exposes PI Web API at the root
+            root = self.url[:-9].rstrip("/")
+            if root and root not in candidates:
+                candidates.append(root)
+        else:
+            # If user entered base without /piwebapi, candidate with /piwebapi
+            with_pi = f"{self.url}/piwebapi"
+            if with_pi not in candidates:
+                candidates.insert(0, with_pi)
+        return candidates
+
     def test_connection(self) -> Dict[str, Any]:
-        """Test connectivity and authentication against the PI Web API instance."""
+        """
+        Test connectivity and authentication against the PI Web API instance.
+        Performs multi-probe discovery across candidate roots (/piwebapi, /system, /assetservers)
+        to prevent false 404s caused by missing virtual directories or deprecated endpoints.
+        """
         if self.simulation_mode:
             return {
                 "success": True,
@@ -69,61 +114,122 @@ class PIWebApiClient:
                 "error": "URL must begin with http:// or https://"
             }
 
-        start_time = time.time()
-        test_endpoint = f"{self.url}/system/landing"
-        try:
-            resp = requests.get(
-                test_endpoint,
-                auth=self._get_auth(),
-                headers=self._get_headers(),
-                verify=self.verify_ssl,
-                timeout=self.timeout
-            )
-            latency = round((time.time() - start_time) * 1000, 2)
-            if resp.status_code in (200, 201):
+        tested_endpoints = []
+        last_latency = 0
+
+        for base in self._get_candidate_base_urls():
+            # Standard PI Web API discovery endpoints:
+            # 1. Base URL itself (returns PI Web API landing document with links)
+            # 2. Base URL with trailing slash (required by some IIS configurations)
+            # 3. /system (System status and version metadata)
+            # 4. /assetservers (AF Asset Servers list)
+            probes = [base, f"{base}/", f"{base}/system", f"{base}/assetservers"]
+            unique_probes = []
+            for p in probes:
+                if p not in unique_probes:
+                    unique_probes.append(p)
+
+            for probe_url in unique_probes:
+                tested_endpoints.append(probe_url)
+                start_time = time.time()
                 try:
-                    data = resp.json()
-                except Exception:
-                    data = {"raw": resp.text[:200]}
-                return {
-                    "success": True,
-                    "status_code": resp.status_code,
-                    "latency_ms": latency,
-                    "message": "Successfully connected to AVEVA PI Web API",
-                    "details": data
-                }
-            else:
-                return {
-                    "success": False,
-                    "status_code": resp.status_code,
-                    "latency_ms": latency,
-                    "message": f"PI Web API responded with HTTP {resp.status_code}",
-                    "error": resp.text[:500]
-                }
-        except requests.exceptions.SSLError as e:
-            return {
-                "success": False,
-                "status_code": None,
-                "latency_ms": round((time.time() - start_time) * 1000, 2),
-                "message": "SSL Certificate verification failed",
-                "error": str(e) + " (Tip: Turn off 'Verify SSL' in Settings if PI Web API uses a self-signed plant certificate)"
-            }
-        except requests.exceptions.ConnectionError as e:
-            return {
-                "success": False,
-                "status_code": None,
-                "latency_ms": round((time.time() - start_time) * 1000, 2),
-                "message": "Unable to connect to PI Web API host",
-                "error": str(e)
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "status_code": None,
-                "latency_ms": round((time.time() - start_time) * 1000, 2),
-                "message": "PI Web API connection test failed",
-                "error": str(e)
-            }
+                    resp = requests.get(
+                        probe_url,
+                        auth=self._get_auth(),
+                        headers=self._get_headers(),
+                        verify=self.verify_ssl,
+                        timeout=self.timeout
+                    )
+                    latency = round((time.time() - start_time) * 1000, 2)
+                    last_latency = latency
+
+                    if resp.status_code in (200, 201):
+                        self.url = base  # Auto-normalize base URL to working root
+                        try:
+                            data = resp.json()
+                        except Exception:
+                            data = {"raw": resp.text[:200]}
+                        return {
+                            "success": True,
+                            "status_code": resp.status_code,
+                            "latency_ms": latency,
+                            "normalized_url": base,
+                            "endpoint_tested": probe_url,
+                            "message": "Successfully connected to AVEVA PI Web API",
+                            "details": data
+                        }
+                    elif resp.status_code in (401, 403):
+                        # Server and endpoint exist, but authentication failed
+                        self.url = base
+                        return {
+                            "success": False,
+                            "status_code": resp.status_code,
+                            "latency_ms": latency,
+                            "normalized_url": base,
+                            "endpoint_tested": probe_url,
+                            "message": f"PI Web API reachable, but authentication failed (HTTP {resp.status_code})",
+                            "error": (
+                                f"HTTP {resp.status_code} Unauthorized / Access Denied at {probe_url}.\n"
+                                "Troubleshooting:\n"
+                                "1. Verify your Username and Password.\n"
+                                "2. For Windows Integrated / Kerberos authentication, ensure the account has permissions in PI AF and IIS.\n"
+                                "3. If using Basic Auth, confirm Basic Authentication is enabled in IIS for the PI Web API application."
+                            )
+                        }
+                    elif resp.status_code != 404:
+                        # Non-404 error (e.g. 500 Internal Server Error, 503 Service Unavailable)
+                        return {
+                            "success": False,
+                            "status_code": resp.status_code,
+                            "latency_ms": latency,
+                            "normalized_url": base,
+                            "endpoint_tested": probe_url,
+                            "message": f"PI Web API responded with HTTP {resp.status_code}",
+                            "error": resp.text[:500]
+                        }
+                    # If 404, continue to next probe/candidate
+                except requests.exceptions.SSLError as e:
+                    return {
+                        "success": False,
+                        "status_code": None,
+                        "latency_ms": round((time.time() - start_time) * 1000, 2),
+                        "message": "SSL Certificate verification failed",
+                        "error": str(e) + " (Tip: Turn off 'Verify SSL' in Settings if PI Web API uses a self-signed plant certificate)"
+                    }
+                except requests.exceptions.ConnectionError as e:
+                    return {
+                        "success": False,
+                        "status_code": None,
+                        "latency_ms": round((time.time() - start_time) * 1000, 2),
+                        "message": "Unable to connect to PI Web API host",
+                        "error": str(e)
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "status_code": None,
+                        "latency_ms": round((time.time() - start_time) * 1000, 2),
+                        "message": "PI Web API connection test failed",
+                        "error": str(e)
+                    }
+
+        # If all candidates and probes returned 404
+        endpoints_str = "\n".join(f"  • {ep}" for ep in tested_endpoints)
+        return {
+            "success": False,
+            "status_code": 404,
+            "latency_ms": last_latency,
+            "message": "PI Web API responded with HTTP 404 (Not Found)",
+            "error": (
+                f"All probed endpoints returned HTTP 404:\n{endpoints_str}\n\n"
+                "Troubleshooting Checklist:\n"
+                "1. Virtual Directory: OSIsoft / AVEVA PI Web API is standardly hosted under '/piwebapi'. "
+                "Ensure your URL is formatted as: https://your-server/piwebapi\n"
+                "2. Service Status: Ensure the 'PI Web API' service is running on the host server.\n"
+                "3. IIS Bindings: Confirm PI Web API website is bound to port 443 (or custom port like 8443) and started.\n"
+                "4. Browser Verification: Open https://your-server/piwebapi directly in a web browser on the same network to verify the landing JSON."
+            )
+        }
 
     def fetch_attribute_value(self, mapping: Dict[str, Any]) -> Dict[str, Any]:
         """Fetch current value for a single attribute mapping."""

@@ -504,8 +504,9 @@
 
         <div class="form-grid">
           <div class="form-group full-width">
-            <label class="form-label" for="setting-pi-url">PI Web API URL</label>
-            <input type="url" id="setting-pi-url" class="form-control" placeholder="https://pi-server.local/piwebapi">
+            <label class="form-label" for="setting-pi-url">PI Web API Base URL</label>
+            <input type="url" id="setting-pi-url" class="form-control" placeholder="https://pi-server.yourcompany.com/piwebapi">
+            <div class="form-help" style="margin-top: 4px; font-size: 11px;">Must include the IIS virtual directory path, typically <code>/piwebapi</code> (e.g. <code>https://pi-server.corp.local/piwebapi</code>).</div>
           </div>
 
           <div class="form-group">

@@ -1221,10 +1221,30 @@ async function handleTestPiSettings() {
     const result = await res.json();
     if (result.success) {
       box.className = "error-console";
-      box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\n${JSON.stringify(result.details, null, 2)}`;
+      let text = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}`;
+      if (result.endpoint_tested) {
+        text += `\nVerified Endpoint: ${escapeHtml(result.endpoint_tested)}`;
+      }
+      if (result.normalized_url && result.normalized_url !== cfg.url) {
+        text += `\n\n[Auto-Detected URL]: Automatically updated base URL to: ${escapeHtml(result.normalized_url)}`;
+        document.getElementById("setting-pi-url").value = result.normalized_url;
+        showToast("PI Web API URL updated to " + result.normalized_url, "info");
+      }
+      if (result.details) {
+        text += `\n\nResponse:\n${JSON.stringify(result.details, null, 2)}`;
+      }
+      box.innerHTML = text;
     } else {
       box.className = "error-console danger";
-      box.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✕ Connection Test Failed</span>\nMessage: ${escapeHtml(result.message)}\nError: ${escapeHtml(result.error || '')}`;
+      let text = `<span style="color: var(--danger); font-weight: bold;">✕ Connection Test Failed</span>\nMessage: ${escapeHtml(result.message)}`;
+      if (result.status_code) {
+        text += `\nHTTP Status: ${result.status_code}`;
+      }
+      if (result.endpoint_tested) {
+        text += `\nTested Endpoint: ${escapeHtml(result.endpoint_tested)}`;
+      }
+      text += `\n\n${escapeHtml(result.error || '')}`;
+      box.innerHTML = text;
     }
   } catch (e) {
     box.className = "error-console danger";
