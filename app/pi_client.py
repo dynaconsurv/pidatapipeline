@@ -58,17 +58,22 @@ class PIWebApiClient:
         return None, u
 
     def _get_negotiate_auth(self):
-        """Build Windows Integrated (Kerberos / NTLM / SSPI) auth handler."""
+        """Build Windows Integrated (Kerberos / NTLM / SSPI) auth handler with delegation and host matching."""
         if not HAS_SSPI:
             return None
+        parsed = urllib.parse.urlparse(self.url)
+        host = parsed.hostname
+
         if not self.username and not self.password:
-            # Single Sign-On using the current logged-in Windows user session
-            return HttpNegotiateAuth()
+            # Single Sign-On using the current logged-in Windows user session (exactly like browser)
+            return HttpNegotiateAuth(host=host, delegate=True)
         domain, user = self._parse_domain_and_user(self.username)
         return HttpNegotiateAuth(
             username=user,
             domain=domain,
-            password=self.password or None
+            password=self.password or None,
+            host=host,
+            delegate=True
         )
 
     def _get_auth(self):
@@ -85,8 +90,8 @@ class PIWebApiClient:
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
-            "Accept": "application/json",
-            "X-Requested-With": "PIWebApiClient"
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         if self.auth_type == "bearer" and self.bearer_token:
             token = self.bearer_token
@@ -95,6 +100,16 @@ class PIWebApiClient:
             else:
                 headers["Authorization"] = token
         return headers
+
+    def _get_session(self) -> requests.Session:
+        """Create a configured requests.Session with connection pooling and headers."""
+        s = requests.Session()
+        s.verify = self.verify_ssl
+        s.headers.update(self._get_headers())
+        auth = self._get_auth()
+        if auth:
+            s.auth = auth
+        return s
 
     def _get_candidate_base_urls(self) -> List[str]:
         """Generate candidate PI Web API base URLs to probe."""
@@ -146,6 +161,7 @@ class PIWebApiClient:
 
         tested_endpoints = []
         last_latency = 0
+        session = self._get_session()
 
         for base in self._get_candidate_base_urls():
             # Standard PI Web API discovery endpoints:
@@ -163,11 +179,8 @@ class PIWebApiClient:
                 tested_endpoints.append(probe_url)
                 start_time = time.time()
                 try:
-                    resp = requests.get(
+                    resp = session.get(
                         probe_url,
-                        auth=self._get_auth(),
-                        headers=self._get_headers(),
-                        verify=self.verify_ssl,
                         timeout=self.timeout
                     )
                     latency = round((time.time() - start_time) * 1000, 2)
@@ -402,6 +415,7 @@ class PIWebApiClient:
             return self._simulate_attribute_value(mapping)
 
         # Live PI Web API query
+        session = self._get_session()
         start_t = time.time()
         try:
             # If web_id is present, query stream directly
@@ -411,11 +425,8 @@ class PIWebApiClient:
                 # Resolve WebId via path
                 encoded_path = urllib.parse.quote(full_path)
                 lookup_url = f"{self.url}/attributes?path={encoded_path}"
-                lookup_resp = requests.get(
+                lookup_resp = session.get(
                     lookup_url,
-                    auth=self._get_auth(),
-                    headers=self._get_headers(),
-                    verify=self.verify_ssl,
                     timeout=self.timeout
                 )
                 if lookup_resp.status_code != 200:
@@ -443,11 +454,8 @@ class PIWebApiClient:
                     "error": "Neither WebId nor Full AF Path provided in mapping"
                 }
 
-            val_resp = requests.get(
+            val_resp = session.get(
                 endpoint,
-                auth=self._get_auth(),
-                headers=self._get_headers(),
-                verify=self.verify_ssl,
                 timeout=self.timeout
             )
             if val_resp.status_code == 200:
@@ -579,11 +587,9 @@ class PIWebApiClient:
                 encoded = urllib.parse.quote(path)
                 endpoint = f"{self.url}/elements?path={encoded}"
 
-            resp = requests.get(
+            session = self._get_session()
+            resp = session.get(
                 endpoint,
-                auth=self._get_auth(),
-                headers=self._get_headers(),
-                verify=self.verify_ssl,
                 timeout=self.timeout
             )
             if resp.status_code == 200:
