@@ -11,7 +11,7 @@ import time
 import urllib
 import urllib.parse
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import requests
 import urllib3
 
@@ -60,9 +60,16 @@ class PIWebApiClient:
         self.username = (config.get("username") or "").strip()
         self.password = config.get("password", "")
         self.bearer_token = (config.get("bearer_token") or "").strip()
+        self.token_url = (config.get("token_url") or "").strip()
+        self.client_id = (config.get("client_id") or "").strip()
+        self.client_secret = config.get("client_secret", "")
+        self.scope = (config.get("scope") or "").strip()
         self.verify_ssl = config.get("verify_ssl", False)
         self.timeout = config.get("timeout_seconds", 10)
         self.simulation_mode = config.get("simulation_mode", False)
+
+        self._cached_token: Optional[str] = None
+        self._token_expiry_timestamp: float = 0.0
 
     def _parse_domain_and_user(self, username: str):
         """Extract domain and user from strings like DOMAIN\\user or user@domain.com."""
@@ -92,18 +99,20 @@ class PIWebApiClient:
                 domain = win_domain
 
         # Prefer built-in WindowsNegotiateAuth (native secur32.dll, zero binary dependencies)
-        if HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
-            return WindowsNegotiateAuth(
+        # 1. Prefer battle-tested HttpNegotiateAuth from requests_negotiate_sspi (full CBT Extended Protection & delegation)
+        if HAS_REQ_SSPI and HttpNegotiateAuth:
+            if not self.username and not self.password:
+                return HttpNegotiateAuth(host=host, delegate=True)
+            return HttpNegotiateAuth(
                 username=user,
                 domain=domain,
                 password=self.password or None,
                 host=host,
                 delegate=True
             )
-        elif HAS_REQ_SSPI and HttpNegotiateAuth:
-            if not self.username and not self.password:
-                return HttpNegotiateAuth(host=host, delegate=True)
-            return HttpNegotiateAuth(
+        # 2. Built-in WindowsNegotiateAuth fallback
+        elif HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
+            return WindowsNegotiateAuth(
                 username=user,
                 domain=domain,
                 password=self.password or None,
@@ -135,6 +144,74 @@ class PIWebApiClient:
                 return requests.auth.HTTPBasicAuth(self.username, self.password)
         return None
 
+    def get_token(self, force_refresh: bool = False) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Acquire OAuth 2.0 Access Token from OpenID Connect / Identity Provider
+        (e.g., AVEVA Identity Manager, Azure AD / Entra ID, ADFS, PingFederate).
+        Returns: (access_token, error_message)
+        """
+        now = time.time()
+        if not force_refresh and self._cached_token and now < (self._token_expiry_timestamp - 60):
+            return self._cached_token, None
+
+        if not self.token_url:
+            return None, "OAuth 2.0 Token URL is empty in PI Web API settings."
+
+        payload = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret
+        }
+        if self.scope:
+            payload["scope"] = self.scope
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+
+        # Try with HTTP Basic Auth (standard OAuth 2.0 RFC 6749)
+        auth = requests.auth.HTTPBasicAuth(self.client_id, self.client_secret) if self.client_id else None
+
+        try:
+            resp = requests.post(
+                self.token_url,
+                data=payload,
+                headers=headers,
+                auth=auth,
+                verify=self.verify_ssl,
+                timeout=self.timeout
+            )
+            # If server rejects Basic Auth header (common in some IdentityServer / Azure AD endpoints), try with credentials in POST body only
+            if resp.status_code in (400, 401) and auth is not None:
+                try:
+                    resp_body_only = requests.post(
+                        self.token_url,
+                        data=payload,
+                        headers=headers,
+                        verify=self.verify_ssl,
+                        timeout=self.timeout
+                    )
+                    if resp_body_only.status_code == 200:
+                        resp = resp_body_only
+                except Exception:
+                    pass
+
+            if resp.status_code == 200:
+                data = resp.json()
+                token = data.get("access_token")
+                expires_in = data.get("expires_in", 3600)
+                if token:
+                    self._cached_token = token
+                    self._token_expiry_timestamp = now + float(expires_in)
+                    return token, None
+                else:
+                    return None, f"Token endpoint response missing 'access_token': {resp.text[:200]}"
+            else:
+                return None, f"OAuth Token request failed (HTTP {resp.status_code}): {resp.text[:300]}"
+        except Exception as e:
+            return None, f"OAuth Token request exception: {str(e)}"
+
     def _get_headers(self) -> Dict[str, str]:
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -146,6 +223,10 @@ class PIWebApiClient:
                 headers["Authorization"] = f"Bearer {token}"
             else:
                 headers["Authorization"] = token
+        elif self.auth_type == "oauth2":
+            token, _ = self.get_token()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _get_session(self) -> requests.Session:
@@ -204,6 +285,33 @@ class PIWebApiClient:
                 "latency_ms": 0,
                 "message": "Invalid PI Web API URL configured",
                 "error": "URL must begin with http:// or https://"
+            }
+
+        if self.auth_type == "oauth2":
+            if not self.token_url or not self.client_id or not self.client_secret:
+                return {
+                    "success": False,
+                    "status_code": None,
+                    "latency_ms": 0,
+                    "message": "OAuth 2.0 configuration incomplete",
+                    "error": "OAuth 2.0 Token URL, Client ID, or Client Secret is missing in PI Web API settings."
+                }
+            token, token_err = self.get_token(force_refresh=True)
+            if not token:
+                return {
+                    "success": False,
+                    "status_code": 401,
+                    "latency_ms": 0,
+                    "message": "OAuth 2.0 token acquisition failed",
+                    "error": f"Failed to acquire Bearer token from Identity Provider:\n{token_err}"
+                }
+        elif self.auth_type == "bearer" and not self.bearer_token:
+            return {
+                "success": False,
+                "status_code": None,
+                "latency_ms": 0,
+                "message": "Bearer Token missing",
+                "error": "Please enter a valid Bearer Token in PI Web API settings (or copy it from your active browser session)."
             }
 
         tested_endpoints = []
@@ -273,8 +381,16 @@ class PIWebApiClient:
                         server_supports_negotiate = "negotiate" in schemes_lower or "kerberos" in schemes_lower
                         server_supports_ntlm = "ntlm" in schemes_lower
                         server_supports_basic = "basic" in schemes_lower
+                        server_supports_bearer = (
+                            "bearer" in schemes_lower or
+                            "bearer" in server_msg.lower() or
+                            "not supported in bearer authentication mode" in server_msg.lower() or
+                            ("denied" in server_msg.lower() and not server_supports_negotiate and not server_supports_basic)
+                        )
 
                         server_methods = []
+                        if server_supports_bearer:
+                            server_methods.append("Bearer Token / OpenID Connect (OAuth 2.0)")
                         if server_supports_negotiate:
                             server_methods.append("Kerberos / Negotiate")
                         if server_supports_ntlm:
@@ -311,10 +427,10 @@ class PIWebApiClient:
                                 sso_session.verify = self.verify_ssl
                                 sso_session.headers.update(self._get_headers())
                                 parsed_h = urllib.parse.urlparse(base).hostname if base else None
-                                if HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
-                                    sso_session.auth = WindowsNegotiateAuth(host=parsed_h, delegate=True)
-                                elif HAS_REQ_SSPI and HttpNegotiateAuth:
+                                if HAS_REQ_SSPI and HttpNegotiateAuth:
                                     sso_session.auth = HttpNegotiateAuth(host=parsed_h, delegate=True)
+                                elif HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
+                                    sso_session.auth = WindowsNegotiateAuth(host=parsed_h, delegate=True)
                                 p_resp = sso_session.get(probe_url, timeout=self.timeout)
                                 if p_resp.status_code in (200, 201):
                                     alt_auth_success = "kerberos"
@@ -336,6 +452,21 @@ class PIWebApiClient:
                                 if p_resp.status_code in (200, 201):
                                     alt_auth_success = "kerberos"
                                     alt_method_name = "Windows Integrated (NTLMv2)"
+                                    alt_resp = p_resp
+                            except Exception:
+                                pass
+
+                        # Probe 3b: NTLM SSO using active Windows session
+                        if not alt_auth_success and (server_supports_ntlm or server_supports_negotiate) and HAS_NTLM and not self.username and not self.password:
+                            try:
+                                ntlm_sso_session = requests.Session()
+                                ntlm_sso_session.verify = self.verify_ssl
+                                ntlm_sso_session.headers.update(self._get_headers())
+                                ntlm_sso_session.auth = HttpNtlmAuth(None, None)
+                                p_resp = ntlm_sso_session.get(probe_url, timeout=self.timeout)
+                                if p_resp.status_code in (200, 201):
+                                    alt_auth_success = "kerberos"
+                                    alt_method_name = "Windows Integrated (NTLM SSO)"
                                     alt_resp = p_resp
                             except Exception:
                                 pass
@@ -378,7 +509,22 @@ class PIWebApiClient:
                             has_domain = bool(domain)
                             err_lines = []
 
-                            if self.auth_type == "basic":
+                            if self.auth_type == "bearer":
+                                err_lines.append(
+                                    "1. Bearer Token Expired or Rejected:\n"
+                                    "   The server rejected the provided Bearer token (HTTP 401).\n"
+                                    "   • Open your browser to https://mytlavmpimsweb1/piwebapi and refresh.\n"
+                                    "   • In DevTools (F12 -> Network), inspect the 'piwebapi' request headers for 'Authorization: Bearer <token>' and paste the latest token.\n"
+                                    "   • Or switch to 'OAuth 2.0 (Client Credentials)' for automated background renewal."
+                                )
+                            elif self.auth_type == "oauth2":
+                                err_lines.append(
+                                    "1. OAuth 2.0 Token Rejected by PI Web API:\n"
+                                    "   A token was acquired from the Identity Provider, but PI Web API returned HTTP 401.\n"
+                                    "   • Confirm this Client ID / Service Principal has been granted access in AVEVA Identity Manager or Azure AD.\n"
+                                    "   • Verify the requested Scope matches the PI Web API audience."
+                                )
+                            elif self.auth_type == "basic":
                                 if not has_domain and self.username:
                                     err_lines.append(
                                         f"1. Domain Qualification (Most Common): In Windows IIS / PI Web API, Basic Auth requires the domain. "
@@ -410,23 +556,36 @@ class PIWebApiClient:
                                         "Switch 'Authentication Method' to 'Basic Authentication' with 'DOMAIN\\username'."
                                     )
 
+                            if server_supports_bearer and self.auth_type not in ("bearer", "oauth2"):
+                                err_lines.insert(0, (
+                                    "[BEARER AUTHENTICATION MODE DETECTED]\n"
+                                    "Your AVEVA PI Web API server is configured strictly for Bearer authentication (OpenID Connect).\n"
+                                    "Direct Basic Authentication and Windows Integrated (Kerberos/NTLM) logins are not accepted.\n\n"
+                                    "How to connect:\n"
+                                    "1. Immediate Testing: Switch 'Authentication Method' to 'Bearer Token' and paste the token from your browser session.\n"
+                                    "2. Automated Pipeline: Switch to 'OAuth 2.0 (Client Credentials)' and enter your Identity Provider credentials (Token URL, Client ID, Secret)."
+                                ))
+
                             if server_msg:
                                 err_lines.append(f"\nServer Message: {server_msg}")
 
                             if server_msg and ("denied" in server_msg.lower() or "identity" in server_msg.lower()):
-                                err_lines.append(
-                                    "\nPI AF Identity Mapping:\n"
-                                    "The Windows credentials reached the server, but PI Web API reported 'Authorization denied'. "
-                                    "Confirm in PI System Management Tools (SMT) or PI System Explorer that this Windows account is mapped "
-                                    "to a PI Identity or PI AF Identity with Read permissions on the AF Database."
-                                )
+                                if not server_supports_bearer:
+                                    err_lines.append(
+                                        "\nPI AF Identity Mapping:\n"
+                                        "The Windows credentials reached the server, but PI Web API reported 'Authorization denied'. "
+                                        "Confirm in PI System Management Tools (SMT) or PI System Explorer that this Windows account is mapped "
+                                        "to a PI Identity or PI AF Identity with Read permissions on the AF Database."
+                                    )
 
                             if not err_lines:
                                 err_lines.append(f"HTTP {resp.status_code} Unauthorized. Server accepted schemes: {server_methods_str}.")
 
                         recommended_auth = alt_auth_success
                         if not recommended_auth:
-                            if server_supports_negotiate and self.auth_type != "kerberos":
+                            if server_supports_bearer and self.auth_type not in ("bearer", "oauth2"):
+                                recommended_auth = "bearer"
+                            elif server_supports_negotiate and self.auth_type != "kerberos":
                                 recommended_auth = "kerberos"
                             elif server_supports_basic and self.auth_type != "basic":
                                 recommended_auth = "basic"

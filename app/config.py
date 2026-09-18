@@ -16,10 +16,14 @@ _lock = threading.RLock()
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "pi_web_api": {
         "url": "https://pi-server.local/piwebapi",
-        "auth_type": "basic",  # 'basic', 'bearer', 'kerberos', 'anonymous'
+        "auth_type": "basic",  # 'basic', 'bearer', 'oauth2', 'kerberos', 'anonymous'
         "username": "pi_service_user",
         "password": "",
         "bearer_token": "",
+        "token_url": "",
+        "client_id": "",
+        "client_secret": "",
+        "scope": "",
         "verify_ssl": False,
         "af_server": "PISRV01",
         "af_database": "Plant_Operations",

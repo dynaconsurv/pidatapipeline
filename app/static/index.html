@@ -527,11 +527,12 @@
             <select id="setting-pi-auth-type" class="form-control">
               <option value="basic">Basic Authentication (Username / Password)</option>
               <option value="kerberos">Windows Integrated (Kerberos / NTLM / SSO)</option>
-              <option value="bearer">Bearer Token</option>
+              <option value="bearer">Bearer Token (Browser Session / Manual)</option>
+              <option value="oauth2">OAuth 2.0 (Client Credentials / AVEVA Identity Manager)</option>
               <option value="anonymous">Anonymous / None</option>
             </select>
             <div class="form-help" id="help-pi-auth-type" style="margin-top: 4px; font-size: 11px;">
-              Select Basic Auth or Windows Integrated. For Kerberos/NTLM, leave username blank for Windows SSO.
+              Select Basic Auth, Windows Integrated, Bearer Token, or OAuth 2.0.
             </div>
           </div>
 
@@ -551,6 +552,30 @@
           <div class="form-group" id="group-pi-bearer" style="display: none;">
             <label class="form-label" for="setting-pi-bearer">Bearer Token</label>
             <input type="text" id="setting-pi-bearer" class="form-control form-control-mono" placeholder="Bearer eyJ...">
+            <div class="form-help" style="margin-top: 4px; font-size: 11px;">
+              Paste active Bearer access token or cookie from browser DevTools (F12 &rarr; Network &rarr; Authorization header).
+            </div>
+          </div>
+
+          <div class="form-group pi-oauth-field" style="display: none;">
+            <label class="form-label" for="setting-pi-token-url">OAuth 2.0 Token URL</label>
+            <input type="url" id="setting-pi-token-url" class="form-control" placeholder="https://mytlavmpimsweb1/identity/connect/token">
+            <div class="form-help" style="margin-top: 4px; font-size: 11px;">Identity Provider endpoint (e.g. AVEVA Identity Manager, Azure AD, or ADFS).</div>
+          </div>
+
+          <div class="form-group pi-oauth-field" style="display: none;">
+            <label class="form-label" for="setting-pi-client-id">OAuth 2.0 Client ID</label>
+            <input type="text" id="setting-pi-client-id" class="form-control" placeholder="pidatapipeline_client">
+          </div>
+
+          <div class="form-group pi-oauth-field" style="display: none;">
+            <label class="form-label" for="setting-pi-client-secret">OAuth 2.0 Client Secret</label>
+            <input type="password" id="setting-pi-client-secret" class="form-control" placeholder="••••••••">
+          </div>
+
+          <div class="form-group pi-oauth-field" style="display: none;">
+            <label class="form-label" for="setting-pi-scope">OAuth 2.0 Scope (Optional)</label>
+            <input type="text" id="setting-pi-scope" class="form-control" placeholder="openid piwebapi">
           </div>
 
           <div class="form-group">

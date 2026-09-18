@@ -947,6 +947,10 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-pi-username").value = pi.username || "";
     document.getElementById("setting-pi-password").value = pi.password || "";
     document.getElementById("setting-pi-bearer").value = pi.bearer_token || "";
+    document.getElementById("setting-pi-token-url").value = pi.token_url || "";
+    document.getElementById("setting-pi-client-id").value = pi.client_id || "";
+    document.getElementById("setting-pi-client-secret").value = pi.client_secret || "";
+    document.getElementById("setting-pi-scope").value = pi.scope || "";
     document.getElementById("setting-pi-af-server").value = pi.af_server || "PISRV01";
     document.getElementById("setting-pi-af-db").value = pi.af_database || "Plant_Operations";
     document.getElementById("setting-pi-verify-ssl").checked = !!pi.verify_ssl;
@@ -1285,12 +1289,14 @@ function handlePiAuthChange() {
   const userGroup = document.getElementById("group-pi-username");
   const passGroup = document.getElementById("group-pi-password");
   const bearerGroup = document.getElementById("group-pi-bearer");
+  const oauthFields = document.querySelectorAll(".pi-oauth-field");
   const userInput = document.getElementById("setting-pi-username");
   const userHelp = document.getElementById("help-pi-username");
 
   userGroup.style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
   passGroup.style.display = (type === "basic" || type === "kerberos") ? "flex" : "none";
   bearerGroup.style.display = (type === "bearer") ? "flex" : "none";
+  oauthFields.forEach(el => el.style.display = (type === "oauth2") ? "flex" : "none");
 
   if (type === "kerberos") {
     if (userInput) userInput.placeholder = "Leave blank for Windows SSO, or DOMAIN\\username";
@@ -1316,6 +1322,10 @@ function collectSettingsFromForm() {
       username: document.getElementById("setting-pi-username").value.trim(),
       password: document.getElementById("setting-pi-password").value,
       bearer_token: document.getElementById("setting-pi-bearer").value.trim(),
+      token_url: document.getElementById("setting-pi-token-url") ? document.getElementById("setting-pi-token-url").value.trim() : "",
+      client_id: document.getElementById("setting-pi-client-id") ? document.getElementById("setting-pi-client-id").value.trim() : "",
+      client_secret: document.getElementById("setting-pi-client-secret") ? document.getElementById("setting-pi-client-secret").value : "",
+      scope: document.getElementById("setting-pi-scope") ? document.getElementById("setting-pi-scope").value.trim() : "",
       verify_ssl: document.getElementById("setting-pi-verify-ssl").checked,
       simulation_mode: document.getElementById("setting-pi-simulation").checked,
       af_server: document.getElementById("setting-pi-af-server").value.trim(),
@@ -1417,8 +1427,11 @@ async function handleTestPiSettings() {
       text += `\n\n${escapeHtml(result.error || '')}`;
 
       if (result.recommended_auth) {
-        const recLabel = result.recommended_auth === "kerberos" ? "Windows Integrated (Kerberos / NTLM)" : "Basic Authentication";
-        text += `\n\n<button type="button" id="btn-switch-recommended-auth" class="btn btn-primary btn-sm" style="margin-top: 8px;">Switch to ${escapeHtml(recLabel)} &amp; Retest</button>`;
+        let recLabel = "Basic Authentication";
+        if (result.recommended_auth === "kerberos") recLabel = "Windows Integrated (Kerberos / NTLM)";
+        else if (result.recommended_auth === "bearer") recLabel = "Bearer Token";
+        else if (result.recommended_auth === "oauth2") recLabel = "OAuth 2.0 (Client Credentials)";
+        text += `\n\n<button type="button" id="btn-switch-recommended-auth" class="btn btn-primary btn-sm" style="margin-top: 8px;">Switch to ${escapeHtml(recLabel)}</button>`;
       }
 
       box.innerHTML = text;
@@ -1427,8 +1440,16 @@ async function handleTestPiSettings() {
         document.getElementById("btn-switch-recommended-auth")?.addEventListener("click", async () => {
           document.getElementById("setting-pi-auth-type").value = result.recommended_auth;
           handlePiAuthChange();
-          await handleSaveSettings();
-          handleTestPiSettings();
+          if (result.recommended_auth === "bearer") {
+            document.getElementById("setting-pi-bearer")?.focus();
+            showToast("Switched to Bearer Token mode. Paste your Bearer token and click Save/Test.", "info");
+          } else if (result.recommended_auth === "oauth2") {
+            document.getElementById("setting-pi-token-url")?.focus();
+            showToast("Switched to OAuth 2.0 mode. Enter your Token URL, Client ID, and Secret.", "info");
+          } else {
+            await handleSaveSettings();
+            handleTestPiSettings();
+          }
         });
       }
     }

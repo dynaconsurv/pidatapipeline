@@ -110,6 +110,10 @@ class WindowsNegotiateAuth(AuthBase):
         else:
             parsed = urllib.parse.urlparse(request_url)
             target_host = parsed.hostname or "localhost"
+        try:
+            target_host = socket.getaddrinfo(target_host, None, 0, 0, 0, socket.AI_CANONNAME)[0][3]
+        except Exception:
+            pass
         return f"{self.service}/{target_host}"
 
     def _acquire_credentials(self, package: str) -> Tuple[Optional[SecHandle], Optional[Any]]:
@@ -234,9 +238,10 @@ class WindowsNegotiateAuth(AuthBase):
             if resp2.status_code == 401 and ctxt_handle:
                 www_auth = resp2.headers.get("WWW-Authenticate", "")
                 challenges = [
-                    val[len(scheme):].strip()
+                    v[len(scheme):].strip()
                     for val in www_auth.split(",")
-                    if val.strip().lower().startswith(scheme.lower())
+                    for v in [val.strip()]
+                    if v.lower().startswith(scheme.lower()) and len(v) > len(scheme)
                 ]
                 if challenges and challenges[0]:
                     server_token = base64.b64decode(challenges[0])

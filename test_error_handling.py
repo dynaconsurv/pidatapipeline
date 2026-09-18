@@ -72,7 +72,7 @@ def test_pi_url_normalization_and_probing():
     mock_404.status_code = 404
     mock_404.text = "Not Found"
 
-    with patch("requests.get", return_value=mock_404):
+    with patch("requests.Session.get", return_value=mock_404):
         res = c3.test_connection()
         assert res["success"] is False
         assert res["status_code"] == 404
@@ -85,8 +85,10 @@ def test_pi_url_normalization_and_probing():
     mock_401 = MagicMock()
     mock_401.status_code = 401
     mock_401.text = "Unauthorized"
+    mock_401.headers = {}
+    mock_401.json.side_effect = Exception("Not JSON")
 
-    with patch("requests.get", return_value=mock_401):
+    with patch("requests.Session.get", return_value=mock_401):
         res = c3.test_connection()
         assert res["success"] is False
         assert res["status_code"] == 401
@@ -104,7 +106,7 @@ def test_pi_url_normalization_and_probing():
         }
     }
 
-    with patch("requests.get", return_value=mock_200):
+    with patch("requests.Session.get", return_value=mock_200):
         res = c3.test_connection()
         assert res["success"] is True
         assert res["status_code"] == 200
