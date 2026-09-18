@@ -1,0 +1,34 @@
+[
+  {
+    "id": "map-blr-temp",
+    "name": "Boiler 101 Steam Temperature",
+    "attribute_name": "Steam Temperature",
+    "af_server": "PISRV01",
+    "af_database": "Plant_Operations",
+    "element_path": "Unit 1\\Boilers\\Boiler-101",
+    "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+    "target_field": "readingValue",
+    "meter_tag": "BLR101_STM_TEMP",
+    "target_tag_field": "meterCode",
+    "scale_factor": 1,
+    "round_decimals": 2,
+    "uom": "deg C",
+    "enabled": true
+  },
+  {
+    "id": "map-blr-press",
+    "name": "Boiler 101 Steam Pressure",
+    "attribute_name": "Steam Pressure",
+    "af_server": "PISRV01",
+    "af_database": "Plant_Operations",
+    "element_path": "Unit 1\\Boilers\\Boiler-101",
+    "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+    "target_field": "readingValue",
+    "meter_tag": "BLR101_STM_PRESS",
+    "target_tag_field": "meterCode",
+    "scale_factor": 1,
+    "round_decimals": 2,
+    "uom": "bar",
+    "enabled": true
+  }
+]

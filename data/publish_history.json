@@ -7,6 +7,57 @@
     "http_code": null,
     "payload_sample": {
       "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:25:27.508651+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:25:25.166732+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:25:25.166732+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:25:25.166732+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:25:25.166732+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": null,
+    "timestamp": "2026-09-18T00:25:27.508696+00:00",
+    "publish_id": "pub-1789691127-8c2c42",
+    "batch_id": "batch-1789691125-f4cb8b"
+  },
+  {
+    "status": "PENDING_SETUP",
+    "message": "Pending connection setup: Oracle ERP Cloud integration is toggled off.",
+    "record_count": 4,
+    "target_endpoint": "https://your-pod.fa.oraclecloud.com/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
       "batchTimestamp": "2026-09-17T10:35:51.960686+00:00",
       "itemCount": 4,
       "items": [

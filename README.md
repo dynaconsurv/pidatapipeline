@@ -231,13 +231,80 @@ When your Oracle ERP Cloud administrator or integration partner is ready, reques
 
 ---
 
+## 📦 Software Packaging & Patch Releases (Zero-Git Update System)
+
+This data pipeline includes a built-in release packaging and patch deployment system so that **end users never need Git installed or know any Git commands** to update to the latest release.
+
+### 🛡️ Safety & Data Protection Guarantees
+- **Config Protection**: Your plant's PI Web API credentials, Oracle ERP Cloud OAuth keys, and custom attribute mappings in `config/settings.json` and `config/mappings.json` are **NEVER overwritten** during a patch.
+- **Data Protection**: Telemetry pull records and publish audit trails in `data/*.json` are completely untouched.
+- **Rollback Backups**: Before applying any patch, the updater automatically archives the current working code to `backups/backup_v<version>_<timestamp>/`.
+- **Dependency Sync**: If a new release adds Python packages to `requirements.txt`, the updater installs them automatically.
+
+---
+
+### 1. How Users Apply Patches (Without Git)
+
+#### Method A: 1-Click Web UI Updater (Easiest)
+1. Open the web interface at `http://127.0.0.1:8000` and navigate to **Settings**.
+2. Scroll to **"Software Updates & Patch Management"**.
+3. Click **"Check for Updates"**.
+4. If a newer release is published on GitHub, the release notes and an **"Install Patch (vX.X.X)"** button will appear.
+5. Click **"Install Patch"**. The backend will download the patch archive, create a rollback snapshot, update code files, and notify you when complete.
+6. Restart the service or run `scripts/stop_background.bat` & `scripts/start_background.vbs`.
+
+#### Method B: 1-Click Windows Batch File (`update.bat`)
+1. In the application folder, double-click **`update.bat`**.
+2. Select `[1]` to check for updates or `[2]` to download and apply the latest release directly.
+3. The script automatically updates all code and dependencies without requiring Git.
+
+#### Method C: Offline / Air-Gapped Plant Systems (Local ZIP Patch)
+Industrial plant servers are often in isolated operational networks (OT) with no internet access:
+1. Download the release package (`pidatapipeline-vX.X.X.zip`) from an internet-connected machine.
+2. Transfer the `.zip` file via approved plant media to the pipeline server.
+3. Apply it via either:
+   - **Web UI**: In Settings, click **"Upload Offline Patch (.zip)"** and choose the file.
+   - **Command Line**: Run `python -m app.updater --file path\to\pidatapipeline-vX.X.X.zip`.
+   - **Batch**: Double-click `update.bat` and select Option `[3]`.
+
+---
+
+### 2. How the Developer Packages & Publishes a Release
+
+#### Method A: Automatic via GitHub Actions
+Whenever you create and push a Git tag:
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+The GitHub Actions workflow (`.github/workflows/release.yml`) automatically builds the clean distribution `.zip` and creates a published GitHub Release with the downloadable asset attached.
+
+#### Method B: Local Packaging Script (`package_release.py`)
+Run the packaging utility to create a clean release archive:
+```bash
+# Package current version
+python package_release.py
+
+# Or bump version and package in one step
+python package_release.py --version 1.0.1
+```
+Output:
+- Creates `dist/pidatapipeline-v1.0.1.zip`
+- Generates SHA-256 checksum: `dist/pidatapipeline-v1.0.1.zip.sha256`
+- Automatically excludes `.git`, `__pycache__`, local dev data (`data/*.json`), developer credentials (`config/*.json`), tests, and build artifacts.
+- You can now attach this `.zip` to your GitHub Release or deliver it directly to clients.
+
+---
+
 ## 🗂️ File Storage Structure
 
 ```
 pidatapipeline/
 ├── config/
-│   ├── settings.json         # PI Web API & Oracle ERP Cloud connection settings
-│   └── mappings.json         # Configured PI AF attribute to ERP field mappings
+│   ├── settings.json         # PI Web API & Oracle ERP Cloud connection settings (preserved on updates)
+│   ├── mappings.json         # Configured PI AF attribute to ERP field mappings (preserved on updates)
+│   ├── settings.example.json # Initial configuration template for fresh installs
+│   └── mappings.example.json # Initial mapping template for fresh installs
 ├── data/
 │   ├── pull_history.json     # Telemetry readings history pulled from PI Web API
 │   ├── publish_history.json  # Dispatch records & ERP response payloads
@@ -254,13 +321,17 @@ pidatapipeline/
 │   ├── mock_erp_server.py    # Oracle ERP Cloud REST API mock simulation server
 │   ├── pipeline.py           # Background pipeline scheduler & extraction engine
 │   ├── storage.py            # File-backed operational logging & history manager
+│   ├── updater.py            # Zero-Git client-side patch download & safe extraction engine
+│   ├── version.py            # Central semantic version & release repository metadata
 │   ├── main.py               # FastAPI application & REST endpoints
 │   └── static/
 │       ├── index.html        # Interactive Single Page Application
 │       ├── css/style.css     # Clean editorial minimalist theme
-│       └── js/app.js         # Real-time dashboard polling & modal logic
+│       └── js/app.js         # Real-time dashboard polling, modals & update controls
 ├── run.py                    # Main pipeline application startup launcher (Port 8000)
 ├── run_mock_erp.py           # Standalone Oracle ERP Cloud mock server launcher (Port 8080)
+├── update.bat                # 1-click Windows patch & update manager (No Git required)
+├── package_release.py        # Developer release packaging & checksum generator
 ├── requirements.txt          # Python dependencies
 └── README.md                 # Complete documentation
 ```

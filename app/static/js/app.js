@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSettings();
   initAFBrowser();
   initInfoToggles();
+  fetchSystemVersion();
 
   // Start polling dashboard status every 2 seconds
   loadDashboardData();
@@ -827,6 +828,7 @@ function initSettings() {
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
 
   initMockERPSimulator();
+  initUpdatesController();
 
   loadSettingsIntoForm();
 }
@@ -988,6 +990,143 @@ async function handleToggleMockTxns() {
     }
   } else {
     preview.style.display = "none";
+  }
+}
+
+// ============================================================
+// SYSTEM UPDATES & PATCH MANAGEMENT (NO GIT REQUIRED)
+// ============================================================
+let latestReleaseInfo = null;
+
+function initUpdatesController() {
+  document.getElementById("btn-check-updates")?.addEventListener("click", handleCheckUpdates);
+  document.getElementById("btn-apply-update")?.addEventListener("click", handleApplyUpdate);
+  document.getElementById("input-offline-patch")?.addEventListener("change", handleUploadOfflinePatch);
+
+  fetchSystemVersion();
+}
+
+async function fetchSystemVersion() {
+  try {
+    const res = await fetch("/api/system/version");
+    if (!res.ok) return;
+    const data = await res.json();
+    const verBadge = document.getElementById("system-version-text");
+    const headerBadge = document.getElementById("app-header-version");
+    if (verBadge) verBadge.textContent = `v${data.version}`;
+    if (headerBadge) headerBadge.textContent = `v${data.version}`;
+  } catch (e) {
+    console.warn("Could not fetch system version:", e);
+  }
+}
+
+async function handleCheckUpdates() {
+  const box = document.getElementById("update-status-box");
+  const applyBtn = document.getElementById("btn-apply-update");
+  const applyText = document.getElementById("btn-apply-update-text");
+  if (!box) return;
+
+  box.style.display = "block";
+  box.textContent = "Checking GitHub Releases for new versions...";
+  if (applyBtn) applyBtn.style.display = "none";
+
+  try {
+    const res = await fetch("/api/system/updates/check");
+    const data = await res.json();
+    latestReleaseInfo = data;
+
+    if (data.update_available) {
+      box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Update Available: v${escapeHtml(data.latest_version)}</span>\nRelease: ${escapeHtml(data.release_name)}\nPublished: ${formatTimestamp(data.published_at)}\nSize: ${data.asset_size_kb || '--'} KB\n\nRelease Notes:\n${escapeHtml(data.release_notes)}`;
+      if (applyBtn) {
+        applyBtn.style.display = "inline-flex";
+        if (applyText) applyText.textContent = `Install Patch (v${data.latest_version})`;
+      }
+      showToast(`New version v${data.latest_version} available!`, "info");
+    } else if (data.error) {
+      box.innerHTML = `<span style="color: var(--danger); font-weight: 600;">✕ Update Check Notice</span>\n${escapeHtml(data.error)}`;
+    } else {
+      box.innerHTML = `<span style="color: var(--ink-primary); font-weight: 500;">✓ ${escapeHtml(data.message)}</span>\nInstalled Version: v${escapeHtml(data.current_version)}`;
+    }
+  } catch (e) {
+    box.textContent = "Failed to connect to update service: " + e.message;
+  }
+}
+
+async function handleApplyUpdate() {
+  if (!confirm("Download and install patch for PIDataPipeline?\n\nYour existing configuration (config/) and data records (data/) will be strictly preserved, and an automatic rollback backup will be created.")) {
+    return;
+  }
+
+  const box = document.getElementById("update-status-box");
+  const applyBtn = document.getElementById("btn-apply-update");
+  if (applyBtn) applyBtn.disabled = true;
+  if (box) {
+    box.style.display = "block";
+    box.textContent = "Downloading patch and applying updates... Please wait.";
+  }
+
+  try {
+    const res = await fetch("/api/system/updates/apply", { method: "POST" });
+    const result = await res.json();
+
+    if (res.ok && result.success) {
+      box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\n\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nIMPORTANT: Please restart the application service (or run scripts/stop_background.bat and scripts/start_background.vbs) to load the new patch.`;
+      showToast("Patch installed successfully! Please restart application.", "success");
+      fetchSystemVersion();
+      if (applyBtn) applyBtn.style.display = "none";
+    } else {
+      box.innerHTML = `<span style="color: var(--danger); font-weight: 600;">✕ Failed to apply update</span>\n${escapeHtml(result.detail || result.error || 'Unknown error')}`;
+      showToast("Failed to apply update", "danger");
+    }
+  } catch (e) {
+    if (box) box.textContent = "Update error: " + e.message;
+    showToast("Update error: " + e.message, "danger");
+  } finally {
+    if (applyBtn) applyBtn.disabled = false;
+  }
+}
+
+async function handleUploadOfflinePatch(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  if (!confirm(`Upload and apply offline patch "${file.name}"?\n\nYour existing configuration and data will be strictly preserved.`)) {
+    e.target.value = "";
+    return;
+  }
+
+  const box = document.getElementById("update-status-box");
+  if (box) {
+    box.style.display = "block";
+    box.textContent = `Uploading and applying patch from ${file.name}... Please wait.`;
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const res = await fetch("/api/system/updates/upload-patch", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: arrayBuffer
+    });
+
+    const result = await res.json();
+    if (res.ok && result.success) {
+      if (box) {
+        box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\nFiles updated: ${result.files_updated}\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nIMPORTANT: Please restart the application service to run the new version.`;
+      }
+      showToast("Offline patch installed successfully! Please restart.", "success");
+      fetchSystemVersion();
+    } else {
+      if (box) {
+        box.innerHTML = `<span style="color: var(--danger); font-weight: 600;">✕ Patch installation failed</span>\n${escapeHtml(result.detail || result.error || 'Unknown error')}`;
+      }
+      showToast("Patch installation failed.", "danger");
+    }
+  } catch (err) {
+    if (box) box.textContent = "Upload error: " + err.message;
+    showToast("Upload error: " + err.message, "danger");
+  } finally {
+    e.target.value = "";
   }
 }
 

@@ -15,6 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v1.0.0</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -730,6 +731,50 @@
           <button type="button" id="btn-save-settings" class="btn btn-primary" style="height: 36px; padding: 0 20px;">
             Save Settings
           </button>
+        </div>
+      </div>
+
+      <!-- Software Updates & Patch Management (No Git Required) -->
+      <div class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Software Updates & Patch Management
+            </div>
+            <div class="form-help">Download and apply new releases without Git. User credentials and data in <code>config/</code> and <code>data/</code> are strictly preserved.</div>
+          </div>
+          <span id="system-version-badge" class="badge badge-info">
+            <span class="badge-dot"></span> <span id="system-version-text">v1.0.0</span>
+          </span>
+        </div>
+
+        <div style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <span style="font-weight: 600; font-size: 13px; color: var(--ink-primary); display: flex; align-items: center; gap: 6px;">
+                Release Channel: Official GitHub Releases
+              </span>
+              <span class="form-help">Safe in-place update engine with automatic rollback backups.</span>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <button type="button" id="btn-check-updates" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                Check for Updates
+              </button>
+              <button type="button" id="btn-apply-update" class="btn btn-primary btn-sm" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span id="btn-apply-update-text">Install Patch</span>
+              </button>
+              <label class="btn btn-outline btn-sm" style="cursor: pointer; margin: 0; display: inline-flex;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                Upload Offline Patch (.zip)
+                <input type="file" id="input-offline-patch" accept=".zip" style="display: none;">
+              </label>
+            </div>
+          </div>
+
+          <div id="update-status-box" class="json-preview" style="display: none; max-height: 160px; font-size: 11px;"></div>
         </div>
       </div>
 

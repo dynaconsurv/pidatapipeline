@@ -16,6 +16,7 @@ from app.oracle_erp_client import OracleERPCloudClient
 from app.pipeline import pipeline_engine
 from app.storage import get_pull_history, get_publish_history, get_logs, add_log
 from app.mock_erp_server import mock_erp_manager
+from app.version import __version__, APP_NAME, GITHUB_REPO
 
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
 
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
     settings = load_settings()
     if settings.get("pipeline", {}).get("auto_start", True):
         pipeline_engine.start()
-    add_log("INFO", "SYSTEM", "AVEVA PI to Oracle ERP Cloud Pipeline Server ready.")
+    add_log("INFO", "SYSTEM", f"{APP_NAME} v{__version__} ready.")
     yield
     # Shutdown: stop pipeline and mock server if running
     pipeline_engine.stop()
@@ -34,9 +35,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AVEVA PI to Oracle ERP Cloud Data Pipeline",
+    title=APP_NAME,
     description="Industrial IoT data pipeline pulling telemetry from AVEVA PI Web API and streaming into Oracle ERP Cloud.",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -261,4 +262,63 @@ def get_mock_erp_transactions(limit: int = 20):
     """Retrieve telemetry payloads received by the mock ERP server."""
     from app.mock_erp_server import _received_transactions
     return {"total": len(_received_transactions), "items": _received_transactions[:limit]}
+
+
+# -------------------------------------------------------------
+# System Version, Patching & Auto-Update API (No Git Required)
+# -------------------------------------------------------------
+from app.updater import check_for_updates, download_and_apply_update, apply_patch_from_zip
+from fastapi import Request
+import tempfile
+
+
+@app.get("/api/system/version")
+def get_system_version():
+    """Returns current software version and GitHub repository information."""
+    return {
+        "app_name": APP_NAME,
+        "version": __version__,
+        "repo": GITHUB_REPO,
+        "github_url": f"https://github.com/{GITHUB_REPO}"
+    }
+
+
+@app.get("/api/system/updates/check")
+def check_software_updates(token: str = None):
+    """Check GitHub Releases for new updates/patches."""
+    return check_for_updates(github_token=token)
+
+
+@app.post("/api/system/updates/apply")
+def apply_latest_update(token: str = None):
+    """Download and apply latest update from GitHub Releases."""
+    res = download_and_apply_update(github_token=token)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to apply update"))
+    return res
+
+
+@app.post("/api/system/updates/upload-patch")
+async def upload_offline_patch(request: Request):
+    """Upload and apply an offline patch ZIP archive directly via HTTP."""
+    body = await request.body()
+    if len(body) < 100:
+        raise HTTPException(status_code=400, detail="Invalid or empty patch payload.")
+
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+        tf.write(body)
+        tmp_path = tf.name
+
+    try:
+        res = apply_patch_from_zip(tmp_path, backup=True)
+        if not res.get("success"):
+            raise HTTPException(status_code=400, detail=res.get("error", "Failed to apply patch"))
+        return res
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
 
