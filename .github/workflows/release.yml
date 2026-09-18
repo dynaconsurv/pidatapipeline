@@ -30,8 +30,10 @@ jobs:
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Build Release Package
-        run: python package_release.py --version ${{ steps.get_version.outputs.VERSION }}
+      - name: Build Standard & Offline Packages
+        run: |
+          python package_release.py --version ${{ steps.get_version.outputs.VERSION }}
+          python build_offline_package.py --version ${{ steps.get_version.outputs.VERSION }}
 
       - name: Create GitHub Release & Attach Artifacts
         uses: softprops/action-gh-release@v2
@@ -41,3 +43,7 @@ jobs:
           files: |
             dist/pidatapipeline-v${{ steps.get_version.outputs.VERSION }}.zip
             dist/pidatapipeline-v${{ steps.get_version.outputs.VERSION }}.zip.sha256
+            dist/PIDataPipeline-Portable-v${{ steps.get_version.outputs.VERSION }}-win64.zip
+            dist/PIDataPipeline-Portable-v${{ steps.get_version.outputs.VERSION }}-win64.zip.sha256
+            dist/PIDataPipeline-Offline-Wheels-v${{ steps.get_version.outputs.VERSION }}.zip
+            dist/PIDataPipeline-Offline-Wheels-v${{ steps.get_version.outputs.VERSION }}.zip.sha256

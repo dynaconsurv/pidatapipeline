@@ -9,6 +9,7 @@ build/
 develop-eggs/
 dist/
 backups/
+_offline_cache/
 downloads/
 eggs/
 .eggs/

@@ -296,6 +296,44 @@ Output:
 
 ---
 
+### 3. 🔌 100% Offline Installation Package (No Internet & No Python Required)
+
+For target computers located inside **completely disconnected / air-gapped industrial plant networks** where:
+- The user has **NO internet connection**.
+- The user **CANNOT download Python**.
+- The user **CANNOT run `pip install`** to download libraries.
+
+You can build and provide the **Standalone Portable Windows Bundle**:
+
+#### How to Build the Offline Bundle (As Developer)
+Run the offline builder script:
+```bash
+python build_offline_package.py
+# Or with specific version:
+python build_offline_package.py --version 1.0.0
+```
+This automatically produces two offline packages in `dist/`:
+1. **`PIDataPipeline-Portable-v1.0.0-win64.zip` (14.9 MB - Recommended)**:
+   - **Embedded Python Runtime**: Bundles official Python 64-bit runtime with all dependencies (`fastapi`, `uvicorn`, `requests`, `pydantic`, `python-dateutil`, etc.) pre-installed into `python/Lib/site-packages`.
+   - **Zero Prerequisites**: Target machine does NOT need Python installed.
+   - **Zero Pip Calls**: All wheels are pre-extracted and configured.
+   - **1-Click Launchers**:
+     - `start.bat`: Launches the pipeline and opens `http://127.0.0.1:8000` in the default browser.
+     - `start_silent.vbs`: Runs invisibly in the background without any CMD window.
+     - `stop.bat`: Stops the pipeline service.
+     - `install_service.bat`: Installs Windows auto-start startup task.
+     - `update.bat`: Applies offline patch ZIPs using the bundled Python.
+2. **`PIDataPipeline-Offline-Wheels-v1.0.0.zip` (3.8 MB)**:
+   - Contains all 19 offline `.whl` files and `install_offline_dependencies.bat` for client machines that already have their own Python installed.
+
+#### How End Users Run the Portable Offline Package:
+1. Copy `PIDataPipeline-Portable-v1.0.0-win64.zip` to the offline machine via USB drive.
+2. Unzip it to any folder (e.g. `C:\PIDataPipeline`).
+3. Double-click **`start.bat`**.
+4. The pipeline is running immediately!
+
+---
+
 ## 🗂️ File Storage Structure
 
 ```

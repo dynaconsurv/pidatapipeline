@@ -1,5 +1,558 @@
 [
   {
+    "timestamp": "2026-09-18T00:43:37.514352+00:00",
+    "level": "INFO",
+    "category": "PIPELINE",
+    "message": "Data pipeline engine stopped.",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:42:20.825654+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:42:16.671746+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:42:13.926028+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2744.9,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:42:13.926028+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2744.9,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:42:13.926028+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2744.9,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:42:13.926028+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2744.9,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:40:13.800223+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:40:09.659300+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:40:06.904349+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2754.0,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:40:06.904349+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2754.0,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:40:06.904349+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2754.0,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:40:06.904349+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2754.0,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:38:06.758080+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:38:02.611674+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:37:59.904501+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2706.49,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:37:59.904501+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2706.49,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:37:59.904501+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2706.49,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:37:59.904501+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2706.49,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:35:59.765376+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:35:55.596087+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:35:52.877808+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2717.2,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:35:52.877808+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2717.2,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:35:52.877808+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2717.2,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:35:52.877808+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2717.2,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:33:52.754517+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:33:48.647182+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:33:45.899506+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2746.74,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:33:45.899506+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2746.74,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:33:45.899506+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2746.74,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:33:45.899506+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2746.74,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:31:45.813956+00:00",
+    "level": "ERROR",
+    "category": "ORACLE_ERP",
+    "message": "ERP push failed: Exception occurred while posting to Oracle ERP Cloud",
+    "details": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))"
+  },
+  {
+    "timestamp": "2026-09-18T00:31:41.652860+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:31:38.910099+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2741.83,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:31:38.910099+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2741.83,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:31:38.910099+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2741.83,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:31:38.910099+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2741.83,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:31:32.106312+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Stopped Oracle ERP Cloud Mock Simulator",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:31:30.866309+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Applied Oracle ERP Cloud Mock Simulator credentials to settings.json",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:31:30.847283+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Started Oracle ERP Cloud Mock Simulator sub-app on port 8080",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:31:28.941596+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Stopped Oracle ERP Cloud Mock Simulator",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:30:42.758781+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Applied Oracle ERP Cloud Mock Simulator credentials to settings.json",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:30:42.742718+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Started Oracle ERP Cloud Mock Simulator sub-app on port 8080",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:30:19.179246+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Applied Oracle ERP Cloud Mock Simulator credentials to settings.json",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:30:19.157498+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "Started Oracle ERP Cloud Mock Simulator sub-app on port 8080",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:29:38.689859+00:00",
+    "level": "ERROR",
+    "category": "PI_WEB_API",
+    "message": "PI Pull issue: 4 of 4 attributes failed to pull from PI Web API",
+    "details": {
+      "details": [
+        {
+          "attribute_name": "Steam Temperature",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "deg C",
+          "timestamp": "2026-09-18T00:29:35.966021+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2723.35,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Steam Pressure",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "bar",
+          "timestamp": "2026-09-18T00:29:35.966021+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2723.35,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Feedwater Flow",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "m3/h",
+          "timestamp": "2026-09-18T00:29:35.966021+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2723.35,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        },
+        {
+          "attribute_name": "Vibration Overall",
+          "full_path": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "web_id": "",
+          "success": false,
+          "value": null,
+          "uom": "mm/s",
+          "timestamp": "2026-09-18T00:29:35.966021+00:00",
+          "quality": "Bad",
+          "status": "Unreachable",
+          "latency_ms": 2723.35,
+          "error": "HTTPSConnectionPool(host='pi-server.local', port=443): Max retries exceeded with url: /piwebapi/system/landing (Caused by NameResolutionError(\"HTTPSConnection(host='pi-server.local', port=443): Failed to resolve 'pi-server.local' ([Errno 11001] getaddrinfo failed)\"))"
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T00:29:33.960470+00:00",
+    "level": "INFO",
+    "category": "SYSTEM",
+    "message": "AVEVA PI to Oracle ERP Cloud Data Pipeline v1.0.0 ready.",
+    "details": null
+  },
+  {
+    "timestamp": "2026-09-18T00:29:33.935934+00:00",
+    "level": "INFO",
+    "category": "PIPELINE",
+    "message": "Data pipeline engine started. Interval: 120s",
+    "details": null
+  },
+  {
     "timestamp": "2026-09-18T00:25:27.457728+00:00",
     "level": "ERROR",
     "category": "PI_WEB_API",

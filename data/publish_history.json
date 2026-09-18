@@ -1,5 +1,362 @@
 [
   {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:42:16.696580+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:42:13.926028+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:42:13.926028+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:42:13.926028+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:42:13.926028+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:42:20.815112+00:00",
+    "publish_id": "pub-1789692140-09de49",
+    "batch_id": "batch-1789692133-d6ee22"
+  },
+  {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:40:09.687609+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:40:06.904349+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:40:06.904349+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:40:06.904349+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:40:06.904349+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:40:13.788399+00:00",
+    "publish_id": "pub-1789692013-06ff94",
+    "batch_id": "batch-1789692006-a411d3"
+  },
+  {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:38:02.631918+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:37:59.904501+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:37:59.904501+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:37:59.904501+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:37:59.904501+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:38:06.735252+00:00",
+    "publish_id": "pub-1789691886-5fea77",
+    "batch_id": "batch-1789691879-5a12f0"
+  },
+  {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:35:55.636457+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:35:52.877808+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:35:52.877808+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:35:52.877808+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:35:52.877808+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:35:59.754178+00:00",
+    "publish_id": "pub-1789691759-1cca3d",
+    "batch_id": "batch-1789691752-cc3e8e"
+  },
+  {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:33:48.667165+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:33:45.899506+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:33:45.899506+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:33:45.899506+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:33:45.899506+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:33:52.746252+00:00",
+    "publish_id": "pub-1789691632-e1f975",
+    "batch_id": "batch-1789691625-a932bd"
+  },
+  {
+    "status": "FAILED",
+    "message": "Exception occurred while posting to Oracle ERP Cloud",
+    "record_count": 4,
+    "target_endpoint": "http://127.0.0.1:8080/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:31:41.677998+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:31:38.910099+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:31:38.910099+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:31:38.910099+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:31:38.910099+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /fscmRestApi/resources/11.13.18.05/standardReceipts (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it\"))",
+    "timestamp": "2026-09-18T00:31:45.801462+00:00",
+    "publish_id": "pub-1789691505-cf275b",
+    "batch_id": "batch-1789691498-d1ea5e"
+  },
+  {
+    "status": "PENDING_SETUP",
+    "message": "Pending connection setup: Oracle ERP Cloud integration is toggled off.",
+    "record_count": 4,
+    "target_endpoint": "https://your-pod.fa.oraclecloud.com/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "http_code": null,
+    "payload_sample": {
+      "sourceSystem": "AVEVA_PI_DATA_PIPELINE",
+      "batchTimestamp": "2026-09-18T00:29:38.769270+00:00",
+      "itemCount": 4,
+      "items": [
+        {
+          "meterCode": "BLR101_STM_TEMP",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:29:35.966021+00:00",
+          "unitOfMeasure": "deg C",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "BLR101_STM_PRESS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:29:35.966021+00:00",
+          "unitOfMeasure": "bar",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "TG01_FEED_FLOW",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:29:35.966021+00:00",
+          "unitOfMeasure": "m3/h",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
+          "sourceQuality": "Bad"
+        },
+        {
+          "meterCode": "PMP2A_VIB_RMS",
+          "readingValue": null,
+          "readingTimestamp": "2026-09-18T00:29:35.966021+00:00",
+          "unitOfMeasure": "mm/s",
+          "piAttributePath": "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
+          "sourceQuality": "Bad"
+        }
+      ]
+    },
+    "response_body": null,
+    "error_detail": null,
+    "timestamp": "2026-09-18T00:29:38.769290+00:00",
+    "publish_id": "pub-1789691378-f2c8e6",
+    "batch_id": "batch-1789691375-0c98bc"
+  },
+  {
     "status": "PENDING_SETUP",
     "message": "Pending connection setup: Oracle ERP Cloud integration is toggled off.",
     "record_count": 4,
