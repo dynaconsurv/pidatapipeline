@@ -311,29 +311,30 @@ class DataPipelineEngine:
 
         # Determine currently enabled (active) mappings from config/mappings.json
         mappings = load_mappings()
+        enabled_mappings = [m for m in mappings if m.get("enabled", True)]
         active_names = set()
         active_paths = set()
         active_web_ids = set()
         mapping_by_key = {}
 
-        for m in mappings:
-            if m.get("enabled", True):
-                attr_name = (m.get("attribute_name") or "").strip().lower()
-                full_path = (m.get("full_path") or "").strip().lower()
-                web_id = (m.get("web_id") or "").strip()
-                if attr_name:
-                    active_names.add(attr_name)
-                    mapping_by_key[attr_name] = m
-                if full_path:
-                    active_paths.add(full_path)
-                    mapping_by_key[full_path] = m
-                if web_id:
-                    active_web_ids.add(web_id)
-                    mapping_by_key[web_id] = m
+        for m in enabled_mappings:
+            attr_name = (m.get("attribute_name") or "").strip().lower()
+            full_path = (m.get("full_path") or "").strip().lower()
+            web_id = (m.get("web_id") or "").strip()
+            if attr_name:
+                active_names.add(attr_name)
+                mapping_by_key[attr_name] = m
+            if full_path:
+                active_paths.add(full_path)
+                mapping_by_key[full_path] = m
+            if web_id:
+                active_web_ids.add(web_id)
+                mapping_by_key[web_id] = m
 
-        # Retrieve up to 30 batches to find the last 5 pulls that belong to ACTIVE mappings
+        # Retrieve up to 30 batches to find the most recent pull for each ACTIVE mapping
         pulls = get_pull_history(limit=30)
         last_5_items = []
+        seen_attributes = set()
 
         if active_names or active_paths or active_web_ids:
             for batch in pulls:
@@ -352,8 +353,15 @@ class DataPipelineEngine:
                     if not is_active:
                         continue
 
-                    # Enrich with meter_tag from mapping if missing or updated
+                    # Match active mapping definition
                     matched_m = mapping_by_key.get(item_name) or mapping_by_key.get(item_path) or mapping_by_key.get(item_web_id)
+                    attr_ident = (matched_m.get("attribute_name") if matched_m else item_name).strip().lower()
+
+                    # Show at most ONE latest reading per active attribute (do not pad with older duplicates)
+                    if attr_ident in seen_attributes:
+                        continue
+                    seen_attributes.add(attr_ident)
+
                     meter_tag = matched_m.get("meter_tag") if matched_m else item.get("meter_tag")
 
                     last_5_items.append({
@@ -361,9 +369,9 @@ class DataPipelineEngine:
                         "meter_tag": meter_tag,
                         **item
                     })
-                    if len(last_5_items) >= 5:
+                    if len(last_5_items) >= len(enabled_mappings) or len(last_5_items) >= 5:
                         break
-                if len(last_5_items) >= 5:
+                if len(last_5_items) >= len(enabled_mappings) or len(last_5_items) >= 5:
                     break
 
         publishes = get_publish_history(limit=1)

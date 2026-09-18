@@ -29,6 +29,7 @@ def test_filtering():
     status3 = pipeline_engine.get_status()
     pulls3 = status3.get("last_5_pulls", [])
     print(f"Pulls with only '{active_target}' enabled: {len(pulls3)}")
+    assert len(pulls3) == 1, f"Expected exactly 1 pull for single enabled mapping, got {len(pulls3)}"
     for item in pulls3:
         assert item["attribute_name"].strip().lower() == active_target.strip().lower(), (
             f"Inactive attribute {item['attribute_name']} appeared in pulls!"
