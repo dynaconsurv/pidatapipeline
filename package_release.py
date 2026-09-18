@@ -147,8 +147,17 @@ def build_package(version: str, output_dir: str = "dist") -> str:
     with open(sha_file, "w", encoding="utf-8") as f:
         f.write(f"{sha256}  {zip_name}\n")
 
+    # Also produce PIDataPipeline-App-v{version}.zip so alphabetical sorting in GitHub releases
+    # places the application patch ahead of Offline-Wheels and Portable packages for legacy updaters
+    app_alias_name = f"PIDataPipeline-App-v{version}.zip"
+    app_alias_path = os.path.join(output_dir, app_alias_name)
+    shutil.copy2(zip_path, app_alias_path)
+    with open(f"{app_alias_path}.sha256", "w", encoding="utf-8") as f:
+        f.write(f"{sha256}  {app_alias_name}\n")
+
     print(f"\n[SUCCESS] Package built successfully!")
     print(f"  Archive:     {zip_path} ({size_kb} KB, {files_added} files)")
+    print(f"  Legacy Alias:{app_alias_path}")
     print(f"  SHA-256:     {sha256}")
     print(f"  Checksum:    {sha_file}")
     print(f"========================================================\n")
