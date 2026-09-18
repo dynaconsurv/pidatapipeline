@@ -4,6 +4,12 @@ Run with: python run.py
 """
 import os
 import sys
+
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENDOR = os.path.join(_ROOT, "vendor")
+if os.path.isdir(_VENDOR) and _VENDOR not in sys.path:
+    sys.path.insert(0, _VENDOR)
+
 import uvicorn
 
 if __name__ == "__main__":

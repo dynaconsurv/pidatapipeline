@@ -227,7 +227,7 @@ def create_backup() -> str:
     backup_dir = os.path.join(BACKUPS_DIR, f"backup_v{__version__}_{timestamp}")
     os.makedirs(backup_dir, exist_ok=True)
 
-    items_to_backup = ["app", "run.py", "run_mock_erp.py", "package_release.py", "requirements.txt", "scripts", "update.bat"]
+    items_to_backup = ["app", "run.py", "run_mock_erp.py", "package_release.py", "requirements.txt", "scripts", "update.bat", "vendor"]
     for item in items_to_backup:
         src = os.path.join(ROOT_DIR, item)
         dst = os.path.join(backup_dir, item)

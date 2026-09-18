@@ -77,7 +77,9 @@ def should_exclude(rel_path: str) -> bool:
         return True
     if norm.startswith(".vscode/") or norm.startswith(".idea/"):
         return True
-    if "__pycache__" in norm or norm.endswith((".pyc", ".pyo", ".pyd")):
+    if "__pycache__" in norm or norm.endswith((".pyc", ".pyo")):
+        return True
+    if norm.endswith(".pyd") and not norm.startswith("vendor/"):
         return True
     
     # Exclude build, cache, and backup directories

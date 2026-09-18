@@ -19,11 +19,21 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
+    from app.windows_sspi import WindowsNegotiateAuth
+    HAS_WINDOWS_SSPI = True
+except Exception:
+    HAS_WINDOWS_SSPI = False
+    WindowsNegotiateAuth = None
+
+try:
     from requests_negotiate_sspi import HttpNegotiateAuth
-    HAS_SSPI = True
+    HAS_REQ_SSPI = True
 except ImportError:
-    HAS_SSPI = False
+    HAS_REQ_SSPI = False
     HttpNegotiateAuth = None
+
+# If on Windows, SSPI is available either natively via WindowsNegotiateAuth (secur32.dll) or via requests_negotiate_sspi
+HAS_SSPI = HAS_WINDOWS_SSPI or HAS_REQ_SSPI
 
 try:
     from requests_ntlm import HttpNtlmAuth
@@ -74,24 +84,33 @@ class PIWebApiClient:
         parsed = urllib.parse.urlparse(self.url) if self.url else None
         host = parsed.hostname if parsed else None
 
-        if not self.username and not self.password:
-            # Single Sign-On using the current logged-in Windows user session (exactly like browser)
-            return HttpNegotiateAuth(host=host, delegate=True)
-        domain, user = self._parse_domain_and_user(self.username)
-        # If domain was omitted but machine is domain-joined, check USERDOMAIN
+        domain, user = self._parse_domain_and_user(self.username) if self.username else (None, None)
         if not domain and os.environ.get("USERDOMAIN"):
             win_domain = os.environ.get("USERDOMAIN")
             computer_name = os.environ.get("COMPUTERNAME")
             if win_domain and computer_name and win_domain.upper() != computer_name.upper():
                 domain = win_domain
 
-        return HttpNegotiateAuth(
-            username=user,
-            domain=domain,
-            password=self.password or None,
-            host=host,
-            delegate=True
-        )
+        # Prefer built-in WindowsNegotiateAuth (native secur32.dll, zero binary dependencies)
+        if HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
+            return WindowsNegotiateAuth(
+                username=user,
+                domain=domain,
+                password=self.password or None,
+                host=host,
+                delegate=True
+            )
+        elif HAS_REQ_SSPI and HttpNegotiateAuth:
+            if not self.username and not self.password:
+                return HttpNegotiateAuth(host=host, delegate=True)
+            return HttpNegotiateAuth(
+                username=user,
+                domain=domain,
+                password=self.password or None,
+                host=host,
+                delegate=True
+            )
+        return None
 
     def _get_auth(self):
         if self.auth_type in ("kerberos", "windows"):
@@ -292,7 +311,10 @@ class PIWebApiClient:
                                 sso_session.verify = self.verify_ssl
                                 sso_session.headers.update(self._get_headers())
                                 parsed_h = urllib.parse.urlparse(base).hostname if base else None
-                                sso_session.auth = HttpNegotiateAuth(host=parsed_h, delegate=True)
+                                if HAS_WINDOWS_SSPI and WindowsNegotiateAuth:
+                                    sso_session.auth = WindowsNegotiateAuth(host=parsed_h, delegate=True)
+                                elif HAS_REQ_SSPI and HttpNegotiateAuth:
+                                    sso_session.auth = HttpNegotiateAuth(host=parsed_h, delegate=True)
                                 p_resp = sso_session.get(probe_url, timeout=self.timeout)
                                 if p_resp.status_code in (200, 201):
                                     alt_auth_success = "kerberos"
@@ -375,7 +397,7 @@ class PIWebApiClient:
                                     )
                             elif self.auth_type == "kerberos":
                                 if not HAS_SSPI:
-                                    err_lines.append("1. Python SSPI: 'requests-negotiate-sspi' is required on Windows for Kerberos/NTLM authentication.")
+                                    err_lines.append("1. Python SSPI: Windows Integrated Authentication (Kerberos/NTLM) requires Windows OS.")
                                 err_lines.append(
                                     "1. Windows SSO: If logged in as a domain user with PI permissions, leave Username and Password blank in Settings."
                                 )
