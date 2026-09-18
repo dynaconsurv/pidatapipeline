@@ -1112,7 +1112,7 @@ async function handleUploadOfflinePatch(e) {
     const result = await res.json();
     if (res.ok && result.success) {
       if (box) {
-        box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\nFiles updated: ${result.files_updated}\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nIMPORTANT: Please restart the application service to run the new version.`;
+        box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\nFiles updated: ${result.files_updated}\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nACTION REQUIRED: Restart the application to load the new version:\n  • Double-click stop.bat (or scripts\\stop_background.bat)\n  • Double-click start.bat (or start_silent.vbs)`;
       }
       showToast("Offline patch installed successfully! Please restart.", "success");
       fetchSystemVersion();
