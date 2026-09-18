@@ -249,6 +249,39 @@ def apply_patch_from_zip(zip_path: str, backup: bool = True) -> Dict[str, Any]:
     }
 
 
+def restart_server_process():
+    """
+    Restarts the server process cleanly after a 1.0s delay to allow HTTP response to send.
+    Works seamlessly in both portable environments and standard Python installations.
+    """
+    import threading
+
+    def _worker():
+        time.sleep(1.0)
+        # Check for portable Python executable vs system Python
+        portable_py = os.path.join(ROOT_DIR, "python", "python.exe")
+        py_bin = portable_py if os.path.exists(portable_py) else sys.executable
+        run_py = os.path.join(ROOT_DIR, "run.py")
+
+        if sys.platform == "win32":
+            # Wait 1.5s via ping for port 8000 to be completely released, then launch fresh server
+            cmd = f'ping 127.0.0.1 -n 2 >nul & start "AVEVA PI to Oracle ERP Data Pipeline" "{py_bin}" "{run_py}"'
+            subprocess.Popen(
+                cmd,
+                shell=True,
+                cwd=ROOT_DIR,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            cmd = f'sleep 1 && "{py_bin}" "{run_py}" &'
+            subprocess.Popen(cmd, shell=True, cwd=ROOT_DIR)
+
+        os._exit(0)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 def download_and_apply_update(download_url: Optional[str] = None, github_token: Optional[str] = None) -> Dict[str, Any]:
     """
     Downloads patch ZIP from download_url (or latest release) and applies it.

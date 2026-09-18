@@ -322,3 +322,11 @@ async def upload_offline_patch(request: Request):
                 pass
 
 
+@app.post("/api/system/restart")
+def restart_server():
+    """Trigger clean, detached server restart."""
+    from app.updater import restart_server_process
+    restart_server_process()
+    return {"success": True, "message": "Server restart initiated. Reconnecting in 3 seconds..."}
+
+

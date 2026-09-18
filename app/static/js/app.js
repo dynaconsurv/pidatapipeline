@@ -1112,9 +1112,9 @@ async function handleUploadOfflinePatch(e) {
     const result = await res.json();
     if (res.ok && result.success) {
       if (box) {
-        box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\nFiles updated: ${result.files_updated}\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nACTION REQUIRED: Restart the application to load the new version:\n  • Double-click stop.bat (or scripts\\stop_background.bat)\n  • Double-click start.bat (or start_silent.vbs)`;
+        box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\nFiles updated: ${result.files_updated}\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\n<div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;"><button type="button" class="btn btn-primary btn-sm" onclick="triggerServerRestart()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width:14px;height:14px;"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Restart Server Now (1-Click)</button><span style="font-size: 11px; color: var(--ink-muted);">Or run stop.bat & start.bat manually</span></div>`;
       }
-      showToast("Offline patch installed successfully! Please restart.", "success");
+      showToast("Offline patch installed successfully!", "success");
       fetchSystemVersion();
     } else {
       if (box) {
@@ -1129,6 +1129,47 @@ async function handleUploadOfflinePatch(e) {
     e.target.value = "";
   }
 }
+
+async function triggerServerRestart() {
+  const box = document.getElementById("update-status-box");
+  if (box) {
+    box.innerHTML = `<span style="color: #f59e0b; font-weight: 600;">⟳ Restarting server...</span>\nServer is shutting down and relaunching with the updated code.\nReconnecting automatically in a few seconds...`;
+  }
+  showToast("Restarting server...", "info");
+
+  try {
+    await fetch("/api/system/restart", { method: "POST" });
+  } catch (e) {
+    // Network disconnect is expected when server process terminates
+  }
+
+  setTimeout(() => {
+    let attempts = 0;
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch("/api/system/version?t=" + Date.now());
+        if (res.ok) {
+          const data = await res.json();
+          clearInterval(pollInterval);
+          if (box) {
+            box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Reconnected to server v${data.version}!</span>\nReloading dashboard...`;
+          }
+          showToast(`Server reconnected successfully (v${data.version})!`, "success");
+          setTimeout(() => window.location.reload(), 800);
+        }
+      } catch (e) {
+        if (attempts >= 25) {
+          clearInterval(pollInterval);
+          if (box) {
+            box.innerHTML = `<span style="color: var(--danger); font-weight: 600;">Auto-reconnect timed out.</span>\nIf the server hasn't restarted yet, please run start.bat manually.`;
+          }
+        }
+      }
+    }, 1000);
+  }, 2500);
+}
+window.triggerServerRestart = triggerServerRestart;
 
 function handlePiAuthChange() {
   const type = document.getElementById("setting-pi-auth-type").value;
