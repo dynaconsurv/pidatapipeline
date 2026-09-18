@@ -146,6 +146,7 @@ class DataPipelineEngine:
                     "attribute_name": m.get("attribute_name", "Unknown Attribute"),
                     "full_path": m.get("full_path", ""),
                     "web_id": m.get("web_id", ""),
+                    "meter_tag": m.get("meter_tag") or m.get("attribute_name"),
                     "success": False,
                     "value": None,
                     "uom": m.get("uom", ""),
@@ -160,6 +161,7 @@ class DataPipelineEngine:
         else:
             for m in enabled_mappings:
                 item_result = pi_client.fetch_attribute_value(m)
+                item_result["meter_tag"] = m.get("meter_tag") or m.get("attribute_name")
                 pull_items.append(item_result)
                 if not item_result.get("success"):
                     pi_failures += 1
@@ -312,9 +314,6 @@ class DataPipelineEngine:
         # Determine currently enabled (active) mappings from config/mappings.json
         mappings = load_mappings()
         enabled_mappings = [m for m in mappings if m.get("enabled", True)]
-        active_names = set()
-        active_paths = set()
-        active_web_ids = set()
         mapping_by_key = {}
 
         for m in enabled_mappings:
@@ -322,56 +321,77 @@ class DataPipelineEngine:
             full_path = (m.get("full_path") or "").strip().lower()
             web_id = (m.get("web_id") or "").strip()
             if attr_name:
-                active_names.add(attr_name)
                 mapping_by_key[attr_name] = m
             if full_path:
-                active_paths.add(full_path)
                 mapping_by_key[full_path] = m
             if web_id:
-                active_web_ids.add(web_id)
                 mapping_by_key[web_id] = m
 
-        # Retrieve up to 30 batches to find the most recent pull for each ACTIVE mapping
-        pulls = get_pull_history(limit=30)
-        last_5_items = []
-        seen_attributes = set()
+        # Retrieve batches to construct the last 5 triggers containing ACTIVE mappings
+        pulls = get_pull_history(limit=50)
+        last_5_triggers = []
 
-        if active_names or active_paths or active_web_ids:
+        if enabled_mappings:
             for batch in pulls:
+                active_items = []
+                seen_attrs_in_batch = set()
+
                 for item in batch.get("items", []):
                     item_name = (item.get("attribute_name") or "").strip().lower()
                     item_path = (item.get("full_path") or "").strip().lower()
                     item_web_id = (item.get("web_id") or "").strip()
 
-                    # Exclude if attribute is inactive (enabled=False) or removed from mappings
-                    is_active = (
-                        (item_name and item_name in active_names) or
-                        (item_path and item_path in active_paths) or
-                        (item_web_id and item_web_id in active_web_ids)
-                    )
-
-                    if not is_active:
+                    # Match active mapping definition (skip inactive or removed mappings)
+                    matched_m = mapping_by_key.get(item_web_id) or mapping_by_key.get(item_path) or mapping_by_key.get(item_name)
+                    if not matched_m:
                         continue
 
-                    # Match active mapping definition
-                    matched_m = mapping_by_key.get(item_name) or mapping_by_key.get(item_path) or mapping_by_key.get(item_web_id)
-                    attr_ident = (matched_m.get("attribute_name") if matched_m else item_name).strip().lower()
-
-                    # Show at most ONE latest reading per active attribute (do not pad with older duplicates)
-                    if attr_ident in seen_attributes:
+                    attr_ident = (matched_m.get("attribute_name") or item_name).strip().lower()
+                    if attr_ident in seen_attrs_in_batch:
                         continue
-                    seen_attributes.add(attr_ident)
+                    seen_attrs_in_batch.add(attr_ident)
 
-                    meter_tag = matched_m.get("meter_tag") if matched_m else item.get("meter_tag")
-
-                    last_5_items.append({
-                        "batch_timestamp": batch.get("timestamp"),
+                    meter_tag = matched_m.get("meter_tag") or item.get("meter_tag") or matched_m.get("attribute_name")
+                    active_items.append({
+                        "attribute_name": matched_m.get("attribute_name") or item.get("attribute_name"),
                         "meter_tag": meter_tag,
-                        **item
+                        "value": item.get("value"),
+                        "raw_value": item.get("raw_value"),
+                        "uom": item.get("uom") or matched_m.get("uom", ""),
+                        "timestamp": item.get("timestamp") or batch.get("timestamp"),
+                        "quality": item.get("quality", "Good"),
+                        "status": item.get("status", "Online"),
+                        "error": item.get("error")
                     })
-                    if len(last_5_items) >= len(enabled_mappings) or len(last_5_items) >= 5:
-                        break
-                if len(last_5_items) >= len(enabled_mappings) or len(last_5_items) >= 5:
+
+                # If batch has no active items remaining, skip it
+                if not active_items:
+                    continue
+
+                # Determine trigger-level quality
+                qualities = [it.get("quality", "Good") for it in active_items]
+                if not batch.get("success", True) or any(q in ("Bad", "Failed") for q in qualities):
+                    overall_quality = "Bad" if all(q in ("Bad", "Failed") for q in qualities) else "Partial"
+                elif any(q == "Questionable" for q in qualities):
+                    overall_quality = "Questionable"
+                else:
+                    overall_quality = "Good"
+
+                ingested_at = active_items[0].get("timestamp") or batch.get("timestamp")
+
+                last_5_triggers.append({
+                    "pull_id": batch.get("pull_id"),
+                    "triggered_at": batch.get("timestamp"),
+                    "ingested_at": ingested_at,
+                    "duration_ms": batch.get("duration_ms", 0),
+                    "success": batch.get("success", True),
+                    "quality": overall_quality,
+                    "meter_tags": [it["meter_tag"] for it in active_items if it.get("meter_tag")],
+                    "items": active_items,
+                    "items_count": len(active_items)
+                })
+
+                if len(last_5_triggers) >= 5:
                     break
 
         publishes = get_publish_history(limit=1)
@@ -388,7 +408,7 @@ class DataPipelineEngine:
             },
             "pi_connection": self.pi_status,
             "oracle_erp_connection": self.erp_status,
-            "last_5_pulls": last_5_items,
+            "last_5_pulls": last_5_triggers,
             "last_publish": last_publish
         }
 

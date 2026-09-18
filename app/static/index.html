@@ -270,7 +270,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
               Last 5 Data Pulls from AVEVA PI Web API
             </div>
-            <div class="form-help">Telemetry attributes ingested from Asset Framework (AF)</div>
+            <div class="form-help">Historical trigger cycles and ingested meter telemetry (Active mappings only)</div>
           </div>
           <button id="btn-refresh-dashboard" class="btn btn-secondary btn-sm">Refresh Table</button>
         </div>
@@ -279,19 +279,16 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>PI Attribute Name</th>
-                <th>Full AF Path</th>
-                <th>Value</th>
-                <th>Unit</th>
-                <th>PI Timestamp</th>
-                <th>Quality</th>
-                <th>ERP Meter Tag</th>
-                <th>Ingested</th>
+                <th>Date Triggered</th>
+                <th>Ingested Date</th>
+                <th>ERP Meter Tag(s)</th>
+                <th>Attribute(s) &amp; Values</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody id="last-pulls-tbody">
               <tr>
-                <td colspan="8" style="text-align: center; color: var(--ink-secondary); padding: 32px;">
+                <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 32px;">
                   Waiting for initial data pull cycle...
                 </td>
               </tr>

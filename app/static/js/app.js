@@ -290,14 +290,14 @@ function updateCountdownDisplay(sec) {
   clock.textContent = `${String(mins).padStart(2, '0')}:${String(remainderSec).padStart(2, '0')}`;
 }
 
-function renderLastPullsTable(items) {
+function renderLastPullsTable(triggers) {
   const tbody = document.getElementById("last-pulls-tbody");
   if (!tbody) return;
 
-  if (!items || items.length === 0) {
+  if (!triggers || triggers.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align: center; color: var(--ink-secondary); padding: 2rem;">
+        <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 2rem;">
           No active telemetry data pulled yet. Ensure attribute mappings are active and click <strong>"Pull Now"</strong> above.
         </td>
       </tr>
@@ -305,26 +305,83 @@ function renderLastPullsTable(items) {
     return;
   }
 
-  tbody.innerHTML = items.map(item => {
-    const isGood = item.quality === "Good";
-    const qualityBadge = isGood
-      ? `<span class="badge badge-success"><span class="badge-dot"></span> Good</span>`
-      : `<span class="badge badge-danger"><span class="badge-dot"></span> ${escapeHtml(item.quality || 'Bad')}</span>`;
+  tbody.innerHTML = triggers.map(entry => {
+    // Normalization & backward compatibility check
+    let tr = entry;
+    if (!tr.items && tr.attribute_name) {
+      tr = {
+        triggered_at: tr.batch_timestamp || tr.timestamp,
+        ingested_at: tr.timestamp,
+        quality: tr.quality,
+        items: [{
+          attribute_name: tr.attribute_name,
+          meter_tag: tr.meter_tag,
+          value: tr.value,
+          uom: tr.uom,
+          error: tr.error
+        }]
+      };
+    }
 
-    const valFormatted = item.value !== null && item.value !== undefined
-      ? `${item.value} <span style="font-size: 11px; color: var(--ink-secondary);">${item.uom || ''}</span>`
-      : `<span style="color: var(--status-bad); font-size: 11px;">${item.error || 'N/A'}</span>`;
+    // Quality / Status badge
+    let qualityBadge;
+    if (tr.quality === "Good") {
+      qualityBadge = `<span class="badge badge-success"><span class="badge-dot"></span> Good</span>`;
+    } else if (tr.quality === "Partial") {
+      qualityBadge = `<span class="badge badge-pending"><span class="badge-dot"></span> Partial</span>`;
+    } else if (tr.quality === "Questionable") {
+      qualityBadge = `<span class="badge badge-pending"><span class="badge-dot"></span> Questionable</span>`;
+    } else {
+      qualityBadge = `<span class="badge badge-danger"><span class="badge-dot"></span> ${escapeHtml(tr.quality || 'Failed')}</span>`;
+    }
+
+    const items = tr.items || [];
+
+    // Render ERP Meter Tag(s)
+    const meterTagsHtml = items.length > 0
+      ? items.map(it => `
+          <div style="margin: 4px 0;">
+            <code style="font-family: var(--font-mono); font-size: 11px; background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--ink-primary); display: inline-block;">
+              ${escapeHtml(it.meter_tag || '--')}
+            </code>
+          </div>
+        `).join("")
+      : '<span style="color: var(--ink-tertiary);">--</span>';
+
+    // Render Attribute(s) Name & Value
+    const attrsHtml = items.length > 0
+      ? items.map(it => {
+          const hasVal = it.value !== null && it.value !== undefined;
+          const valDisplay = hasVal
+            ? `<strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${it.value}</strong> <span style="font-size: 11px; color: var(--ink-secondary);">${escapeHtml(it.uom || '')}</span>`
+            : `<span style="color: var(--status-bad); font-size: 11px;">${escapeHtml(it.error || 'N/A')}</span>`;
+
+          return `
+            <div style="margin: 4px 0; font-size: 12px; display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(it.attribute_name)}:</span>
+              <span>${valDisplay}</span>
+            </div>
+          `;
+        }).join("")
+      : '<span style="color: var(--ink-tertiary);">--</span>';
 
     return `
       <tr>
-        <td><span style="font-weight: 500;">${escapeHtml(item.attribute_name || 'Tag')}</span></td>
-        <td><span class="path-code" title="${escapeHtml(item.full_path || '')}">${escapeHtml(item.full_path || '--')}</span></td>
-        <td><span class="val-badge">${valFormatted}</span></td>
-        <td style="color: var(--ink-secondary);">${escapeHtml(item.uom || '--')}</td>
-        <td style="font-family: var(--font-mono); font-size: 11px; color: var(--ink-secondary);">${formatTimestamp(item.timestamp)}</td>
-        <td>${qualityBadge}</td>
-        <td><code style="font-size: 11px; color: var(--ink-primary);">${escapeHtml(item.meter_tag || item.attribute_name || '--')}</code></td>
-        <td style="font-size: 11px; color: var(--ink-secondary);">${formatTimestamp(item.batch_timestamp || item.timestamp)}</td>
+        <td style="font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--ink-primary); font-weight: 500; vertical-align: top; padding-top: 12px;">
+          ${formatTimestamp(tr.triggered_at)}
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--ink-secondary); vertical-align: top; padding-top: 12px;">
+          ${formatTimestamp(tr.ingested_at || tr.triggered_at)}
+        </td>
+        <td style="vertical-align: top; padding-top: 9px;">
+          ${meterTagsHtml}
+        </td>
+        <td style="vertical-align: top; padding-top: 9px;">
+          ${attrsHtml}
+        </td>
+        <td style="vertical-align: top; padding-top: 12px; white-space: nowrap;">
+          ${qualityBadge}
+        </td>
       </tr>
     `;
   }).join("");
