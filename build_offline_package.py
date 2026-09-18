@@ -202,7 +202,11 @@ pause
     update_bat_content = """@echo off
 title PIDataPipeline - Offline Patch Manager
 cd /d "%~dp0"
-"%~dp0python\\python.exe" -m app.updater
+if not "%~1"=="" (
+    "%~dp0python\\python.exe" -m app.updater --file "%~1"
+) else (
+    "%~dp0python\\python.exe" -m app.updater
+)
 pause
 """
     with open(os.path.join(stage_dir, "update.bat"), "w", encoding="utf-8") as f:

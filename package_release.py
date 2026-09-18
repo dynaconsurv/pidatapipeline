@@ -79,8 +79,8 @@ def should_exclude(rel_path: str) -> bool:
     if "__pycache__" in norm or norm.endswith((".pyc", ".pyo", ".pyd")):
         return True
     
-    # Exclude build and backup directories
-    if norm.startswith("dist/") or norm.startswith("backups/") or norm.startswith("build/"):
+    # Exclude build, cache, and backup directories
+    if norm.startswith("dist/") or norm.startswith("backups/") or norm.startswith("build/") or norm.startswith("_offline_cache/"):
         return True
     
     # Exclude test files from production release package
