@@ -107,11 +107,15 @@ def update_pipeline_settings(settings: Dict[str, Any]):
 @app.post("/api/settings/test-pi")
 def test_pi_connection(config: Dict[str, Any] = None):
     """Test connection to AVEVA PI Web API using provided or stored config."""
+    is_stored = False
     if not config:
         stored = load_settings()
         config = stored.get("pi_web_api", {})
+        is_stored = True
     client = PIWebApiClient(config)
     result = client.test_connection()
+    if is_stored or result.get("success"):
+        pipeline_engine.refresh_pi_connection_status(result)
     return result
 
 

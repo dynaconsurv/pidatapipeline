@@ -38,38 +38,113 @@ def parse_semver(ver_str: str) -> Tuple[int, ...]:
         return (0, 0, 0)
 
 
+def get_github_token(explicit_token: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve GitHub personal access token using multi-tier discovery:
+    1. Explicit token argument
+    2. Environment variables: GITHUB_TOKEN, GH_TOKEN
+    3. Saved configuration in config/settings.json
+    4. Git Credential Manager via 'git credential fill' (seamless for local git environments)
+    """
+    if explicit_token and explicit_token.strip():
+        return explicit_token.strip()
+
+    # 1. Environment variables
+    for var in ("GITHUB_TOKEN", "GH_TOKEN"):
+        t = os.environ.get(var)
+        if t and t.strip():
+            return t.strip()
+
+    # 2. Saved settings
+    try:
+        from app.config import load_settings
+        st = load_settings()
+        tok = st.get("github_token") or st.get("updates", {}).get("github_token")
+        if tok and tok.strip():
+            return tok.strip()
+    except Exception:
+        pass
+
+    # 3. Git Credential Manager
+    if shutil.which("git"):
+        try:
+            p = subprocess.run(
+                ["git", "credential", "fill"],
+                input="protocol=https\nhost=github.com\n",
+                text=True,
+                capture_output=True,
+                timeout=3
+            )
+            for line in p.stdout.splitlines():
+                if line.startswith("password="):
+                    pwd = line.split("=", 1)[1].strip()
+                    if pwd:
+                        return pwd
+        except Exception:
+            pass
+
+    return None
+
+
 def check_for_updates(github_token: Optional[str] = None) -> Dict[str, Any]:
     """
     Queries GitHub Releases API to check if a newer version is published.
+    Supports both public and private repositories using Git Credential Manager or PAT.
     """
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    token = get_github_token(github_token)
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": f"PIDataPipeline-Updater/{__version__}"
     }
-    if github_token:
-        headers["Authorization"] = f"token {github_token}"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         resp = requests.get(url, headers=headers, timeout=10)
-        
-        if resp.status_code == 404:
-            return {
-                "update_available": False,
-                "current_version": __version__,
-                "latest_version": __version__,
-                "message": f"No official release published yet on repository '{GITHUB_REPO}'. You are on v{__version__}."
-            }
+        data = None
 
-        if resp.status_code == 403:
-            return {
-                "update_available": False,
-                "current_version": __version__,
-                "latest_version": None,
-                "error": "GitHub API rate limit exceeded. Please wait a few minutes or provide a GitHub token."
-            }
+        if resp.status_code == 200:
+            data = resp.json()
+        elif resp.status_code == 404:
+            # Fallback: query all releases (in case latest is marked as prerelease or private)
+            all_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+            all_resp = requests.get(all_url, headers=headers, timeout=10)
+            if all_resp.status_code == 200:
+                releases = all_resp.json()
+                if isinstance(releases, list) and releases:
+                    # Pick newest non-draft release
+                    published = [r for r in releases if not r.get("draft")]
+                    if published:
+                        data = published[0]
+                        resp = all_resp
+            elif all_resp.status_code == 404:
+                resp = all_resp
 
-        if resp.status_code != 200:
+        if data is None:
+            if resp.status_code == 404:
+                if not token:
+                    msg = (
+                        f"No public releases found on repository '{GITHUB_REPO}' (HTTP 404).\n"
+                        f"If '{GITHUB_REPO}' is a private repository, please configure a GitHub Token or sign into Git Credential Manager."
+                    )
+                else:
+                    msg = f"No official releases found on repository '{GITHUB_REPO}'. You are on v{__version__}."
+                return {
+                    "update_available": False,
+                    "current_version": __version__,
+                    "latest_version": __version__,
+                    "message": msg
+                }
+
+            if resp.status_code == 403:
+                return {
+                    "update_available": False,
+                    "current_version": __version__,
+                    "latest_version": None,
+                    "error": "GitHub API rate limit exceeded. Please wait a few minutes or provide a GitHub token."
+                }
+
             return {
                 "update_available": False,
                 "current_version": __version__,
@@ -77,22 +152,36 @@ def check_for_updates(github_token: Optional[str] = None) -> Dict[str, Any]:
                 "error": f"GitHub API responded with HTTP {resp.status_code}"
             }
 
-        data = resp.json()
         latest_tag = data.get("tag_name", "").lstrip("v")
         release_name = data.get("name", f"Release v{latest_tag}")
         release_body = data.get("body", "No changelog provided.")
         published_at = data.get("published_at", "")
         html_url = data.get("html_url", "")
 
-        # Find download URL: prefer .zip assets, fallback to zipball_url
+        # Find application update download URL:
+        # Prioritize exact application patch zip (e.g. pidatapipeline-v*.zip)
+        # Avoid wheels and portable zips for in-place application patching
         download_url = None
         asset_size_kb = 0
+        asset_name = None
+
+        candidates = []
         for asset in data.get("assets", []):
-            name = asset.get("name", "").lower()
-            if name.endswith(".zip"):
-                download_url = asset.get("browser_download_url")
-                asset_size_kb = round(asset.get("size", 0) / 1024, 1)
-                break
+            name = asset.get("name", "")
+            lower_name = name.lower()
+            if lower_name.endswith(".zip"):
+                # Top priority: application zip (e.g. pidatapipeline-v1.1.4.zip)
+                is_app_zip = lower_name.startswith("pidatapipeline-") and "portable" not in lower_name and "wheel" not in lower_name
+                priority = 1 if is_app_zip else 2
+                candidates.append((priority, asset))
+
+        candidates.sort(key=lambda c: c[0])
+        if candidates:
+            best_asset = candidates[0][1]
+            asset_name = best_asset.get("name")
+            asset_size_kb = round(best_asset.get("size", 0) / 1024, 1)
+            # If repo is private or authenticated, use API asset URL so token can authenticate the download
+            download_url = best_asset.get("url") if token else best_asset.get("browser_download_url")
 
         if not download_url:
             download_url = data.get("zipball_url")
@@ -107,8 +196,10 @@ def check_for_updates(github_token: Optional[str] = None) -> Dict[str, Any]:
             "release_notes": release_body,
             "published_at": published_at,
             "download_url": download_url,
+            "asset_name": asset_name,
             "asset_size_kb": asset_size_kb,
             "html_url": html_url,
+            "authenticated": bool(token),
             "message": f"New version v{latest_tag} is available!" if is_newer else f"You are running the latest version (v{__version__})."
         }
 
@@ -285,9 +376,12 @@ def restart_server_process():
 def download_and_apply_update(download_url: Optional[str] = None, github_token: Optional[str] = None) -> Dict[str, Any]:
     """
     Downloads patch ZIP from download_url (or latest release) and applies it.
+    Supports both public and private repositories.
     """
+    token = get_github_token(github_token)
+
     if not download_url:
-        check = check_for_updates(github_token)
+        check = check_for_updates(token)
         if not check.get("update_available"):
             return {
                 "success": False,
@@ -302,12 +396,12 @@ def download_and_apply_update(download_url: Optional[str] = None, github_token: 
         "Accept": "application/octet-stream",
         "User-Agent": f"PIDataPipeline-Updater/{__version__}"
     }
-    if github_token:
-        headers["Authorization"] = f"token {github_token}"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     tmp_file = None
     try:
-        resp = requests.get(download_url, headers=headers, stream=True, timeout=60)
+        resp = requests.get(download_url, headers=headers, stream=True, timeout=90)
         if resp.status_code != 200:
             return {"success": False, "error": f"Failed to download patch (HTTP {resp.status_code})"}
 

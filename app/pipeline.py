@@ -172,24 +172,49 @@ class DataPipelineEngine:
         pi_pull_success = (pi_failures == 0)
 
         # Update PI status
-        if pi_pull_success:
+        if conn_test.get("success"):
             is_sim = bool(pi_cfg.get("simulation_mode", False))
-            self.pi_status = {
-                "status": "SIMULATED" if is_sim else "CONNECTED",
-                "message": f"Simulating telemetry for {len(pull_items)} attributes (Offline Plant Simulator)" if is_sim else f"Successfully pulled {len(pull_items)} attributes from AVEVA PI Web API",
-                "last_check": now_iso,
-                "latency_ms": avg_latency,
-                "error": None
-            }
+            if pi_pull_success:
+                self.pi_status = {
+                    "status": "SIMULATED" if is_sim else "CONNECTED",
+                    "message": f"Simulating telemetry for {len(pull_items)} attributes (Offline Plant Simulator)" if is_sim else f"Successfully pulled {len(pull_items)} attributes from AVEVA PI Web API",
+                    "last_check": now_iso,
+                    "latency_ms": avg_latency or conn_test.get("latency_ms"),
+                    "error": None
+                }
+            else:
+                first_err = next((item.get("error") for item in pull_items if item.get("error")), "Attribute extraction issue")
+                has_404 = any("404" in str(it.get("error")) or "not found" in str(it.get("error")).lower() for it in pull_items)
+                if has_404:
+                    friendly_err = (
+                        f"PI Web API is ONLINE ({conn_test.get('latency_ms', avg_latency)}ms), but {pi_failures} of {len(pull_items)} mapped attribute path(s) were not found on this PI AF database (HTTP 404).\n"
+                        f"• Action: Open the 'Mapping' page to browse your AF server and map your real attributes.\n"
+                        f"• Server Response: {first_err}"
+                    )
+                    self.pi_status = {
+                        "status": "WARNING",
+                        "message": f"PI Web API connected, but {pi_failures} of {len(pull_items)} mapped attribute paths not found (HTTP 404)",
+                        "last_check": now_iso,
+                        "latency_ms": conn_test.get("latency_ms") or avg_latency,
+                        "error": friendly_err
+                    }
+                else:
+                    self.pi_status = {
+                        "status": "PARTIAL_ERROR" if pi_failures < len(pull_items) else "FAILED",
+                        "message": f"{pi_failures} of {len(pull_items)} attributes failed to pull from PI Web API",
+                        "last_check": now_iso,
+                        "latency_ms": conn_test.get("latency_ms") or avg_latency,
+                        "error": first_err
+                    }
+                add_log("WARNING" if has_404 else "ERROR", "PI_WEB_API", self.pi_status["message"])
         else:
             self.pi_status = {
-                "status": "PARTIAL_ERROR" if pi_failures < len(pull_items) else "FAILED",
-                "message": f"{pi_failures} of {len(pull_items)} attributes failed to pull from PI Web API",
+                "status": "FAILED",
+                "message": "AVEVA PI Web API host unreachable or authentication failed",
                 "last_check": now_iso,
-                "latency_ms": avg_latency,
-                "error": next((item.get("error") for item in pull_items if item.get("error")), "Unknown error")
+                "latency_ms": None,
+                "error": conn_test.get("error") or conn_test.get("message") or "Connection failed"
             }
-            add_log("ERROR", "PI_WEB_API", f"PI Pull issue: {self.pi_status['message']}", {"details": pull_items})
 
         # Record batch to pull history
         batch_record = {
@@ -411,6 +436,34 @@ class DataPipelineEngine:
             "last_5_pulls": last_5_triggers,
             "last_publish": last_publish
         }
+
+    def refresh_pi_connection_status(self, conn_result: Dict[str, Any]):
+        """Update live PI connection status after an explicit connection test."""
+        with self._lock:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if conn_result.get("success"):
+                is_sim = conn_result.get("is_simulation", False)
+                latency = conn_result.get("latency_ms")
+                if self.pi_status.get("status") == "WARNING":
+                    # Keep path warning context, but update verified latency and timestamp
+                    self.pi_status["latency_ms"] = latency
+                    self.pi_status["last_check"] = now_iso
+                else:
+                    self.pi_status = {
+                        "status": "SIMULATED" if is_sim else "CONNECTED",
+                        "message": conn_result.get("message") or "Successfully connected to AVEVA PI Web API",
+                        "last_check": now_iso,
+                        "latency_ms": latency,
+                        "error": None
+                    }
+            elif conn_result.get("status_code") or conn_result.get("error"):
+                self.pi_status = {
+                    "status": "FAILED",
+                    "message": conn_result.get("message") or "PI Web API connection test failed",
+                    "last_check": now_iso,
+                    "latency_ms": None,
+                    "error": conn_result.get("error") or conn_result.get("message")
+                }
 
 
 # Global pipeline engine singleton

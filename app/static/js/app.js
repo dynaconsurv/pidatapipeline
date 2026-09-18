@@ -142,6 +142,9 @@ function renderDashboard(data) {
     piMode.textContent = currentSettings.pi_web_api.simulation_mode ? "Simulation Mode" : "Live PI Server";
   }
 
+  const piErrorTitleText = document.getElementById("pi-error-title-text");
+  const piErrorTitle = document.querySelector("#pi-error-box .error-title");
+
   if (pi.status === "CONNECTED") {
     piBadge.className = "badge badge-success";
     piBadge.innerHTML = '<span class="badge-dot"></span> Connected';
@@ -152,11 +155,23 @@ function renderDashboard(data) {
     piBadge.innerHTML = '<span class="badge-dot"></span> Simulated Demo';
     piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
     piErrorBox.style.display = "none";
+  } else if (pi.status === "WARNING") {
+    piBadge.className = "badge badge-pending";
+    piBadge.innerHTML = '<span class="badge-dot"></span> Mapping Warning';
+    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+    piErrorBox.style.display = "block";
+    piErrorBox.className = "error-console warning";
+    if (piErrorTitle) piErrorTitle.className = "error-title warning";
+    if (piErrorTitleText) piErrorTitleText.textContent = "Attribute Mapping Warning (AF 404)";
+    piErrorText.textContent = pi.error || pi.message || "PI Web API is online, but configured attribute path does not exist on this server.";
   } else if (pi.status === "PARTIAL_ERROR" || pi.status === "FAILED") {
     piBadge.className = "badge badge-danger";
     piBadge.innerHTML = `<span class="badge-dot"></span> ${pi.status === 'FAILED' ? 'Failed' : 'Partial Error'}`;
-    piLatency.textContent = "--";
+    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
     piErrorBox.style.display = "block";
+    piErrorBox.className = "error-console danger";
+    if (piErrorTitle) piErrorTitle.className = "error-title";
+    if (piErrorTitleText) piErrorTitleText.textContent = "Connection Error";
     piErrorText.textContent = pi.error || pi.message || "Unknown error connecting to PI Web API";
   } else {
     piBadge.className = "badge badge-pending";
@@ -1154,8 +1169,8 @@ async function handleApplyUpdate() {
     const result = await res.json();
 
     if (res.ok && result.success) {
-      box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\n\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\nIMPORTANT: Please restart the application service (or run scripts/stop_background.bat and scripts/start_background.vbs) to load the new patch.`;
-      showToast("Patch installed successfully! Please restart application.", "success");
+      box.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ ${escapeHtml(result.message)}</span>\n\nBackup created at:\n${escapeHtml(result.backup_path || '')}\n\n<div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;"><button type="button" class="btn btn-primary btn-sm" onclick="triggerServerRestart()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width:14px;height:14px;"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Restart Server Now (1-Click)</button><span style="font-size: 11px; color: var(--ink-muted);">Or run stop.bat & start.bat manually</span></div>`;
+      showToast("Patch installed successfully! Please restart server.", "success");
       fetchSystemVersion();
       if (applyBtn) applyBtn.style.display = "none";
     } else {

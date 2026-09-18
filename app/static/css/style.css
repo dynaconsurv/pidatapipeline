@@ -812,6 +812,10 @@ select.form-control {
   border-left: 3px solid var(--status-bad);
 }
 
+.error-console.warning {
+  border-left: 3px solid #f59e0b;
+}
+
 .error-title {
   color: #fca5a5;
   font-weight: 600;
@@ -819,6 +823,10 @@ select.form-control {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.error-title.warning {
+  color: #fcd34d;
 }
 
 .error-title svg {
