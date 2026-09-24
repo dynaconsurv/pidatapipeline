@@ -37,5 +37,11 @@
     "auto_dispatch": true,
     "auto_start": true,
     "max_history_items": 100
+  },
+  "endpoint_security": {
+    "api_key_enabled": false,
+    "api_key": "pi_sec_a7f92e48c12b45",
+    "ip_whitelist_enabled": false,
+    "allowed_ips": "10.60.2.20"
   }
 }

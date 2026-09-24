@@ -32,7 +32,8 @@ from app.storage import (
 from app.delivery_handler import (
     process_incoming_delivery,
     dispatch_delivery_to_oracle,
-    dispatch_all_pending_deliveries
+    dispatch_all_pending_deliveries,
+    validate_delivery_security
 )
 from app.mock_erp_server import mock_erp_manager
 from app.version import __version__, APP_NAME, GITHUB_REPO
@@ -133,15 +134,35 @@ def resume_pipeline():
 # PI System Explorer / Notifications Delivery Ingestion Endpoints
 # (Matches WebService REST delivery channel in PI System Explorer)
 # -------------------------------------------------------------
+@app.post("/api/security/generate-key")
+def generate_api_key_endpoint():
+    """Generates a secure random 32-character hexadecimal API Key."""
+    import secrets
+    new_key = f"pi_sec_{secrets.token_hex(16)}"
+    return {"api_key": new_key}
+
+
 @app.post("/api/v1/delivery")
 @app.post("/api/v1/webhook")
 @app.post("/api/v1/pi-notifications")
 async def receive_pi_delivery(request: Request):
     """
     HTTP POST WebService Delivery Endpoint for AVEVA PI System Explorer / PI AF Notifications.
-    Temporarily stages the incoming payload into data/received_deliveries.json prior to Oracle ERP dispatch.
+    Validates endpoint security (Option 1: API Key, Option 2: IP Whitelist)
+    and temporarily stages incoming payload into data/received_deliveries.json prior to Oracle ERP dispatch.
     """
     client_ip = request.client.host if request.client else "Unknown"
+    headers = dict(request.headers)
+    query_params = dict(request.query_params)
+
+    # Validate endpoint security
+    is_valid, status_code, sec_err = validate_delivery_security(
+        client_ip=client_ip,
+        headers=headers,
+        query_params=query_params
+    )
+    if not is_valid:
+        return JSONResponse(status_code=status_code, content={"success": False, "error": sec_err})
 
     try:
         content_type = request.headers.get("content-type", "").lower()
@@ -160,7 +181,12 @@ async def receive_pi_delivery(request: Request):
     except Exception as e:
         raw_data = {"parse_error": str(e)}
 
-    result = process_incoming_delivery(raw_data, client_ip=client_ip)
+    result = process_incoming_delivery(
+        raw_data,
+        client_ip=client_ip,
+        query_params=query_params,
+        headers=headers
+    )
     return JSONResponse(status_code=200, content=result)
 
 

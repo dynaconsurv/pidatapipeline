@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.0.4">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.0.5">
 </head>
 <body>
 
@@ -777,6 +777,16 @@
                       <td><code style="font-family: var(--font-mono);">application/json</code></td>
                       <td>JSON formatted body</td>
                     </tr>
+                    <tr>
+                      <td><strong>Custom Headers</strong> <em>(Security)</em></td>
+                      <td><code id="guide-table-header" style="font-family: var(--font-mono); font-size: 11px;">X-API-Key: &lt;YOUR_API_KEY&gt;</code></td>
+                      <td>Required only if API Key security is enabled below</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Custom Rule Name</strong> <em>(Optional)</em></td>
+                      <td><code style="font-family: var(--font-mono); font-size: 11px;">?notification=YourRuleName</code></td>
+                      <td>Append to URL to pass your custom notification name to Oracle &amp; Dashboard</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -817,6 +827,96 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- CONTAINER: ENDPOINT SECURITY & AUTHENTICATION -->
+      <div id="container-endpoint-security" class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              Delivery Endpoint Security &amp; Access Control
+            </div>
+            <div class="form-help">Protect /api/v1/delivery against unauthorized access, rogue push senders, and accidental data contamination</div>
+          </div>
+          <span class="badge badge-info" id="security-active-badge">Layer 1 &amp; Layer 2 Security</span>
+        </div>
+
+        <div class="form-grid">
+          <!-- Layer 1: API Key Protection -->
+          <div class="form-group full-width" style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label class="form-check" style="font-weight: 600; font-size: 13px;">
+                <input type="checkbox" id="setting-sec-api-key-enabled">
+                <span>Enable API Key Authentication (Option 1)</span>
+              </label>
+              <span class="badge badge-pending" id="badge-api-key-status">Optional</span>
+            </div>
+            <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 10px;">
+              When enabled, only requests supplying this Secret API Key via HTTP Header <code>X-API-Key</code> or URL parameter <code>?api_key=...</code> will be accepted. Any request without a matching key will be rejected with <strong>HTTP 401 Unauthorized</strong>.
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 260px;">
+                <input type="text" id="setting-sec-api-key" class="form-control form-control-mono" placeholder="pi_sec_..." style="font-weight: 600; letter-spacing: 0.5px;">
+              </div>
+              <button type="button" id="btn-copy-sec-api-key" class="btn btn-secondary btn-sm" title="Copy API Key to clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Key
+              </button>
+              <button type="button" id="btn-generate-sec-api-key" class="btn btn-outline btn-sm" title="Generate a fresh cryptographic API Key">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                Regenerate Key
+              </button>
+            </div>
+
+            <div style="background: var(--bg-subtle); border-radius: var(--radius); padding: 8px 12px; margin-top: 10px; font-size: 11px; color: var(--ink-secondary);">
+              <strong>How to configure in PI System Explorer:</strong>
+              <div style="margin-top: 4px;">• <strong>Method A (Header):</strong> In Delivery Endpoint &rarr; Headers &rarr; add <code>X-API-Key: &lt;YOUR_KEY&gt;</code></div>
+              <div style="margin-top: 2px;">• <strong>Method B (URL):</strong> Append <code>?api_key=&lt;YOUR_KEY&gt;</code> to the delivery URL in PI System Explorer.</div>
+            </div>
+          </div>
+
+          <!-- Layer 2: IP Whitelisting -->
+          <div class="form-group full-width" style="background: var(--bg-surface); padding: 14px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <label class="form-check" style="font-weight: 600; font-size: 13px;">
+                <input type="checkbox" id="setting-sec-ip-whitelist-enabled">
+                <span>Enable Source IP Whitelist (Option 2)</span>
+              </label>
+              <span class="badge badge-pending" id="badge-ip-whitelist-status">Optional</span>
+            </div>
+            <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 10px;">
+              Restricts endpoint access to specific authorized servers. Only HTTP requests originating from these IP addresses will be processed. Requests from any other IP will be rejected with <strong>HTTP 403 Forbidden</strong>.
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 260px;">
+                <input type="text" id="setting-sec-allowed-ips" class="form-control form-control-mono" placeholder="10.60.2.20">
+              </div>
+              <button type="button" id="btn-add-current-pi-ip" class="btn btn-secondary btn-sm" title="Add your verified PI Server IP (10.60.2.20)">
+                + Add Verified PI Server (10.60.2.20)
+              </button>
+            </div>
+            <div class="form-help" style="margin-top: 6px; font-size: 11px;">
+              Separate multiple IP addresses with commas (e.g. <code>10.60.2.20, 10.60.2.21</code>). Local loopback is always permitted for local testing.
+            </div>
+          </div>
+
+          <!-- Notification Name Configuration Guide -->
+          <div class="form-group full-width" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: var(--radius); padding: 12px; font-size: 11px; color: var(--ink-secondary);">
+            <div style="font-weight: 600; color: var(--ink-primary); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              Passing Custom Notification Rule Names from PI AF
+            </div>
+            <div>
+              By default, if your PI AF Notification REST message body only contains attribute readings (e.g. <code>{"Items": [...]}</code>), PI AF does not include the notification rule name in the body. You can pass your specific notification name in any of these ways:
+              <div style="margin-top: 4px;">• <strong>Via URL Parameter:</strong> Append <code>?notification=YourRuleName</code> to the Delivery Endpoint URL in PI System Explorer (e.g., <code>/api/v1/delivery?notification=Steam_Pressure_Monitoring</code>).</div>
+              <div style="margin-top: 2px;">• <strong>Via Message Template Body:</strong> Include <code>"NotificationRule": "%NotificationRule%"</code> in the PI AF REST content format template.</div>
+              <div style="margin-top: 2px;">• <strong>Via Custom Header:</strong> Add header <code>X-Notification-Name: YourRuleName</code> in the Delivery Endpoint properties.</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- CONTAINER 2: AVEVA PI WEB API CONFIGURATION (Active when mode is 'pull') -->
@@ -1465,6 +1565,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.0.4"></script>
+  <script src="/static/js/app.js?v=2.0.5"></script>
 </body>
 </html>

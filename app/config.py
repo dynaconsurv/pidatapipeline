@@ -53,6 +53,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "interval_seconds": 30,
         "auto_start": True,
         "max_history_items": 100
+    },
+    "endpoint_security": {
+        "api_key_enabled": False,
+        "api_key": "pi_sec_a7f92e48c12b45",
+        "ip_whitelist_enabled": False,
+        "allowed_ips": "10.60.2.20"
     }
 }
 

@@ -22,12 +22,101 @@ from app.config import load_settings, load_mappings
 from app.oracle_erp_client import OracleERPCloudClient
 
 
-def parse_pi_notification_payload(raw_data: Any) -> Tuple[str, str, str, List[Dict[str, Any]]]:
+def validate_delivery_security(
+    client_ip: str,
+    headers: Optional[Dict[str, str]] = None,
+    query_params: Optional[Dict[str, str]] = None
+) -> Tuple[bool, int, str]:
+    """
+    Validates incoming delivery against endpoint security settings:
+    Option 1: API Key / Shared Secret Token
+    Option 2: IP Whitelisting
+    Returns: (is_valid, http_status_code, error_message)
+    """
+    headers = {k.lower(): v for k, v in (headers or {}).items()}
+    query_params = {k.lower(): v for k, v in (query_params or {}).items()}
+
+    settings = load_settings()
+    sec_cfg = settings.get("endpoint_security", {})
+
+    # 1. Option 2: IP Whitelisting Check
+    if sec_cfg.get("ip_whitelist_enabled", False):
+        raw_allowed = (sec_cfg.get("allowed_ips") or "").strip()
+        if raw_allowed:
+            allowed_list = [ip.strip() for ip in raw_allowed.replace(";", ",").split(",") if ip.strip()]
+            # Always permit localhost/loopback or testclient for local debugging
+            is_local = client_ip in ("127.0.0.1", "::1", "localhost", "testclient")
+            if not is_local and client_ip not in allowed_list:
+                msg = f"Forbidden: Client IP [{client_ip}] is not authorized. Allowed IPs: {', '.join(allowed_list)}"
+                add_log(
+                    "WARNING",
+                    "SECURITY",
+                    f"Blocked unauthorized delivery push from non-whitelisted IP: {client_ip}",
+                    {"client_ip": client_ip, "allowed_ips": allowed_list}
+                )
+                return False, 403, msg
+
+    # 2. Option 1: API Key Check
+    if sec_cfg.get("api_key_enabled", False):
+        expected_key = (sec_cfg.get("api_key") or "").strip()
+        if expected_key:
+            # Check Header: X-API-Key or API-Key
+            provided_key = headers.get("x-api-key") or headers.get("api-key")
+
+            # Check Header: Authorization: Bearer <key> or Apikey <key>
+            if not provided_key and "authorization" in headers:
+                auth_val = headers["authorization"].strip()
+                if auth_val.lower().startswith("bearer "):
+                    provided_key = auth_val[7:].strip()
+                elif auth_val.lower().startswith("apikey "):
+                    provided_key = auth_val[7:].strip()
+
+            # Check URL query param: ?api_key=<key> or ?key=<key> or ?token=<key>
+            if not provided_key:
+                provided_key = query_params.get("api_key") or query_params.get("key") or query_params.get("token")
+
+            if not provided_key or provided_key != expected_key:
+                msg = "Unauthorized: Missing or invalid API Key. Include 'X-API-Key' header or '?api_key=' URL parameter."
+                add_log(
+                    "WARNING",
+                    "SECURITY",
+                    f"Blocked unauthorized delivery from {client_ip}: Missing or invalid API Key.",
+                    {"client_ip": client_ip, "has_provided_key": bool(provided_key)}
+                )
+                return False, 401, msg
+
+    return True, 200, "Authorized"
+
+
+def parse_pi_notification_payload(
+    raw_data: Any,
+    query_params: Optional[Dict[str, str]] = None,
+    headers: Optional[Dict[str, str]] = None
+) -> Tuple[str, str, str, List[Dict[str, Any]]]:
     """
     Parses various PI AF Notification WebService JSON payload structures:
+    Extracts notification name from URL query parameter, HTTP headers, or payload body.
     Returns: (notification_name, event_type, target_path, attributes_list)
     """
-    notification_name = "PI_Notification"
+    query_params = {k.lower(): v for k, v in (query_params or {}).items()}
+    headers = {k.lower(): v for k, v in (headers or {}).items()}
+
+    # Priority 1: Query parameter (e.g. /api/v1/delivery?notification=MyRuleName)
+    query_name = (
+        query_params.get("notification") or
+        query_params.get("notificationname") or
+        query_params.get("name") or
+        query_params.get("rule")
+    )
+
+    # Priority 2: Custom HTTP Header (e.g. X-Notification-Name: MyRuleName)
+    header_name = (
+        headers.get("x-notification-name") or
+        headers.get("x-pi-notification") or
+        headers.get("x-rule-name")
+    )
+
+    body_name = None
     event_type = "Update"
     target_path = ""
     attributes: List[Dict[str, Any]] = []
@@ -35,15 +124,20 @@ def parse_pi_notification_payload(raw_data: Any) -> Tuple[str, str, str, List[Di
     now_iso = datetime.now(timezone.utc).isoformat()
 
     if isinstance(raw_data, dict):
-        # 1. Check common PI Notification fields
-        notification_name = (
-            raw_data.get("Notification") or
+        # Priority 3: Body attributes
+        body_name = (
+            raw_data.get("NotificationRule") or
             raw_data.get("NotificationName") or
+            raw_data.get("Notification") or
             raw_data.get("EventFrame") or
+            raw_data.get("EventFrameName") or
+            raw_data.get("Rule") or
+            raw_data.get("Analysis") or
             raw_data.get("Name") or
+            raw_data.get("notificationRule") or
+            raw_data.get("notificationName") or
             raw_data.get("notification") or
-            raw_data.get("name") or
-            "PI_Notification"
+            raw_data.get("name")
         )
         event_type = (
             raw_data.get("Event") or
@@ -220,10 +314,16 @@ def parse_pi_notification_payload(raw_data: Any) -> Tuple[str, str, str, List[Di
                     "quality": "Good"
                 })
 
+    notification_name = query_name or header_name or body_name or ("PI_Notification_Ping" if not raw_data and not attributes else "PI_Notification")
     return notification_name, event_type, target_path, attributes
 
 
-def process_incoming_delivery(raw_payload: Any, client_ip: str = "Unknown") -> Dict[str, Any]:
+def process_incoming_delivery(
+    raw_payload: Any,
+    client_ip: str = "Unknown",
+    query_params: Optional[Dict[str, str]] = None,
+    headers: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
     """
     Handles receipt of data from PI System Explorer / PI AF Notification WebService.
     Stages the payload into data/received_deliveries.json and returns tracking info.
@@ -231,7 +331,11 @@ def process_incoming_delivery(raw_payload: Any, client_ip: str = "Unknown") -> D
     delivery_id = f"deliv-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    notif_name, event_type, target_path, attributes = parse_pi_notification_payload(raw_payload)
+    notif_name, event_type, target_path, attributes = parse_pi_notification_payload(
+        raw_payload,
+        query_params=query_params,
+        headers=headers
+    )
 
     delivery_record = {
         "delivery_id": delivery_id,

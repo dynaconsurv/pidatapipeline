@@ -1445,6 +1445,13 @@ function initSettings() {
   document.getElementById("btn-purge-logs")?.addEventListener("click", () => handlePurgeStorageTarget("logs", "Activity Logs"));
   document.getElementById("btn-preflight-purge-all")?.addEventListener("click", handlePreflightPurgeAll);
 
+  // Endpoint Security Action Listeners
+  document.getElementById("btn-copy-sec-api-key")?.addEventListener("click", copySecApiKey);
+  document.getElementById("btn-generate-sec-api-key")?.addEventListener("click", generateNewSecApiKey);
+  document.getElementById("btn-add-current-pi-ip")?.addEventListener("click", handleAddCurrentPiIp);
+  document.getElementById("setting-sec-api-key-enabled")?.addEventListener("change", updateSecurityBadges);
+  document.getElementById("setting-sec-ip-whitelist-enabled")?.addEventListener("change", updateSecurityBadges);
+
   loadSettingsIntoForm();
 }
 
@@ -1540,12 +1547,125 @@ async function loadSettingsIntoForm() {
     const autoDispatchEl = document.getElementById("setting-pipeline-auto-dispatch");
     if (autoDispatchEl) autoDispatchEl.checked = pipe.auto_dispatch !== undefined ? pipe.auto_dispatch : true;
 
+    // Endpoint Security Settings
+    const sec = currentSettings.endpoint_security || {};
+    const apiKeyEnabledEl = document.getElementById("setting-sec-api-key-enabled");
+    const apiKeyEl = document.getElementById("setting-sec-api-key");
+    const ipWhitelistEnabledEl = document.getElementById("setting-sec-ip-whitelist-enabled");
+    const allowedIpsEl = document.getElementById("setting-sec-allowed-ips");
+
+    if (apiKeyEnabledEl) apiKeyEnabledEl.checked = !!sec.api_key_enabled;
+    if (apiKeyEl) apiKeyEl.value = sec.api_key || "";
+    if (ipWhitelistEnabledEl) ipWhitelistEnabledEl.checked = !!sec.ip_whitelist_enabled;
+    if (allowedIpsEl) allowedIpsEl.value = sec.allowed_ips || "";
+
+    updateSecurityBadges();
+
     handlePiAuthChange();
     handleErpAuthChange();
 
     await refreshMockERPStatus();
   } catch (e) {
     console.error("Error loading settings:", e);
+  }
+}
+
+async function copySecApiKey() {
+  const keyInput = document.getElementById("setting-sec-api-key");
+  const key = keyInput?.value?.trim() || "";
+  if (!key) {
+    showToast("No API Key configured to copy.", "warning");
+    return;
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(key);
+    } else {
+      keyInput.select();
+      document.execCommand("copy");
+    }
+    showToast("API Key copied to clipboard!", "success");
+  } catch (e) {
+    showToast("API Key: " + key, "info");
+  }
+}
+
+async function generateNewSecApiKey() {
+  try {
+    const res = await fetch("/api/security/generate-key", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const keyInput = document.getElementById("setting-sec-api-key");
+    if (keyInput && data.api_key) {
+      keyInput.value = data.api_key;
+      updateSecurityBadges();
+      showToast("Generated new API Key! Click 'Save Settings' to activate.", "success");
+    }
+  } catch (e) {
+    // Client-side fallback random generation if server call fails
+    const randomKey = "pi_sec_" + Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const keyInput = document.getElementById("setting-sec-api-key");
+    if (keyInput) {
+      keyInput.value = randomKey;
+      updateSecurityBadges();
+      showToast("Generated new API Key! Click 'Save Settings' to activate.", "success");
+    }
+  }
+}
+
+function handleAddCurrentPiIp() {
+  const input = document.getElementById("setting-sec-allowed-ips");
+  if (!input) return;
+  const current = input.value.trim();
+  const targetIp = "10.60.2.20";
+  if (!current) {
+    input.value = targetIp;
+  } else if (!current.includes(targetIp)) {
+    input.value = current + ", " + targetIp;
+  }
+  const checkbox = document.getElementById("setting-sec-ip-whitelist-enabled");
+  if (checkbox) checkbox.checked = true;
+  updateSecurityBadges();
+  showToast("Added verified PI AF server IP (10.60.2.20) to whitelist!", "success");
+}
+
+function updateSecurityBadges() {
+  const apiKeyChecked = document.getElementById("setting-sec-api-key-enabled")?.checked;
+  const ipWhitelistChecked = document.getElementById("setting-sec-ip-whitelist-enabled")?.checked;
+  const badgeKey = document.getElementById("badge-api-key-status");
+  const badgeIp = document.getElementById("badge-ip-whitelist-status");
+  const badgeActive = document.getElementById("security-active-badge");
+  const tableHeader = document.getElementById("guide-table-header");
+  const apiKeyVal = document.getElementById("setting-sec-api-key")?.value?.trim() || "<YOUR_API_KEY>";
+
+  if (badgeKey) {
+    badgeKey.className = apiKeyChecked ? "badge badge-success" : "badge badge-pending";
+    badgeKey.textContent = apiKeyChecked ? "Enforced" : "Disabled";
+  }
+
+  if (badgeIp) {
+    badgeIp.className = ipWhitelistChecked ? "badge badge-success" : "badge badge-pending";
+    badgeIp.textContent = ipWhitelistChecked ? "Enforced" : "Disabled";
+  }
+
+  if (badgeActive) {
+    if (apiKeyChecked && ipWhitelistChecked) {
+      badgeActive.className = "badge badge-success";
+      badgeActive.textContent = "API Key + IP Whitelist Active";
+    } else if (apiKeyChecked) {
+      badgeActive.className = "badge badge-info";
+      badgeActive.textContent = "API Key Active";
+    } else if (ipWhitelistChecked) {
+      badgeActive.className = "badge badge-info";
+      badgeActive.textContent = "IP Whitelist Active";
+    } else {
+      badgeActive.className = "badge badge-pending";
+      badgeActive.textContent = "Open Access (No Security)";
+    }
+  }
+
+  if (tableHeader) {
+    tableHeader.textContent = apiKeyChecked ? `X-API-Key: ${apiKeyVal}` : "X-API-Key: <YOUR_API_KEY> (Disabled)";
   }
 }
 
@@ -1924,6 +2044,12 @@ function collectSettingsFromForm() {
       auto_dispatch: document.getElementById("setting-pipeline-auto-dispatch") ? document.getElementById("setting-pipeline-auto-dispatch").checked : true,
       auto_start: currentSettings?.pipeline?.auto_start !== undefined ? currentSettings.pipeline.auto_start : true,
       max_history_items: 100
+    },
+    endpoint_security: {
+      api_key_enabled: document.getElementById("setting-sec-api-key-enabled") ? document.getElementById("setting-sec-api-key-enabled").checked : false,
+      api_key: document.getElementById("setting-sec-api-key") ? document.getElementById("setting-sec-api-key").value.trim() : "",
+      ip_whitelist_enabled: document.getElementById("setting-sec-ip-whitelist-enabled") ? document.getElementById("setting-sec-ip-whitelist-enabled").checked : false,
+      allowed_ips: document.getElementById("setting-sec-allowed-ips") ? document.getElementById("setting-sec-allowed-ips").value.trim() : ""
     }
   };
 }
