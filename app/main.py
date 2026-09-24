@@ -21,7 +21,13 @@ from app.storage import (
     get_logs,
     add_log,
     get_received_deliveries,
-    get_delivery_by_id
+    get_delivery_by_id,
+    delete_received_delivery,
+    clear_received_deliveries,
+    clear_pull_history,
+    clear_publish_history,
+    clear_logs,
+    clear_all_operational_data
 )
 from app.delivery_handler import (
     process_incoming_delivery,
@@ -173,6 +179,67 @@ def trigger_dispatch_all_pending():
         return {"success": True, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/deliveries/{delivery_id}")
+def delete_single_delivery(delivery_id: str):
+    """Delete a single staged delivery record from data/received_deliveries.json."""
+    success = delete_received_delivery(delivery_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Delivery {delivery_id} not found in storage.")
+    add_log("INFO", "SYSTEM", f"Staged delivery {delivery_id} deleted by user.")
+    return {"success": True, "message": f"Delivery {delivery_id} deleted successfully."}
+
+
+@app.delete("/api/deliveries")
+def clear_deliveries_endpoint(filter: str = "ALL"):
+    """
+    Purge accumulated deliveries from data/received_deliveries.json.
+    Query parameter 'filter': 'ALL' (purge all), 'PENDING' (purge unsent/failed), 'DISPATCHED' (purge sent).
+    """
+    count = clear_received_deliveries(status_filter=filter)
+    add_log("INFO", "SYSTEM", f"Purged {count} delivery record(s) from JSON storage (filter: {filter}).")
+    return {
+        "success": True,
+        "deleted_count": count,
+        "filter": filter,
+        "message": f"Successfully deleted {count} staged deliveries."
+    }
+
+
+@app.post("/api/storage/clear")
+def clear_storage_data_endpoint(request: Dict[str, Any]):
+    """
+    Purge operational JSON storage files before production deployment.
+    target options: 'deliveries', 'pull_history', 'publish_history', 'logs', 'all'.
+    """
+    target = request.get("target", "deliveries").lower()
+    filter_mode = request.get("filter", "ALL")
+    if target == "deliveries":
+        count = clear_received_deliveries(status_filter=filter_mode)
+        return {"success": True, "target": target, "filter": filter_mode, "deleted_count": count, "message": f"Deleted {count} staged deliveries ({filter_mode})."}
+    elif target == "pull_history":
+        count = clear_pull_history()
+        return {"success": True, "target": target, "deleted_count": count, "message": f"Deleted {count} pull history records."}
+    elif target == "publish_history":
+        count = clear_publish_history()
+        return {"success": True, "target": target, "deleted_count": count, "message": f"Deleted {count} ERP publish records."}
+    elif target == "logs":
+        count = clear_logs()
+        return {"success": True, "target": target, "deleted_count": count, "message": f"Deleted {count} diagnostic log records."}
+    elif target in ("all", "preflight", "production_reset"):
+        include_logs = bool(request.get("include_logs", False))
+        results = clear_all_operational_data()
+        if include_logs:
+            results["logs_deleted"] = clear_logs()
+        return {
+            "success": True,
+            "target": "all",
+            "results": results,
+            "message": "Operational test data purged. Configuration and mappings are strictly preserved."
+        }
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown storage purge target: {target}")
 
 
 
