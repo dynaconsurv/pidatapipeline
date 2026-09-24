@@ -4,9 +4,10 @@ Serves REST endpoints for configuration, live monitoring, AF tree exploration,
 and single-page web UI.
 """
 import os
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -14,7 +15,19 @@ from app.config import load_settings, save_settings, load_mappings, save_mapping
 from app.pi_client import PIWebApiClient
 from app.oracle_erp_client import OracleERPCloudClient
 from app.pipeline import pipeline_engine
-from app.storage import get_pull_history, get_publish_history, get_logs, add_log
+from app.storage import (
+    get_pull_history,
+    get_publish_history,
+    get_logs,
+    add_log,
+    get_received_deliveries,
+    get_delivery_by_id
+)
+from app.delivery_handler import (
+    process_incoming_delivery,
+    dispatch_delivery_to_oracle,
+    dispatch_all_pending_deliveries
+)
 from app.mock_erp_server import mock_erp_manager
 from app.version import __version__, APP_NAME, GITHUB_REPO
 
@@ -65,10 +78,17 @@ def get_dashboard_summary():
 
 @app.post("/api/pipeline/run-now")
 def trigger_pipeline_run():
-    """Manually trigger an immediate pull & publish cycle."""
+    """Manually trigger an immediate cycle (dispatch staged in endpoint mode, or pull & publish in pull mode)."""
     try:
-        result = pipeline_engine.execute_cycle()
-        return {"success": True, "result": result}
+        settings = load_settings()
+        mode = settings.get("pipeline", {}).get("ingestion_mode", "endpoint")
+        if mode == "endpoint":
+            from app.delivery_handler import dispatch_all_pending_deliveries
+            result = dispatch_all_pending_deliveries()
+            return {"success": True, "mode": "endpoint", "result": result}
+        else:
+            result = pipeline_engine.execute_cycle()
+            return {"success": True, "mode": "pull", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -83,6 +103,124 @@ def pause_pipeline():
 def resume_pipeline():
     pipeline_engine.resume()
     return {"success": True, "is_paused": False}
+
+
+# -------------------------------------------------------------
+# PI System Explorer / Notifications Delivery Ingestion Endpoints
+# (Matches WebService REST delivery channel in PI System Explorer)
+# -------------------------------------------------------------
+@app.post("/api/v1/delivery")
+@app.post("/api/v1/webhook")
+@app.post("/api/v1/pi-notifications")
+async def receive_pi_delivery(request: Request):
+    """
+    HTTP POST WebService Delivery Endpoint for AVEVA PI System Explorer / PI AF Notifications.
+    Temporarily stages the incoming payload into data/received_deliveries.json prior to Oracle ERP dispatch.
+    """
+    client_ip = request.client.host if request.client else "Unknown"
+
+    try:
+        content_type = request.headers.get("content-type", "").lower()
+        if "application/json" in content_type:
+            raw_data = await request.json()
+        else:
+            raw_bytes = await request.body()
+            if not raw_bytes:
+                raw_data = {}
+            else:
+                try:
+                    import json
+                    raw_data = json.loads(raw_bytes.decode("utf-8", errors="replace"))
+                except Exception:
+                    raw_data = {"raw_text": raw_bytes.decode("utf-8", errors="replace")}
+    except Exception as e:
+        raw_data = {"parse_error": str(e)}
+
+    result = process_incoming_delivery(raw_data, client_ip=client_ip)
+    return JSONResponse(status_code=200, content=result)
+
+
+@app.get("/api/deliveries")
+def get_deliveries_list(limit: int = 50, status: str = None):
+    """Retrieve staged deliveries received from PI System Explorer."""
+    return get_received_deliveries(limit=limit, status=status)
+
+
+@app.get("/api/deliveries/{delivery_id}")
+def get_single_delivery(delivery_id: str):
+    """Inspect full raw JSON and parsed metadata for a single delivery."""
+    delivery = get_delivery_by_id(delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery record not found.")
+    return delivery
+
+
+@app.post("/api/deliveries/{delivery_id}/dispatch")
+def trigger_delivery_dispatch(delivery_id: str):
+    """Manually dispatch a staged delivery to Oracle ERP Cloud."""
+    try:
+        result = dispatch_delivery_to_oracle(delivery_id)
+        return {"success": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/deliveries/dispatch-pending")
+def trigger_dispatch_all_pending():
+    """Dispatch all deliveries currently staged and pending Oracle forwarding."""
+    try:
+        result = dispatch_all_pending_deliveries()
+        return {"success": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/api/deliveries/simulate")
+def simulate_pi_delivery():
+    """
+    Generate and ingest a realistic sample PI AF Notification delivery
+    matching the 'Process Engineering_XZV' template from PI System Explorer.
+    """
+    import random
+    import time
+    now_iso = datetime.now(timezone.utc).isoformat()
+    mock_payload = {
+        "Notification": "Process Engineering_XZV",
+        "Target": r"\\MYTLAVMPIMSAPP1\Plant_Operations\Process_Unit_1\Reactor_XZV",
+        "Event": "Trigger",
+        "StartTime": now_iso,
+        "EndTime": now_iso,
+        "Attributes": {
+            "Level_Sensor": {
+                "Value": round(75.0 + random.uniform(-10.0, 15.0), 2),
+                "UOM": "%",
+                "Timestamp": now_iso,
+                "Quality": "Good"
+            },
+            "Flow_Rate": {
+                "Value": round(120.0 + random.uniform(-15.0, 25.0), 2),
+                "UOM": "m3/h",
+                "Timestamp": now_iso,
+                "Quality": "Good"
+            },
+            "Temperature_Reactor": {
+                "Value": round(145.0 + random.uniform(-8.0, 12.0), 2),
+                "UOM": "degC",
+                "Timestamp": now_iso,
+                "Quality": "Good"
+            },
+            "Pressure_Inlet": {
+                "Value": round(4.2 + random.uniform(-0.4, 0.6), 2),
+                "UOM": "bar",
+                "Timestamp": now_iso,
+                "Quality": "Good"
+            }
+        }
+    }
+    result = process_incoming_delivery(mock_payload, client_ip="127.0.0.1 (Simulator)")
+    return {"success": True, "delivery": result}
+
 
 
 # -------------------------------------------------------------
