@@ -104,8 +104,45 @@ function initDashboard() {
   document.getElementById("btn-test-erp")?.addEventListener("click", testErpConnectionFromDashboard);
   document.getElementById("btn-toggle-pause")?.addEventListener("click", togglePauseResume);
   document.getElementById("btn-refresh-dashboard")?.addEventListener("click", loadDashboardData);
+  document.getElementById("btn-run-pull-table")?.addEventListener("click", triggerPullNow);
+  document.getElementById("btn-refresh-pulls-table")?.addEventListener("click", loadDashboardData);
   document.getElementById("btn-refresh-logs")?.addEventListener("click", loadLogs);
   document.getElementById("log-filter-category")?.addEventListener("change", loadLogs);
+
+  // Delivery Endpoint & JSON Staging actions
+  document.getElementById("btn-copy-delivery-url")?.addEventListener("click", copyDeliveryEndpointUrl);
+  document.getElementById("btn-simulate-delivery")?.addEventListener("click", triggerSimulateDelivery);
+  document.getElementById("btn-simulate-table")?.addEventListener("click", triggerSimulateDelivery);
+  document.getElementById("btn-dispatch-all-pending")?.addEventListener("click", dispatchAllPendingDeliveries);
+  document.getElementById("btn-refresh-staging")?.addEventListener("click", loadDashboardData);
+
+  // Staging Purge Modal actions
+  document.getElementById("btn-card-clear-staging")?.addEventListener("click", openPurgeDeliveriesModal);
+  document.getElementById("btn-clear-staged-deliveries")?.addEventListener("click", openPurgeDeliveriesModal);
+  document.getElementById("btn-close-purge-modal")?.addEventListener("click", closePurgeDeliveriesModal);
+  document.getElementById("btn-cancel-purge-modal")?.addEventListener("click", closePurgeDeliveriesModal);
+  document.getElementById("btn-confirm-purge-deliveries")?.addEventListener("click", handleConfirmPurgeDeliveries);
+
+  // Close purge modal when background clicked
+  document.getElementById("modal-purge-deliveries")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-purge-deliveries") {
+      closePurgeDeliveriesModal();
+    }
+  });
+
+  // Delivery JSON Modal controls
+  document.getElementById("btn-close-delivery-modal")?.addEventListener("click", closeDeliveryModal);
+  document.getElementById("btn-close-delivery-modal-2")?.addEventListener("click", closeDeliveryModal);
+  document.getElementById("btn-copy-delivery-json")?.addEventListener("click", copyDeliveryJsonFromModal);
+  document.getElementById("btn-modal-dispatch-oracle")?.addEventListener("click", dispatchCurrentModalDelivery);
+  document.getElementById("btn-modal-delete-delivery")?.addEventListener("click", deleteCurrentModalDelivery);
+
+  // Close modal when background clicked
+  document.getElementById("modal-delivery-json")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-delivery-json") {
+      closeDeliveryModal();
+    }
+  });
 
   document.getElementById("btn-view-last-payload")?.addEventListener("click", () => {
     switchTab("mappings");
@@ -126,7 +163,49 @@ async function loadDashboardData() {
 }
 
 function renderDashboard(data) {
-  // 1. AVEVA PI Connection Card
+  // 0. Toggle UI elements based on Active Ingestion Architecture Mode ('endpoint' vs 'pull')
+  const mode = data.ingestion_mode || currentSettings?.pipeline?.ingestion_mode || "endpoint";
+  const cardPiEndpoint = document.getElementById("card-pi-endpoint");
+  const cardPiWebApi = document.getElementById("card-pi-webapi");
+  const cardStagingQueue = document.getElementById("card-staging-queue");
+  const cardScheduler = document.getElementById("card-scheduler");
+  const sectionRecentDeliveries = document.getElementById("section-recent-deliveries");
+  const sectionLastPulls = document.getElementById("section-last-pulls");
+
+  if (mode === "pull") {
+    if (cardPiEndpoint) cardPiEndpoint.style.display = "none";
+    if (cardPiWebApi) cardPiWebApi.style.display = "";
+    if (cardStagingQueue) cardStagingQueue.style.display = "none";
+    if (cardScheduler) cardScheduler.style.display = "";
+    if (sectionRecentDeliveries) sectionRecentDeliveries.style.display = "none";
+    if (sectionLastPulls) sectionLastPulls.style.display = "block";
+  } else {
+    // endpoint mode
+    if (cardPiEndpoint) cardPiEndpoint.style.display = "";
+    if (cardPiWebApi) cardPiWebApi.style.display = "none";
+    if (cardStagingQueue) cardStagingQueue.style.display = "";
+    if (cardScheduler) cardScheduler.style.display = "none";
+    if (sectionRecentDeliveries) sectionRecentDeliveries.style.display = "block";
+    if (sectionLastPulls) sectionLastPulls.style.display = "none";
+  }
+
+  // 1. AVEVA PI Delivery Endpoint Card
+  const deliv = data.delivery_endpoint || {};
+  const delivBadge = document.getElementById("delivery-status-badge");
+  const delivTotal = document.getElementById("delivery-total-val");
+  const delivLast = document.getElementById("delivery-last-val");
+  const delivPath = document.getElementById("delivery-path-val");
+
+  if (delivTotal) delivTotal.textContent = deliv.total_received ?? 0;
+  if (delivLast) {
+    delivLast.textContent = deliv.last_received_at ? formatTimestamp(deliv.last_received_at) : "No push received yet";
+  }
+  if (delivBadge) {
+    delivBadge.className = "badge badge-success";
+    delivBadge.innerHTML = '<span class="badge-dot"></span> Listening';
+  }
+
+  // Also support legacy PI status fields if present
   const pi = data.pi_connection || {};
   const piBadge = document.getElementById("pi-status-badge");
   const piLatency = document.getElementById("pi-latency-val");
@@ -136,50 +215,38 @@ function renderDashboard(data) {
   const piErrorBox = document.getElementById("pi-error-box");
   const piErrorText = document.getElementById("pi-error-text");
 
-  if (currentSettings && currentSettings.pi_web_api) {
+  if (currentSettings && currentSettings.pi_web_api && piEndpoint && piMode) {
     piEndpoint.textContent = currentSettings.pi_web_api.url || "--";
     piEndpoint.title = currentSettings.pi_web_api.url || "";
     piMode.textContent = currentSettings.pi_web_api.simulation_mode ? "Simulation Mode" : "Live PI Server";
   }
 
-  const piErrorTitleText = document.getElementById("pi-error-title-text");
-  const piErrorTitle = document.querySelector("#pi-error-box .error-title");
-
-  if (pi.status === "CONNECTED") {
-    piBadge.className = "badge badge-success";
-    piBadge.innerHTML = '<span class="badge-dot"></span> Connected';
-    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
-    piErrorBox.style.display = "none";
-  } else if (pi.status === "SIMULATED") {
-    piBadge.className = "badge badge-info";
-    piBadge.innerHTML = '<span class="badge-dot"></span> Simulated Demo';
-    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
-    piErrorBox.style.display = "none";
-  } else if (pi.status === "WARNING") {
-    piBadge.className = "badge badge-pending";
-    piBadge.innerHTML = '<span class="badge-dot"></span> Mapping Warning';
-    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
-    piErrorBox.style.display = "block";
-    piErrorBox.className = "error-console warning";
-    if (piErrorTitle) piErrorTitle.className = "error-title warning";
-    if (piErrorTitleText) piErrorTitleText.textContent = "Attribute Mapping Warning (AF 404)";
-    piErrorText.textContent = pi.error || pi.message || "PI Web API is online, but configured attribute path does not exist on this server.";
-  } else if (pi.status === "PARTIAL_ERROR" || pi.status === "FAILED") {
-    piBadge.className = "badge badge-danger";
-    piBadge.innerHTML = `<span class="badge-dot"></span> ${pi.status === 'FAILED' ? 'Failed' : 'Partial Error'}`;
-    piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
-    piErrorBox.style.display = "block";
-    piErrorBox.className = "error-console danger";
-    if (piErrorTitle) piErrorTitle.className = "error-title";
-    if (piErrorTitleText) piErrorTitleText.textContent = "Connection Error";
-    piErrorText.textContent = pi.error || pi.message || "Unknown error connecting to PI Web API";
-  } else {
-    piBadge.className = "badge badge-pending";
-    piBadge.innerHTML = '<span class="badge-dot"></span> Checking';
-  }
-
-  if (pi.last_check) {
-    piLastPull.textContent = formatTimestamp(pi.last_check);
+  if (piBadge && piLatency && piErrorBox) {
+    if (pi.status === "CONNECTED") {
+      piBadge.className = "badge badge-success";
+      piBadge.innerHTML = '<span class="badge-dot"></span> Connected';
+      piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+      piErrorBox.style.display = "none";
+    } else if (pi.status === "SIMULATED") {
+      piBadge.className = "badge badge-info";
+      piBadge.innerHTML = '<span class="badge-dot"></span> Simulated Demo';
+      piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+      piErrorBox.style.display = "none";
+    } else if (pi.status === "WARNING") {
+      piBadge.className = "badge badge-pending";
+      piBadge.innerHTML = '<span class="badge-dot"></span> Mapping Warning';
+      piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+      piErrorBox.style.display = "block";
+      piErrorBox.className = "error-console warning";
+      if (piErrorText) piErrorText.textContent = pi.error || pi.message || "PI Web API is online, but configured attribute path does not exist on this server.";
+    } else if (pi.status === "PARTIAL_ERROR" || pi.status === "FAILED") {
+      piBadge.className = "badge badge-danger";
+      piBadge.innerHTML = `<span class="badge-dot"></span> ${pi.status === 'FAILED' ? 'Failed' : 'Partial Error'}`;
+      piLatency.textContent = pi.latency_ms !== null ? pi.latency_ms : "--";
+      piErrorBox.style.display = "block";
+      piErrorBox.className = "error-console danger";
+      if (piErrorText) piErrorText.textContent = pi.error || pi.message || "Unknown error connecting to PI Web API";
+    }
   }
 
   // 2. Oracle ERP Cloud Connection Card
@@ -194,43 +261,79 @@ function renderDashboard(data) {
   const erpErrorText = document.getElementById("erp-error-text");
 
   if (currentSettings && currentSettings.oracle_erp) {
-    erpAuth.textContent = currentSettings.oracle_erp.auth_type.toUpperCase();
-    erpResource.textContent = currentSettings.oracle_erp.resource_endpoint || "--";
-    erpResource.title = currentSettings.oracle_erp.resource_endpoint || "";
+    if (erpAuth) erpAuth.textContent = (currentSettings.oracle_erp.auth_type || "OAuth 2.0").toUpperCase();
+    if (erpResource) {
+      erpResource.textContent = currentSettings.oracle_erp.resource_endpoint || "--";
+      erpResource.title = currentSettings.oracle_erp.resource_endpoint || "";
+    }
   }
 
   if (erpBanner) erpBanner.style.display = "none";
 
-  if (erp.status === "PENDING_SETUP") {
-    erpBadge.className = "badge badge-pending";
-    erpBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
-    erpHeadline.textContent = "Pending Setup";
-    erpHeadline.style.color = "#b45309";
-    erpReason.textContent = "Awaiting destination config";
-    erpReason.style.color = "#b45309";
-    erpErrorBox.style.display = "none";
-  } else if (erp.status === "CONNECTED") {
-    erpBanner.style.display = "none";
-    erpBadge.className = "badge badge-success";
-    erpBadge.innerHTML = '<span class="badge-dot"></span> Connected';
-    erpHeadline.textContent = "Connected";
-    erpHeadline.style.color = "var(--success)";
-    erpReason.textContent = "Online & Authenticated";
-    erpReason.style.color = "var(--success)";
-    erpErrorBox.style.display = "none";
-  } else if (erp.status === "FAILED") {
-    erpBanner.style.display = "none";
-    erpBadge.className = "badge badge-danger";
-    erpBadge.innerHTML = '<span class="badge-dot"></span> Connection Error';
-    erpHeadline.textContent = "Failed";
-    erpHeadline.style.color = "var(--danger)";
-    erpReason.textContent = erp.message || "Failed";
-    erpReason.style.color = "var(--danger)";
-    erpErrorBox.style.display = "block";
-    erpErrorText.textContent = erp.error || erp.message || "Error communicating with Oracle ERP Cloud";
+  if (erpBadge && erpHeadline && erpReason) {
+    if (erp.status === "PENDING_SETUP") {
+      erpBadge.className = "badge badge-pending";
+      erpBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
+      erpHeadline.textContent = "Pending Setup";
+      erpHeadline.style.color = "#b45309";
+      erpReason.textContent = "Awaiting destination config";
+      erpReason.style.color = "#b45309";
+      if (erpErrorBox) erpErrorBox.style.display = "none";
+    } else if (erp.status === "CONNECTED") {
+      erpBadge.className = "badge badge-success";
+      erpBadge.innerHTML = '<span class="badge-dot"></span> Connected';
+      erpHeadline.textContent = "Connected";
+      erpHeadline.style.color = "var(--success)";
+      erpReason.textContent = "Online & Authenticated";
+      erpReason.style.color = "var(--success)";
+      if (erpErrorBox) erpErrorBox.style.display = "none";
+    } else if (erp.status === "FAILED") {
+      erpBadge.className = "badge badge-danger";
+      erpBadge.innerHTML = '<span class="badge-dot"></span> Connection Error';
+      erpHeadline.textContent = "Failed";
+      erpHeadline.style.color = "var(--danger)";
+      erpReason.textContent = erp.message || "Failed";
+      erpReason.style.color = "var(--danger)";
+      if (erpErrorBox) {
+        erpErrorBox.style.display = "block";
+        if (erpErrorText) erpErrorText.textContent = erp.error || erp.message || "Error communicating with Oracle ERP Cloud";
+      }
+    }
   }
 
-  // 3. Scheduler & Countdown Card
+  // 3. JSON Staging Queue Card
+  const stagingPending = document.getElementById("staging-pending-val");
+  const stagingPendingUnit = document.getElementById("staging-pending-unit");
+  const stagingTotal = document.getElementById("staging-total-val");
+  const stagingBadge = document.getElementById("staging-status-badge");
+
+  const pendingCount = deliv.pending_oracle_count ?? 0;
+  const failedCount = deliv.failed_count ?? 0;
+  if (stagingPending) stagingPending.textContent = pendingCount;
+  if (stagingPendingUnit) {
+    if (failedCount > 0) {
+      stagingPendingUnit.textContent = `${failedCount} failed (auto-retrying)`;
+    } else if (pendingCount > 0) {
+      stagingPendingUnit.textContent = "pending setup / retry";
+    } else {
+      stagingPendingUnit.textContent = "failed / pending (all synced)";
+    }
+  }
+  if (stagingTotal) stagingTotal.textContent = `${deliv.total_received ?? 0} records`;
+  if (stagingBadge) {
+    if (failedCount > 0) {
+      stagingBadge.className = "badge badge-danger";
+      stagingBadge.innerHTML = `<span class="badge-dot"></span> ${failedCount} Failed (Retrying)`;
+    } else if (pendingCount > 0) {
+      stagingBadge.className = "badge badge-pending";
+      stagingBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
+    } else {
+      stagingBadge.className = "badge badge-success";
+      stagingBadge.innerHTML = '<span class="badge-dot"></span> Auto-Dispatched';
+    }
+  }
+
+  // Legacy scheduler controls support
   const sched = data.scheduler || {};
   secondsLeft = sched.seconds_remaining || 0;
   updateCountdownDisplay(secondsLeft);
@@ -241,17 +344,19 @@ function renderDashboard(data) {
   const pauseBtn = document.getElementById("btn-toggle-pause");
   const pauseText = document.getElementById("btn-pause-text");
 
-  schedInterval.textContent = `Every ${sched.interval_seconds || 30}s`;
-  schedNext.textContent = sched.next_run_at ? formatTimestamp(sched.next_run_at) : "--";
+  if (schedInterval) schedInterval.textContent = `Every ${sched.interval_seconds || 30}s`;
+  if (schedNext) schedNext.textContent = sched.next_run_at ? formatTimestamp(sched.next_run_at) : "--";
 
-  if (sched.is_paused) {
-    schedBadge.className = "badge badge-pending";
-    schedBadge.innerHTML = '<span class="badge-dot"></span> Paused';
-    pauseText.textContent = "Resume";
-  } else {
-    schedBadge.className = "badge badge-success";
-    schedBadge.innerHTML = '<span class="badge-dot"></span> Active';
-    pauseText.textContent = "Pause";
+  if (schedBadge && pauseText) {
+    if (sched.is_paused) {
+      schedBadge.className = "badge badge-pending";
+      schedBadge.innerHTML = '<span class="badge-dot"></span> Paused';
+      pauseText.textContent = "Resume";
+    } else {
+      schedBadge.className = "badge badge-success";
+      schedBadge.innerHTML = '<span class="badge-dot"></span> Active';
+      pauseText.textContent = "Pause";
+    }
   }
 
   // 4. Last Data Published Card
@@ -262,28 +367,33 @@ function renderDashboard(data) {
   const pubTime = document.getElementById("publish-time-val");
   const pubHttp = document.getElementById("publish-http-val");
 
-  pubCount.textContent = pub.record_count || 0;
-  pubTime.textContent = pub.timestamp ? formatTimestamp(pub.timestamp) : "--";
-  pubHttp.textContent = pub.http_code ? `HTTP ${pub.http_code}` : (pub.status === "PENDING_SETUP" ? "Pending setup" : "--");
+  if (pubCount) pubCount.textContent = pub.record_count || 0;
+  if (pubTime) pubTime.textContent = pub.timestamp ? formatTimestamp(pub.timestamp) : "--";
+  if (pubHttp) pubHttp.textContent = pub.http_code ? `HTTP ${pub.http_code}` : (pub.status === "PENDING_SETUP" ? "Pending setup" : "--");
 
-  if (pub.status === "PENDING_SETUP") {
-    pubBadge.className = "badge badge-pending";
-    pubBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
-    pubStatus.textContent = "Pending connection setup";
-    pubStatus.style.color = "#b45309";
-  } else if (pub.status === "SUCCESS") {
-    pubBadge.className = "badge badge-success";
-    pubBadge.innerHTML = '<span class="badge-dot"></span> Published';
-    pubStatus.textContent = "Successfully Dispatched";
-    pubStatus.style.color = "var(--success)";
-  } else if (pub.status === "FAILED") {
-    pubBadge.className = "badge badge-danger";
-    pubBadge.innerHTML = '<span class="badge-dot"></span> Failed';
-    pubStatus.textContent = "Publish Rejected / Failed";
-    pubStatus.style.color = "var(--danger)";
+  if (pubBadge && pubStatus) {
+    if (pub.status === "PENDING_SETUP") {
+      pubBadge.className = "badge badge-pending";
+      pubBadge.innerHTML = '<span class="badge-dot"></span> Pending Setup';
+      pubStatus.textContent = "Pending connection setup";
+      pubStatus.style.color = "#b45309";
+    } else if (pub.status === "SUCCESS") {
+      pubBadge.className = "badge badge-success";
+      pubBadge.innerHTML = '<span class="badge-dot"></span> Published';
+      pubStatus.textContent = "Successfully Dispatched";
+      pubStatus.style.color = "var(--success)";
+    } else if (pub.status === "FAILED") {
+      pubBadge.className = "badge badge-danger";
+      pubBadge.innerHTML = '<span class="badge-dot"></span> Failed';
+      pubStatus.textContent = "Publish Rejected / Failed";
+      pubStatus.style.color = "var(--danger)";
+    }
   }
 
-  // 5. Last 5 Data Pulls Table
+  // 5. Recent 5 Received Deliveries Table
+  renderRecentDeliveriesTable(data.recent_5_deliveries || []);
+
+  // Backward compatibility: render last_5_pulls if element exists
   renderLastPullsTable(data.last_5_pulls || []);
 
   // 6. Logs Box
@@ -401,6 +511,363 @@ function renderLastPullsTable(triggers) {
     `;
   }).join("");
 }
+
+// ============================================================
+// RECENT 5 RECEIVED DELIVERIES TABLE & MODAL ACTIONS
+// ============================================================
+let currentInspectedDelivery = null;
+
+function renderRecentDeliveriesTable(deliveries) {
+  const tbody = document.getElementById("recent-deliveries-tbody");
+  if (!tbody) return;
+
+  if (!deliveries || deliveries.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 2.5rem 1rem;">
+          <div style="font-weight: 500; font-size: 13px; color: var(--ink-primary); margin-bottom: 6px;">
+            Waiting for data from PI AF Notifications
+          </div>
+          <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 12px;">
+            Configure your PI AF Notification Delivery Endpoint to POST to <code style="font-family: var(--font-mono); font-size: 11px;">/api/v1/delivery</code>, or simulate a test push below:
+          </div>
+          <div style="display: inline-flex; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="triggerSimulateDelivery()">
+              + Simulate Sample Push
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyDeliveryEndpointUrl()">
+              Copy Endpoint URL
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = deliveries.map(deliv => {
+    // 1. Received At
+    const timeFormatted = formatTimestamp(deliv.received_at);
+    const clientIp = deliv.client_ip || "Unknown";
+    const shortId = deliv.delivery_id || "";
+
+    // 2. Notification / Target
+    const notifName = escapeHtml(deliv.notification_name || "PI Notification");
+    const eventType = escapeHtml(deliv.event_type || "Update");
+    const targetPath = escapeHtml(deliv.target_path || "--");
+
+    // 3. Attributes & Values
+    const attrs = deliv.attributes_summary || [];
+    let attrsHtml = "";
+    if (attrs.length === 0) {
+      attrsHtml = `<span style="color: var(--ink-tertiary); font-size: 11px;">No attributes parsed</span>`;
+    } else {
+      const displayAttrs = attrs.slice(0, 3);
+      const remaining = attrs.length - displayAttrs.length;
+      attrsHtml = displayAttrs.map(a => {
+        const val = a.value !== null && a.value !== undefined ? a.value : "N/A";
+        const uom = a.uom ? ` ${escapeHtml(a.uom)}` : "";
+        return `
+          <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
+            <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(a.name)}:</span>
+            <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(String(val))}</strong>
+            <span style="font-size: 11px; color: var(--ink-tertiary);">${uom}</span>
+          </div>
+        `;
+      }).join("");
+
+      if (remaining > 0) {
+        attrsHtml += `
+          <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
+            +${remaining} more attribute(s)...
+          </div>
+        `;
+      }
+    }
+
+    // 4. Staging Status badge
+    let statusBadge = "";
+    if (deliv.oracle_status === "DISPATCHED") {
+      statusBadge = `<span class="badge badge-success" title="Successfully dispatched to Oracle ERP"><span class="badge-dot"></span> Dispatched to Oracle</span>`;
+    } else if (deliv.oracle_status === "FAILED") {
+      const retryCount = deliv.retry_count || 0;
+      const retryLabel = retryCount > 0 ? `Failed (Retry #${retryCount})` : `Failed (Retry Queued)`;
+      const errMsg = escapeHtml(deliv.oracle_dispatch?.message || deliv.oracle_dispatch?.error || "Dispatch failed. Will retry on next scheduled interval.");
+      statusBadge = `<span class="badge badge-danger" title="${errMsg}"><span class="badge-dot"></span> ${retryLabel}</span>`;
+    } else if (deliv.oracle_status === "PENDING_SETUP") {
+      statusBadge = `<span class="badge badge-pending" title="Oracle ERP credentials pending setup in Settings"><span class="badge-dot"></span> Pending Setup</span>`;
+    } else {
+      statusBadge = `<span class="badge badge-pending" title="Held in JSON staging"><span class="badge-dot"></span> Staged in JSON</span>`;
+    }
+
+    // 5. Actions
+    return `
+      <tr>
+        <td style="vertical-align: top; padding-top: 12px;">
+          <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--ink-primary); white-space: nowrap;">
+            ${timeFormatted}
+          </div>
+          <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px; font-family: var(--font-mono);">
+            ${escapeHtml(clientIp)}
+          </div>
+          <div style="font-size: 10px; color: var(--ink-tertiary); font-family: var(--font-mono); margin-top: 2px;">
+            #${escapeHtml(shortId.slice(-10))}
+          </div>
+        </td>
+        <td style="vertical-align: top; padding-top: 12px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <strong style="font-size: 12px; color: var(--ink-primary);">${notifName}</strong>
+            <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${eventType}</span>
+          </div>
+          <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-top: 4px; word-break: break-all;">
+            ${targetPath}
+          </div>
+          <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
+            ${deliv.attribute_count || attrs.length} attribute(s)
+          </div>
+        </td>
+        <td style="vertical-align: top; padding-top: 10px;">
+          ${attrsHtml}
+        </td>
+        <td style="vertical-align: top; padding-top: 12px; white-space: nowrap;">
+          ${statusBadge}
+          <div style="font-size: 10px; color: var(--ink-tertiary); margin-top: 4px; font-family: var(--font-mono);">
+            received_deliveries.json
+          </div>
+        </td>
+        <td style="vertical-align: top; padding-top: 10px; text-align: right; white-space: nowrap;">
+          <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="inspectDelivery('${escapeHtml(deliv.delivery_id)}')">
+                Inspect
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" onclick="deleteDeliveryRecord('${escapeHtml(deliv.delivery_id)}')" title="Delete this delivery from data/received_deliveries.json">
+                Delete
+              </button>
+            </div>
+            ${deliv.oracle_status !== "DISPATCHED" ? `
+              <button type="button" class="btn btn-outline btn-sm" onclick="dispatchSingleDelivery('${escapeHtml(deliv.delivery_id)}')">
+                Send to Oracle
+              </button>
+            ` : `
+              <span style="font-size: 11px; color: var(--status-good); display: inline-flex; align-items: center; gap: 3px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg> Dispatched
+              </span>
+            `}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function copyDeliveryEndpointUrl() {
+  const fullUrl = `${window.location.origin}/api/v1/delivery`;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(fullUrl);
+    } else {
+      const tmp = document.createElement("textarea");
+      tmp.value = fullUrl;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand("copy");
+      document.body.removeChild(tmp);
+    }
+    showToast(`Copied Endpoint URL to clipboard: ${fullUrl}`, "success");
+  } catch (err) {
+    showToast(`Delivery URL: ${fullUrl}`, "info");
+  }
+}
+
+async function triggerSimulateDelivery() {
+  showToast("Simulating PI AF Notification push delivery...", "info");
+  try {
+    const res = await fetch("/api/deliveries/simulate", { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Simulated delivery received and staged into data/received_deliveries.json!", "success");
+      await loadDashboardData();
+    } else {
+      showToast("Failed to simulate delivery: " + (data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error simulating delivery: " + err.message, "danger");
+  }
+}
+
+async function dispatchAllPendingDeliveries() {
+  showToast("Forwarding pending staged deliveries to Oracle ERP Cloud...", "info");
+  try {
+    const res = await fetch("/api/deliveries/dispatch-pending", { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      const r = data.result || {};
+      if (r.total_pending === 0) {
+        showToast("No pending deliveries in staging queue.", "info");
+      } else {
+        showToast(`Forwarded: ${r.dispatched} dispatched, ${r.failed} failed out of ${r.total_pending} pending.`, "success");
+      }
+      await loadDashboardData();
+    } else {
+      showToast("Failed forwarding to Oracle ERP: " + (data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error forwarding deliveries: " + err.message, "danger");
+  }
+}
+
+async function inspectDelivery(deliveryId) {
+  try {
+    const res = await fetch(`/api/deliveries/${deliveryId}`);
+    if (!res.ok) {
+      showToast("Failed to load delivery record", "danger");
+      return;
+    }
+    const data = await res.json();
+    currentInspectedDelivery = data;
+
+    const modal = document.getElementById("modal-delivery-json");
+    const titleEl = document.getElementById("modal-delivery-title");
+    const subEl = document.getElementById("modal-delivery-subtitle");
+    const jsonEl = document.getElementById("modal-delivery-json-content");
+    const metaEl = document.getElementById("modal-delivery-meta");
+    const dispatchBtn = document.getElementById("btn-modal-dispatch-oracle");
+
+    if (titleEl) titleEl.textContent = `PI Delivery: ${data.notification_name || "Notification"}`;
+    if (subEl) subEl.textContent = `ID: ${data.delivery_id} · Received: ${formatTimestamp(data.received_at)} from ${data.client_ip || "Unknown"}`;
+    if (jsonEl) jsonEl.textContent = JSON.stringify(data.raw_payload || data, null, 2);
+    if (metaEl) {
+      metaEl.innerHTML = `Status: <strong>${data.oracle_status}</strong> · Attributes: <strong>${data.attribute_count || 0}</strong>`;
+    }
+    if (dispatchBtn) {
+      dispatchBtn.style.display = data.oracle_status === "DISPATCHED" ? "none" : "inline-block";
+    }
+
+    if (modal) modal.classList.add("active");
+  } catch (err) {
+    showToast("Error inspecting delivery: " + err.message, "danger");
+  }
+}
+
+function closeDeliveryModal() {
+  const modal = document.getElementById("modal-delivery-json");
+  if (modal) modal.classList.remove("active");
+}
+
+function copyDeliveryJsonFromModal() {
+  const jsonEl = document.getElementById("modal-delivery-json-content");
+  if (!jsonEl) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(jsonEl.textContent);
+    } else {
+      const tmp = document.createElement("textarea");
+      tmp.value = jsonEl.textContent;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand("copy");
+      document.body.removeChild(tmp);
+    }
+    showToast("Raw JSON copied to clipboard!", "success");
+  } catch (err) {
+    showToast("Failed to copy JSON", "danger");
+  }
+}
+
+async function dispatchCurrentModalDelivery() {
+  if (!currentInspectedDelivery) return;
+  const id = currentInspectedDelivery.delivery_id;
+  await dispatchSingleDelivery(id);
+  closeDeliveryModal();
+}
+
+async function dispatchSingleDelivery(deliveryId) {
+  showToast(`Dispatching delivery ${deliveryId} to Oracle ERP Cloud...`, "info");
+  try {
+    const res = await fetch(`/api/deliveries/${deliveryId}/dispatch`, { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      const result = data.result || {};
+      if (result.status === "DISPATCHED") {
+        showToast("Successfully dispatched to Oracle ERP Cloud!", "success");
+      } else if (result.status === "PENDING_SETUP") {
+        showToast("Oracle ERP is in PENDING_SETUP mode. Record held staged in JSON.", "info");
+      } else {
+        showToast("Oracle ERP dispatch failed: " + (result.message || "Unknown error"), "danger");
+      }
+      await loadDashboardData();
+    } else {
+      showToast("Dispatch failed: " + (data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error dispatching delivery: " + err.message, "danger");
+  }
+}
+
+// ------------------------------------------------------------
+// Delivery Record Deletion & Staging Purge Functions
+// ------------------------------------------------------------
+window.deleteDeliveryRecord = async function(deliveryId) {
+  if (!confirm(`Are you sure you want to delete delivery record #${deliveryId}?\n\nThis will permanently remove it from data/received_deliveries.json.`)) {
+    return;
+  }
+  showToast(`Deleting delivery ${deliveryId}...`, "info");
+  try {
+    const res = await fetch(`/api/deliveries/${encodeURIComponent(deliveryId)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast("Delivery record successfully deleted from JSON storage.", "success");
+      if (currentInspectedDelivery && currentInspectedDelivery.delivery_id === deliveryId) {
+        closeDeliveryModal();
+      }
+      await loadDashboardData();
+    } else {
+      showToast("Failed to delete delivery: " + (data.detail || data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error deleting delivery: " + err.message, "danger");
+  }
+};
+
+async function deleteCurrentModalDelivery() {
+  if (!currentInspectedDelivery) return;
+  const id = currentInspectedDelivery.delivery_id;
+  await deleteDeliveryRecord(id);
+}
+
+function openPurgeDeliveriesModal() {
+  const modal = document.getElementById("modal-purge-deliveries");
+  if (modal) modal.classList.add("active");
+}
+
+function closePurgeDeliveriesModal() {
+  const modal = document.getElementById("modal-purge-deliveries");
+  if (modal) modal.classList.remove("active");
+}
+
+async function handleConfirmPurgeDeliveries() {
+  const selectedOption = document.querySelector('input[name="purge-deliveries-option"]:checked')?.value || "PENDING";
+  let filterDesc = "pending/failed test deliveries";
+  if (selectedOption === "ALL") filterDesc = "ALL staged deliveries";
+  else if (selectedOption === "DISPATCHED") filterDesc = "all successfully dispatched deliveries";
+
+  showToast(`Purging ${filterDesc}...`, "info");
+  try {
+    const res = await fetch(`/api/deliveries?filter=${encodeURIComponent(selectedOption)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`Purged ${data.deleted_count} staged deliveries from data/received_deliveries.json.`, "success");
+      closePurgeDeliveriesModal();
+      await loadDashboardData();
+    } else {
+      showToast("Purge failed: " + (data.detail || data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error purging deliveries: " + err.message, "danger");
+  }
+}
+
 
 async function triggerPullNow() {
   showToast("Triggering telemetry pull...", "info");
@@ -926,10 +1393,60 @@ function initSettings() {
   document.getElementById("setting-pi-auth-type")?.addEventListener("change", handlePiAuthChange);
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
 
+  // Ingestion Mode Toggle Listeners
+  document.querySelectorAll('input[name="setting-ingestion-mode"]').forEach(radio => {
+    radio.addEventListener("change", handleIngestionModeChange);
+  });
+
+  // Guide Action Buttons
+  document.getElementById("btn-guide-copy-url")?.addEventListener("click", copyDeliveryEndpointUrl);
+  document.getElementById("btn-guide-copy-url-2")?.addEventListener("click", copyDeliveryEndpointUrl);
+  document.getElementById("btn-guide-simulate-push")?.addEventListener("click", triggerSimulateDelivery);
+
   initMockERPSimulator();
   initUpdatesController();
 
+  // Data Storage & Production Pre-Flight Cleanup Listeners
+  document.getElementById("btn-purge-deliveries-pending")?.addEventListener("click", () => handlePurgeDeliveriesQuick("PENDING"));
+  document.getElementById("btn-purge-deliveries-all")?.addEventListener("click", () => handlePurgeDeliveriesQuick("ALL"));
+  document.getElementById("btn-purge-pull-history")?.addEventListener("click", () => handlePurgeStorageTarget("pull_history", "PI Pull History"));
+  document.getElementById("btn-purge-publish-history")?.addEventListener("click", () => handlePurgeStorageTarget("publish_history", "ERP Publish History"));
+  document.getElementById("btn-purge-logs")?.addEventListener("click", () => handlePurgeStorageTarget("logs", "Activity Logs"));
+  document.getElementById("btn-preflight-purge-all")?.addEventListener("click", handlePreflightPurgeAll);
+
   loadSettingsIntoForm();
+}
+
+function handleIngestionModeChange() {
+  const selectedMode = document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint";
+  const guideContainer = document.getElementById("container-pi-endpoint-guide");
+  const webapiContainer = document.getElementById("container-pi-webapi-settings");
+  const cardEndpoint = document.getElementById("mode-card-endpoint");
+  const cardPull = document.getElementById("mode-card-pull");
+
+  if (selectedMode === "endpoint") {
+    if (guideContainer) guideContainer.style.display = "block";
+    if (webapiContainer) webapiContainer.style.display = "none";
+    if (cardEndpoint) {
+      cardEndpoint.style.border = "2px solid var(--ink-primary)";
+      cardEndpoint.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
+    }
+    if (cardPull) {
+      cardPull.style.border = "1px solid var(--border)";
+      cardPull.style.boxShadow = "none";
+    }
+  } else {
+    if (guideContainer) guideContainer.style.display = "none";
+    if (webapiContainer) webapiContainer.style.display = "block";
+    if (cardPull) {
+      cardPull.style.border = "2px solid var(--ink-primary)";
+      cardPull.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
+    }
+    if (cardEndpoint) {
+      cardEndpoint.style.border = "1px solid var(--border)";
+      cardEndpoint.style.boxShadow = "none";
+    }
+  }
 }
 
 async function loadSettingsIntoForm() {
@@ -940,6 +1457,22 @@ async function loadSettingsIntoForm() {
     const pi = currentSettings.pi_web_api || {};
     const erp = currentSettings.oracle_erp || {};
     const pipe = currentSettings.pipeline || {};
+
+    // Ingestion Mode Selection
+    const mode = pipe.ingestion_mode || "endpoint";
+    const radioToSelect = document.getElementById(`mode-radio-${mode}`);
+    if (radioToSelect) {
+      radioToSelect.checked = true;
+    }
+    handleIngestionModeChange();
+
+    // Auto-update URLs in guide
+    const currentOrigin = window.location.origin;
+    const fullDeliveryUrl = `${currentOrigin}/api/v1/delivery`;
+    const guideInput = document.getElementById("guide-endpoint-url-input");
+    const guideTableUrl = document.getElementById("guide-table-url");
+    if (guideInput) guideInput.value = fullDeliveryUrl;
+    if (guideTableUrl) guideTableUrl.textContent = fullDeliveryUrl;
 
     // PI Settings
     document.getElementById("setting-pi-url").value = pi.url || "";
@@ -973,6 +1506,8 @@ async function loadSettingsIntoForm() {
 
     // Pipeline Settings
     document.getElementById("setting-pipeline-interval").value = pipe.interval_seconds || 30;
+    const autoDispatchEl = document.getElementById("setting-pipeline-auto-dispatch");
+    if (autoDispatchEl) autoDispatchEl.checked = pipe.auto_dispatch !== undefined ? pipe.auto_dispatch : true;
 
     handlePiAuthChange();
     handleErpAuthChange();
@@ -1354,7 +1889,9 @@ function collectSettingsFromForm() {
     },
     pipeline: {
       interval_seconds: parseInt(document.getElementById("setting-pipeline-interval").value, 10) || 30,
-      auto_start: true,
+      ingestion_mode: document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint",
+      auto_dispatch: document.getElementById("setting-pipeline-auto-dispatch") ? document.getElementById("setting-pipeline-auto-dispatch").checked : true,
+      auto_start: currentSettings?.pipeline?.auto_start !== undefined ? currentSettings.pipeline.auto_start : true,
       max_history_items: 100
     }
   };
@@ -1485,6 +2022,88 @@ async function handleTestErpSettings() {
   } catch (e) {
     box.className = "error-console danger";
     box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
+  }
+}
+
+// ------------------------------------------------------------
+// Storage Files Cleanup & Production Pre-Flight Handlers
+// ------------------------------------------------------------
+async function handlePurgeDeliveriesQuick(filter) {
+  const isPendingOnly = filter === "PENDING";
+  const promptMsg = isPendingOnly
+    ? "Are you sure you want to purge all pending/failed test deliveries from data/received_deliveries.json?\n\nThis guarantees un-dispatched test readings are never forwarded to live Oracle ERP Cloud."
+    : "Are you sure you want to purge ALL records from data/received_deliveries.json?\n\nThis will completely reset the staging queue.";
+
+  if (!confirm(promptMsg)) return;
+
+  showToast("Purging staged deliveries...", "info");
+  try {
+    const res = await fetch(`/api/deliveries?filter=${filter}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`Purged ${data.deleted_count} deliveries from data/received_deliveries.json.`, "success");
+      await loadDashboardData();
+    } else {
+      showToast("Purge failed: " + (data.detail || data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error purging deliveries: " + err.message, "danger");
+  }
+}
+
+async function handlePurgeStorageTarget(target, label) {
+  if (!confirm(`Are you sure you want to clear ${label} (data/${target}.json)?\n\nThis operational data will be permanently cleared. Settings and mappings are preserved.`)) {
+    return;
+  }
+
+  showToast(`Clearing ${label}...`, "info");
+  try {
+    const res = await fetch("/api/storage/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: target })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`${label} cleared (${data.deleted_count} records removed).`, "success");
+      await loadDashboardData();
+    } else {
+      showToast("Clear failed: " + (data.detail || data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error clearing storage: " + err.message, "danger");
+  }
+}
+
+async function handlePreflightPurgeAll() {
+  const confirmMsg = "⚠️ PRODUCTION PRE-FLIGHT PURGE CONFIRMATION\n\n" +
+    "Are you sure you want to purge all operational test data?\n\n" +
+    "This will wipe:\n" +
+    "• Staged PI Deliveries (data/received_deliveries.json)\n" +
+    "• PI Web API Pull History (data/pull_history.json)\n" +
+    "• Oracle ERP Publish History (data/publish_history.json)\n\n" +
+    "✓ Your connection settings (config/settings.json) and attribute mappings (config/mappings.json) will be safely PRESERVED.\n\n" +
+    "Click OK to proceed with the Pre-Flight Purge.";
+
+  if (!confirm(confirmMsg)) return;
+
+  showToast("Executing Production Pre-Flight Purge...", "info");
+  try {
+    const res = await fetch("/api/storage/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "all" })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      const r = data.results || {};
+      showToast(`Pre-flight purge complete! Purged: ${r.deliveries_deleted ?? 0} deliveries, ${r.pulls_deleted ?? 0} pulls, ${r.publishes_deleted ?? 0} publishes.`, "success");
+      await loadDashboardData();
+    } else {
+      showToast("Pre-flight purge failed: " + (data.detail || data.message || "Unknown error"), "danger");
+    }
+  } catch (err) {
+    showToast("Error during pre-flight purge: " + err.message, "danger");
   }
 }
 

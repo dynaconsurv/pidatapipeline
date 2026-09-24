@@ -14,10 +14,11 @@ import uvicorn
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "127.0.0.1")
+    host = os.getenv("HOST", "0.0.0.0")
     print(f"============================================================")
-    print(f"  AVEVA PI Web API -> Oracle ERP Cloud Data Pipeline")
-    print(f"  Web Dashboard: http://{host}:{port}")
+    print(f"  AVEVA PI Notifications -> Oracle ERP Cloud Data Pipeline")
+    print(f"  Web Dashboard: http://127.0.0.1:{port}")
+    print(f"  PI Delivery Endpoint: http://0.0.0.0:{port}/api/v1/delivery")
     print(f"  Storage: Pure JSON files in ./config/ and ./data/")
     print(f"============================================================")
     uvicorn.run("app.main:app", host=host, port=port, log_level="info")

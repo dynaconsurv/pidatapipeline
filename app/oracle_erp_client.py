@@ -288,3 +288,6 @@ class OracleERPCloudClient:
                 "error_detail": str(e),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
+
+    # Alias for API compatibility
+    publish_readings = publish_data

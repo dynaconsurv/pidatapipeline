@@ -47,8 +47,8 @@
       <!-- Page Top Bar with Info Trigger -->
       <div class="page-top-bar">
         <div class="page-title-group">
-          <h1 class="page-heading">Pipeline Telemetry & Monitoring</h1>
-          <div class="page-subheading">Live extraction from AVEVA PI Web API and ingestion into Oracle ERP Cloud</div>
+          <h1 class="page-heading">Pipeline Telemetry &amp; Monitoring</h1>
+          <div class="page-subheading">AVEVA PI AF Notifications WebService Delivery &amp; Ingestion into Oracle ERP Cloud</div>
         </div>
         <button type="button" class="btn-info-trigger" data-target="dashboard-info-card" title="Page Information">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -61,17 +61,17 @@
         <div class="info-card-header">
           <div class="info-card-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-            How the Dashboard Works
+            How the PI Delivery Pipeline Works
           </div>
           <button type="button" class="info-card-close" data-close="dashboard-info-card">✕</button>
         </div>
         <div class="info-card-body">
-          <p>The Dashboard displays real-time operational status, connection health, and telemetry streams:</p>
+          <p>This pipeline receives real-time telemetry pushed directly from AVEVA PI System Explorer via PI AF Notifications WebService REST Delivery Endpoints:</p>
           <ul>
-            <li><strong>AVEVA PI Web API Status:</strong> Monitors live HTTP connectivity and latency against your PI Web API endpoint. If unreachable, the error console displays exact diagnostic traces.</li>
-            <li><strong>Oracle ERP Cloud Status:</strong> Reflects destination integration state. Shows "Pending connection setup" while awaiting credentials.</li>
-            <li><strong>Scheduler Countdown:</strong> Real-time timer indicating when the next background extraction cycle executes. Can be paused or triggered on demand.</li>
-            <li><strong>Last 5 Telemetry Pulls:</strong> Details the most recent 5 attributes pulled from the Asset Framework (AF) including timestamps, quality, and values.</li>
+            <li><strong>PI Delivery Ingestion Endpoint:</strong> PI Notifications sends HTTP POST requests to <code>/api/v1/delivery</code> containing real-time meter telemetry.</li>
+            <li><strong>JSON Staging Queue:</strong> Every incoming payload is validated, parsed, and staged immediately into <code>data/received_deliveries.json</code>.</li>
+            <li><strong>Oracle ERP Cloud Dispatch:</strong> Staged records are formatted into ERP meter readings and dispatched to Oracle ERP Cloud.</li>
+            <li><strong>Recent Deliveries:</strong> The table below displays the last 5 push deliveries received from AVEVA PI with full raw JSON payload inspection.</li>
           </ul>
         </div>
       </div>
@@ -89,11 +89,54 @@
         </div>
       </div>
 
-      <!-- 4 Aligned Metric Cards -->
-      <div class="grid-4">
+      <!-- 3 Aligned Symmetric Metric Cards (Source -> Queue/Scheduler -> Destination) -->
+      <div class="grid-3">
         
-        <!-- Card 1: AVEVA PI Web API -->
-        <div class="card">
+        <!-- CARD 1 OPTION A: AVEVA PI WebService Delivery Endpoint (Mode: endpoint) -->
+        <div id="card-pi-endpoint" class="card">
+          <div class="card-header">
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              PI Delivery Endpoint
+            </span>
+            <span id="delivery-status-badge" class="badge badge-success">
+              <span class="badge-dot"></span> Listening
+            </span>
+          </div>
+
+          <div class="kpi-value-row">
+            <div id="delivery-total-val" class="kpi-number">0</div>
+            <div class="kpi-unit">deliveries received</div>
+          </div>
+
+          <div class="kpi-detail">
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">Path</span>
+              <span id="delivery-path-val" class="kpi-meta-val" style="font-family: var(--font-mono); font-size: 11px;">POST /api/v1/delivery</span>
+            </div>
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">Channel</span>
+              <span id="delivery-channel-val" class="kpi-meta-val">WebService REST</span>
+            </div>
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">Last Push</span>
+              <span id="delivery-last-val" class="kpi-meta-val">--</span>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="btn-copy-delivery-url" class="btn btn-secondary btn-sm" style="flex: 1;" title="Copy complete endpoint URL to clipboard for PI System Explorer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy URL
+            </button>
+            <button id="btn-simulate-delivery" class="btn btn-primary btn-sm" style="flex: 1;" title="Simulate a test push from PI AF Notification">
+              Simulate Push
+            </button>
+          </div>
+        </div>
+
+        <!-- CARD 1 OPTION B: AVEVA PI Web API Polling (Mode: pull, hidden by default) -->
+        <div id="card-pi-webapi" class="card" style="display: none;">
           <div class="card-header">
             <span class="card-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
@@ -139,54 +182,53 @@
           </div>
         </div>
 
-        <!-- Card 2: Oracle ERP Cloud -->
-        <div class="card">
+        <!-- CARD 2 OPTION A: JSON Staging Storage Queue (Mode: endpoint) -->
+        <div id="card-staging-queue" class="card">
           <div class="card-header">
             <span class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              Oracle ERP Cloud
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              JSON Staging Queue
             </span>
-            <span id="erp-status-badge" class="badge badge-pending">
-              <span class="badge-dot"></span> Pending Setup
+            <span id="staging-status-badge" class="badge badge-success">
+              <span class="badge-dot"></span> Persisted
             </span>
           </div>
 
           <div class="kpi-value-row">
-            <div id="erp-status-headline" class="kpi-number" style="font-size: 18px;">Pending Setup</div>
+            <div id="staging-pending-val" class="kpi-number">0</div>
+            <div id="staging-pending-unit" class="kpi-unit">failed / pending retry</div>
           </div>
 
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Auth Flow</span>
-              <span id="erp-auth-val" class="kpi-meta-val">OAuth 2.0</span>
+              <span class="kpi-meta-label">Storage File</span>
+              <span class="kpi-meta-val" style="font-family: var(--font-mono); font-size: 11px;">data/received_deliveries.json</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Resource</span>
-              <span id="erp-resource-val" class="kpi-meta-val" title="">--</span>
+              <span class="kpi-meta-label">Total Staged</span>
+              <span id="staging-total-val" class="kpi-meta-val">0 records</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">State</span>
-              <span id="erp-reason-val" class="kpi-meta-val">Awaiting setup</span>
+              <span class="kpi-meta-label">Dispatch Flow</span>
+              <span id="staging-mode-val" class="kpi-meta-val">Auto-Dispatch on Receipt</span>
             </div>
           </div>
 
-          <!-- Error console -->
-          <div id="erp-error-box" class="error-console danger" style="display: none; margin-top: 12px;">
-            <div class="error-title">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              Oracle ERP Error
-            </div>
-            <div id="erp-error-text">--</div>
-          </div>
-
-          <div style="margin-top: 16px; display: flex; gap: 8px;">
-            <button id="btn-test-erp" class="btn btn-secondary btn-sm" style="flex: 1;">Test Handshake</button>
-            <button id="btn-goto-settings" class="btn btn-outline btn-sm" style="flex: 1;">Configure</button>
+          <div style="margin-top: 16px; display: flex; gap: 6px; flex-wrap: wrap;">
+            <button id="btn-dispatch-all-pending" class="btn btn-secondary btn-sm" style="flex: 1; min-width: 120px;" title="Retry forwarding all failed or pending staged deliveries to Oracle ERP Cloud">
+              Retry Dispatches
+            </button>
+            <button id="btn-refresh-staging" class="btn btn-outline btn-sm" style="flex: 1; min-width: 75px;" title="Refresh staging queue metrics">
+              Refresh
+            </button>
+            <button id="btn-card-clear-staging" class="btn btn-danger btn-sm" style="flex: 1; min-width: 95px;" title="Purge accumulated staged deliveries before production">
+              Purge Staging
+            </button>
           </div>
         </div>
 
-        <!-- Card 3: Scheduler Countdown -->
-        <div class="card">
+        <!-- CARD 2 OPTION B: Scheduler Countdown (Mode: pull, hidden by default) -->
+        <div id="card-scheduler" class="card" style="display: none;">
           <div class="card-header">
             <span class="card-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -221,30 +263,50 @@
           </div>
         </div>
 
-        <!-- Card 4: Last Published -->
-        <div class="card">
+        <!-- CARD 3: COMBINED Oracle ERP Cloud Connection & Transmission (Unified Destination Card) -->
+        <div id="card-oracle-erp-combined" class="card">
           <div class="card-header">
             <span class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
-              Last ERP Dispatch
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Oracle ERP Cloud &amp; Dispatch
             </span>
-            <span id="last-publish-badge" class="badge badge-pending">
-              <span class="badge-dot"></span> Pending Setup
-            </span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span id="erp-status-badge" class="badge badge-pending">
+                <span class="badge-dot"></span> Pending Setup
+              </span>
+              <span id="last-publish-badge" class="badge badge-pending" style="display: none;">
+                <span class="badge-dot"></span> Pending Setup
+              </span>
+            </div>
           </div>
 
-          <div class="kpi-value-row">
-            <div id="publish-count-val" class="kpi-number">0</div>
-            <div class="kpi-unit">records staged</div>
+          <div class="kpi-value-row" style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+            <div id="erp-status-headline" class="kpi-number" style="font-size: 18px;">Pending Setup</div>
+            <div style="font-size: 12px; color: var(--ink-secondary);">
+              <strong id="publish-count-val" style="font-family: var(--font-mono); font-size: 16px; color: var(--ink-primary);">0</strong>
+              <span class="kpi-unit" style="font-size: 11px;">records</span>
+            </div>
           </div>
 
           <div class="kpi-detail">
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Status</span>
+              <span class="kpi-meta-label">Auth Flow</span>
+              <span id="erp-auth-val" class="kpi-meta-val">OAuth 2.0</span>
+            </div>
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">Destination</span>
+              <span id="erp-resource-val" class="kpi-meta-val" title="">--</span>
+            </div>
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">State</span>
+              <span id="erp-reason-val" class="kpi-meta-val">Awaiting setup</span>
+            </div>
+            <div class="kpi-meta-item">
+              <span class="kpi-meta-label">Last Status</span>
               <span id="publish-status-val" class="kpi-meta-val">Pending</span>
             </div>
             <div class="kpi-meta-item">
-              <span class="kpi-meta-label">Timestamp</span>
+              <span class="kpi-meta-label">Last Timestamp</span>
               <span id="publish-time-val" class="kpi-meta-val">--</span>
             </div>
             <div class="kpi-meta-item">
@@ -253,26 +315,80 @@
             </div>
           </div>
 
-          <div style="margin-top: 16px;">
-            <button id="btn-view-last-payload" class="btn btn-secondary btn-sm" style="width: 100%;">
-              Inspect Staged Payload
-            </button>
+          <!-- Error console -->
+          <div id="erp-error-box" class="error-console danger" style="display: none; margin-top: 12px;">
+            <div class="error-title">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              Oracle ERP Error
+            </div>
+            <div id="erp-error-text">--</div>
+          </div>
+
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="btn-test-erp" class="btn btn-secondary btn-sm" style="flex: 1;">Test Handshake</button>
+            <button id="btn-view-last-payload" class="btn btn-outline btn-sm" style="flex: 1;" title="Inspect Staged Payload Schema">Inspect Payload</button>
+            <button id="btn-goto-settings" class="btn btn-outline btn-sm" style="flex: 1;">Configure</button>
           </div>
         </div>
 
       </div>
 
-      <!-- LAST 5 PULLS TABLE -->
-      <div class="form-section">
+      <!-- SECTION A: RECENT 5 RECEIVED DELIVERIES TABLE (Mode: endpoint) -->
+      <div id="section-recent-deliveries" class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Recent 5 Data Received from PI Notifications
+            </div>
+            <div class="form-help">Push deliveries received at /api/v1/delivery, temporarily saved in data/received_deliveries.json prior to Oracle dispatch</div>
+          </div>
+          <div class="btn-group">
+            <button id="btn-simulate-table" class="btn btn-primary btn-sm">+ Simulate Delivery</button>
+            <button id="btn-clear-staged-deliveries" class="btn btn-danger btn-sm" title="Delete accumulated test data in data/received_deliveries.json">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              Purge Staged Data
+            </button>
+            <button id="btn-refresh-dashboard" class="btn btn-secondary btn-sm">Refresh Table</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="min-width: 150px;">Received At</th>
+                <th style="min-width: 180px;">Notification / Target</th>
+                <th>Attributes &amp; Values</th>
+                <th style="min-width: 140px;">Staging Status</th>
+                <th style="min-width: 170px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recent-deliveries-tbody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 32px;">
+                  Waiting for initial data push from PI System Explorer...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECTION B: LAST 5 DATA PULLS TABLE (Mode: pull, hidden by default) -->
+      <div id="section-last-pulls" class="form-section" style="display: none;">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               Last 5 Data Pulls from AVEVA PI Web API
             </div>
             <div class="form-help">Historical trigger cycles and ingested meter telemetry (Active mappings only)</div>
           </div>
-          <button id="btn-refresh-dashboard" class="btn btn-secondary btn-sm">Refresh Table</button>
+          <div class="btn-group">
+            <button id="btn-run-pull-table" class="btn btn-primary btn-sm">Pull Now</button>
+            <button id="btn-refresh-pulls-table" class="btn btn-secondary btn-sm">Refresh Table</button>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -502,15 +618,216 @@
         </div>
       </div>
 
-      <!-- AVEVA PI Settings -->
+      <!-- INGESTION ARCHITECTURE MODE SELECTOR -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-              AVEVA PI Web API Configuration
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              AVEVA PI Ingestion Architecture Mode
             </div>
-            <div class="form-help">PI Web API endpoint and authentication credentials</div>
+            <div class="form-help">Select how data flows from AVEVA PI into this pipeline</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 12px;">
+          
+          <!-- Mode 1: Push Delivery Endpoint (Recommended) -->
+          <label id="mode-card-endpoint" class="card" style="margin: 0; cursor: pointer; border: 2px solid var(--ink-primary); background: var(--bg-surface); padding: 18px; transition: all 0.15s ease;">
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+              <input type="radio" name="setting-ingestion-mode" id="mode-radio-endpoint" value="endpoint" checked style="margin-top: 3px; accent-color: var(--ink-primary);">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <strong style="font-size: 14px; color: var(--ink-primary);">PI AF Notification Push (Delivery Endpoint)</strong>
+                  <span class="badge badge-success" style="font-size: 10px;">Recommended</span>
+                </div>
+                <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 6px; line-height: 1.4;">
+                  AVEVA PI pushes data directly to our REST delivery endpoint (<code>/api/v1/delivery</code>) via PI AF Notifications WebService. Bypasses PI Web API authentication restrictions, Kerberos, and browser PKCE tokens.
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <!-- Mode 2: PI Web API Pull (Polling) -->
+          <label id="mode-card-pull" class="card" style="margin: 0; cursor: pointer; border: 1px solid var(--border); background: var(--bg-surface); padding: 18px; transition: all 0.15s ease;">
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+              <input type="radio" name="setting-ingestion-mode" id="mode-radio-pull" value="pull" style="margin-top: 3px; accent-color: var(--ink-primary);">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <strong style="font-size: 14px; color: var(--ink-primary);">PI Web API Pull (Scheduled Polling)</strong>
+                  <span class="badge badge-pending" style="font-size: 10px;">Bearer / Basic / Kerberos</span>
+                </div>
+                <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 6px; line-height: 1.4;">
+                  Pipeline actively polls AVEVA PI Web API on a periodic background timer (e.g. every 30s) using Basic Auth, Windows Kerberos, or Bearer Tokens.
+                </div>
+              </div>
+            </div>
+          </label>
+
+        </div>
+      </div>
+
+      <!-- CONTAINER 1: PI AF NOTIFICATION DELIVERY ENDPOINT CONFIGURATION & SETUP GUIDE (Active when mode is 'endpoint') -->
+      <div id="container-pi-endpoint-guide" class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              PI AF Notification &amp; WebService Delivery Endpoint Guide
+            </div>
+            <div class="form-help">Configure AVEVA PI System Explorer to push telemetry directly to this pipeline</div>
+          </div>
+          <div class="btn-group">
+            <button type="button" id="btn-guide-simulate-push" class="btn btn-primary btn-sm">Simulate Test Push</button>
+            <button type="button" id="btn-guide-copy-url" class="btn btn-secondary btn-sm">Copy Endpoint URL</button>
+          </div>
+        </div>
+
+        <!-- Live Ingestion Endpoint Box -->
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+            <span style="font-size: 12px; font-weight: 600; color: var(--ink-primary); text-transform: uppercase; letter-spacing: 0.5px;">Your PI Delivery Ingestion URL</span>
+            <span class="badge badge-success"><span class="badge-dot"></span> Listening &amp; Staging Ready</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="guide-endpoint-url-input" class="form-control form-control-mono" readonly style="font-size: 13px; font-weight: 500;" value="http://127.0.0.1:8000/api/v1/delivery">
+            <button type="button" id="btn-guide-copy-url-2" class="btn btn-primary btn-sm" style="white-space: nowrap;">Copy URL</button>
+          </div>
+          <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--ink-secondary); flex-wrap: wrap;">
+            <span><strong>HTTP Method:</strong> <code>POST</code></span>
+            <span><strong>Style:</strong> <code>REST</code></span>
+            <span><strong>Payload:</strong> <code>application/json</code></span>
+            <span><strong>Staged File:</strong> <code>data/received_deliveries.json</code></span>
+          </div>
+        </div>
+
+        <!-- Step-by-Step PI System Explorer Instructions -->
+        <div style="margin-top: 12px;">
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--ink-primary);">
+            Step-by-Step Setup in AVEVA PI System Explorer
+          </h4>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            
+            <!-- Step 1 -->
+            <div style="border-left: 3px solid var(--ink-primary); padding-left: 14px;">
+              <strong style="font-size: 13px; color: var(--ink-primary);">1. Open Contacts in PI System Explorer</strong>
+              <p style="font-size: 12px; color: var(--ink-secondary); margin: 4px 0 0 0;">
+                In <strong>PI System Explorer</strong>, click on <strong>Contacts</strong> in the bottom-left navigation bar (under Elements / Event Frames / Library / Contacts).
+              </p>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="border-left: 3px solid var(--ink-primary); padding-left: 14px;">
+              <strong style="font-size: 13px; color: var(--ink-primary);">2. Create a New WebService Delivery Endpoint</strong>
+              <p style="font-size: 12px; color: var(--ink-secondary); margin: 4px 0 0 0;">
+                In the Contacts hierarchy, expand <code>Delivery Endpoints</code> &rarr; Right-click and choose <strong>New Delivery Endpoint</strong>.
+              </p>
+            </div>
+
+            <!-- Step 3: Exact Table matching user screenshot -->
+            <div style="border-left: 3px solid var(--ink-primary); padding-left: 14px;">
+              <strong style="font-size: 13px; color: var(--ink-primary);">3. Enter Parameters (As shown in your PI System Explorer screenshot)</strong>
+              <p style="font-size: 12px; color: var(--ink-secondary); margin: 4px 0 8px 0;">
+                Fill in the Delivery Endpoint properties exactly as below:
+              </p>
+              
+              <div class="table-responsive" style="border: 1px solid var(--border); border-radius: var(--radius);">
+                <table class="data-table" style="font-size: 12px;">
+                  <thead>
+                    <tr>
+                      <th style="width: 180px;">PI Parameter</th>
+                      <th style="width: 280px;">Configuration Value</th>
+                      <th>Explanation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>Name</strong></td>
+                      <td><code style="font-family: var(--font-mono);">Process Data</code></td>
+                      <td>Name of your delivery contact</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Contact Type</strong></td>
+                      <td><span class="badge badge-info">Delivery Endpoint</span></td>
+                      <td>Default Contact Type</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Delivery Channel</strong></td>
+                      <td><code style="font-family: var(--font-mono);">WebService</code></td>
+                      <td>Native PI AF WebService REST channel</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Style</strong></td>
+                      <td><code style="font-family: var(--font-mono);">REST</code></td>
+                      <td>Lightweight HTTP JSON transmission</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Http Method</strong></td>
+                      <td><code style="font-family: var(--font-mono); font-weight: 600;">POST</code></td>
+                      <td>Sends payload in request body</td>
+                    </tr>
+                    <tr>
+                      <td><strong>URL</strong></td>
+                      <td><code id="guide-table-url" style="font-family: var(--font-mono); color: var(--ink-primary);">http://&lt;PIPELINE_HOST&gt;:8000/api/v1/delivery</code></td>
+                      <td>Our pipeline's ingestion endpoint</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Content Type</strong></td>
+                      <td><code style="font-family: var(--font-mono);">application/json</code></td>
+                      <td>JSON formatted body</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Step 4: Notification Format Verification -->
+            <div style="border-left: 3px solid var(--ink-primary); padding-left: 14px;">
+              <strong style="font-size: 13px; color: var(--ink-primary);">4. Notification Rule &amp; Payload Format Guarantee</strong>
+              <p style="font-size: 12px; color: var(--ink-secondary); margin: 4px 0 8px 0;">
+                In your Notification Rule's <strong>Message / Content</strong> configuration, attach your target element attributes (e.g. <code>Level_Sensor</code>, <code>Flow_Rate</code>, <code>Temperature</code>, etc.).
+              </p>
+              
+              <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 12px; color: var(--ink-secondary);">
+                <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-primary); margin-bottom: 6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                  Confirmed Supported Payload Formats
+                </div>
+                <p style="margin: 0 0 6px 0;">
+                  Our pipeline parser automatically detects and normalizes <strong>any</strong> format PI AF Notifications sends:
+                </p>
+                <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
+                  <li><strong>Standard Nested Format:</strong> <code>{"Notification": "...", "Attributes": {"Level": {"Value": 80.5, "UOM": "%"}}}</code></li>
+                  <li><strong>Flat Key-Value Format:</strong> <code>{"Notification": "...", "Level_Sensor": 80.5, "Flow_Rate": 120.3}</code></li>
+                  <li><strong>Tag Array Format:</strong> <code>[{"Name": "Level_Sensor", "Value": 80.5}, ...]</code></li>
+                  <li><strong>Raw Backup:</strong> 100% of the raw delivered payload is saved without alteration into <code>data/received_deliveries.json</code>.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Step 5: Test & Verify -->
+            <div style="border-left: 3px solid var(--ink-primary); padding-left: 14px;">
+              <strong style="font-size: 13px; color: var(--ink-primary);">5. Check Ingestion on Dashboard</strong>
+              <p style="font-size: 12px; color: var(--ink-secondary); margin: 4px 0 0 0;">
+                Whenever a notification triggers, telemetry appears instantly in the <strong>Recent 5 Data Received from PI Notifications</strong> table on the Dashboard. Click <strong>"Inspect Raw JSON"</strong> to see the exact payload.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CONTAINER 2: AVEVA PI WEB API CONFIGURATION (Active when mode is 'pull') -->
+      <div id="container-pi-webapi-settings" class="form-section" style="display: none;">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              AVEVA PI Web API Polling Configuration
+            </div>
+            <div class="form-help">PI Web API endpoint and authentication credentials for scheduled background polling</div>
           </div>
           <button type="button" id="btn-test-pi-settings" class="btn btn-secondary btn-sm">Test PI Connection</button>
         </div>
@@ -746,29 +1063,158 @@
         <div id="erp-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
-      <!-- Scheduler & Persistence -->
+      <!-- Scheduler & Persistence (Unified for PI Web API Pull & ERP Dispatch) -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              Scheduler & Persistence
+              Scheduler &amp; Persistence
             </div>
-            <div class="form-help">Automated cycle frequency and JSON file storage locations</div>
+            <div class="form-help">Unified cycle frequency for pulling data from PI (in Pull mode) and sending staged data to Oracle ERP (in Endpoint mode)</div>
           </div>
         </div>
 
         <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label" for="setting-pipeline-interval">Pull & Dispatch Interval (Seconds)</label>
+          <div class="form-group full-width">
+            <label class="form-label" for="setting-pipeline-interval">Pipeline Cycle / Retry Interval (Seconds)</label>
             <input type="number" id="setting-pipeline-interval" class="form-control" min="5" max="3600" value="30">
+            <div class="form-help" id="help-pipeline-interval" style="margin-top: 6px; font-size: 11px; line-height: 1.5;">
+              <strong>Unified background execution timer:</strong>
+              <ul style="margin: 4px 0 0 16px; padding: 0;">
+                <li><strong>PI Web API Pull mode:</strong> Controls how frequently the engine polls telemetry from AVEVA PI Web API and sends it to Oracle ERP.</li>
+                <li><strong>Delivery Endpoint mode:</strong> Deliveries are automatically dispatched to Oracle ERP Cloud <em>immediately upon receipt</em>. Only if an initial dispatch fails (e.g. network outage or ERP temporary error) will the scheduler automatically trigger retries as per this interval setting until successfully delivered.</li>
+              </ul>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Storage Architecture</label>
+          <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-check" style="font-weight: 500;">
+              <input type="checkbox" id="setting-pipeline-auto-dispatch" checked>
+              <span>Enable Immediate Auto-Dispatch &amp; Scheduled Retries on Failure</span>
+            </label>
+            <span class="form-help" style="margin-left: 24px; font-size: 11px;">
+              When checked, incoming PI Notifications are dispatched immediately to Oracle ERP upon receipt, with automatic scheduled retries whenever a transmission fails. When unchecked, incoming records remain staged in <code>data/received_deliveries.json</code> for manual dispatch.
+            </span>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">Storage Architecture &amp; Persistence Paths</label>
             <div style="background: var(--bg-subtle); padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--ink-secondary);">
-              config/settings.json · config/mappings.json · data/pull_history.json
+              config/settings.json · config/mappings.json · data/received_deliveries.json · data/pull_history.json · data/logs.json
             </div>
+          </div>
+        </div>
+      <!-- Data Storage & Production Pre-Flight Cleanup -->
+      <div class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              Data Storage &amp; Production Pre-Flight Cleanup
+            </div>
+            <div class="form-help">Safely purge accumulated test telemetry and operational history before deploying to live Oracle ERP Cloud. Configurations and attribute mappings are strictly preserved.</div>
+          </div>
+          <span class="badge badge-success">
+            <span class="badge-dot"></span> Config Protected
+          </span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <!-- 1-Click Production Pre-Flight Sanitize Banner -->
+          <div style="background: var(--bg-surface); border: 2px solid #fca5a5; border-radius: var(--radius); padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="max-width: 650px;">
+              <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: #dc2626;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                1-Click Production Pre-Flight Purge
+              </div>
+              <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 4px; line-height: 1.4;">
+                Wipes all accumulated test records across <code>received_deliveries.json</code>, <code>pull_history.json</code>, and <code>publish_history.json</code> in one step. Prevents test data from ever reaching production Oracle ERP Cloud.
+              </div>
+            </div>
+            <button type="button" id="btn-preflight-purge-all" class="btn btn-danger" style="white-space: nowrap; font-weight: 600;">
+              Purge All Operational Test Data
+            </button>
+          </div>
+
+          <!-- Individual Storage File Cleanup Grid -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+            
+            <!-- File 1: Staged Deliveries -->
+            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <strong style="font-size: 12px; color: var(--ink-primary);">Staged PI Deliveries</strong>
+                  <code style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-secondary);">received_deliveries.json</code>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 4px;">
+                  Push payloads received from PI Notifications awaiting or finished dispatch.
+                </div>
+              </div>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-outline btn-sm" id="btn-purge-deliveries-pending" style="flex: 1; min-width: 130px;" title="Purge unsent/failed test deliveries so they will never dispatch to live ERP">
+                  Purge Pending Only
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-purge-deliveries-all" style="flex: 1; min-width: 100px;" title="Clear all staged deliveries">
+                  Purge All
+                </button>
+              </div>
+            </div>
+
+            <!-- File 2: Pull History -->
+            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <strong style="font-size: 12px; color: var(--ink-primary);">PI Pull History</strong>
+                  <code style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-secondary);">pull_history.json</code>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 4px;">
+                  Historical batches fetched via PI Web API polling cycles.
+                </div>
+              </div>
+              <div>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-purge-pull-history" style="width: 100%;">
+                  Clear Pull History
+                </button>
+              </div>
+            </div>
+
+            <!-- File 3: ERP Publish History -->
+            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <strong style="font-size: 12px; color: var(--ink-primary);">ERP Publish History</strong>
+                  <code style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-secondary);">publish_history.json</code>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 4px;">
+                  HTTP transmission attempts and responses from Oracle ERP Cloud.
+                </div>
+              </div>
+              <div>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-purge-publish-history" style="width: 100%;">
+                  Clear Publish History
+                </button>
+              </div>
+            </div>
+
+            <!-- File 4: Audit Logs -->
+            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <strong style="font-size: 12px; color: var(--ink-primary);">Activity Logs</strong>
+                  <code style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-secondary);">logs.json</code>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 4px;">
+                  System audit trail, connection logs, and dispatch diagnostics.
+                </div>
+              </div>
+              <div>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-purge-logs" style="width: 100%;">
+                  Clear Activity Logs
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -906,12 +1352,117 @@
     </div>
   </div>
 
+  <!-- ========================================================
+       MODAL: INSPECT RAW PI NOTIFICATION DELIVERY JSON
+       ======================================================== -->
+  <div id="modal-delivery-json" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 780px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="modal-delivery-title" style="font-size: 14px; font-weight: 600; margin: 0;">Raw PI Delivery Payload</h3>
+          <div id="modal-delivery-subtitle" style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;"></div>
+        </div>
+        <button id="btn-close-delivery-modal" class="btn btn-outline btn-sm" style="border: none; cursor: pointer; font-size: 14px;">✕</button>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 500; color: var(--ink-secondary);">Staged File: <code>data/received_deliveries.json</code></span>
+          <div class="btn-group">
+            <button id="btn-copy-delivery-json" class="btn btn-secondary btn-sm">Copy JSON</button>
+          </div>
+        </div>
+        <pre id="modal-delivery-json-content" class="json-preview" style="max-height: 420px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 11px; font-family: var(--font-mono);"></pre>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+        <div id="modal-delivery-meta" style="font-size: 11px; color: var(--ink-secondary);"></div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" id="btn-modal-delete-delivery" class="btn btn-danger btn-sm" title="Delete this single delivery from data/received_deliveries.json">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            Delete Record
+          </button>
+          <button type="button" id="btn-modal-dispatch-oracle" class="btn btn-primary btn-sm">Send to Oracle Now</button>
+          <button type="button" id="btn-close-delivery-modal-2" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: PURGE STAGED DELIVERIES CONFIRMATION
+       ======================================================== -->
+  <div id="modal-purge-deliveries" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 28px; height: 28px; border-radius: 50%; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </div>
+          <div>
+            <h3 style="font-size: 14px; font-weight: 600; margin: 0; color: var(--ink-primary);">Purge Staged Telemetry Data</h3>
+            <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 1px;">data/received_deliveries.json</div>
+          </div>
+        </div>
+        <button id="btn-close-purge-modal" class="btn btn-outline btn-sm" style="border: none; cursor: pointer; font-size: 14px;">✕</button>
+      </div>
+
+      <div style="margin-top: 14px; font-size: 12px; color: var(--ink-secondary); line-height: 1.5;">
+        <p style="margin-bottom: 12px; color: var(--ink-primary);">
+          Select which deliveries you wish to remove from local JSON storage prior to production dispatch:
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--bg-surface);">
+            <input type="radio" name="purge-deliveries-option" value="PENDING" checked style="margin-top: 3px;">
+            <div>
+              <strong style="color: var(--ink-primary); font-size: 12px;">Purge Pending &amp; Failed Test Deliveries Only (Recommended)</strong>
+              <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+                Safely removes all un-dispatched test records so they are never sent to live Oracle ERP Cloud, while preserving historical dispatched logs.
+              </div>
+            </div>
+          </label>
+
+          <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--bg-surface);">
+            <input type="radio" name="purge-deliveries-option" value="ALL" style="margin-top: 3px;">
+            <div>
+              <strong style="color: var(--ink-primary); font-size: 12px;">Purge All Staged Deliveries (Complete Reset)</strong>
+              <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+                Empties <code>data/received_deliveries.json</code> completely. Fresh deliveries will start from record #0.
+              </div>
+            </div>
+          </label>
+
+          <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--bg-surface);">
+            <input type="radio" name="purge-deliveries-option" value="DISPATCHED" style="margin-top: 3px;">
+            <div>
+              <strong style="color: var(--ink-primary); font-size: 12px;">Purge Successfully Dispatched Only</strong>
+              <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+                Clears finished transactions from JSON, keeping any failed or pending retry deliveries.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: var(--radius); padding: 10px; font-size: 11px; color: #92400e; display: flex; gap: 8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>This action permanently deletes the selected staged records from disk. Configuration and attribute mappings are 100% safe.</span>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="margin-top: 16px; padding-top: 12px;">
+        <button type="button" id="btn-cancel-purge-modal" class="btn btn-secondary">Cancel</button>
+        <button type="button" id="btn-confirm-purge-deliveries" class="btn btn-danger">Confirm Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notifications -->
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Minimal Footer -->
   <footer class="app-footer">
-    AVEVA PI Web API → Oracle ERP Cloud Data Pipeline · JSON Storage Architecture
+    AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
   <script src="/static/js/app.js"></script>

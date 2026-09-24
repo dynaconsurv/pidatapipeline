@@ -20,7 +20,8 @@ from app.storage import (
     record_publish_event,
     add_log,
     get_pull_history,
-    get_publish_history
+    get_publish_history,
+    get_received_deliveries
 )
 
 
@@ -90,13 +91,20 @@ class DataPipelineEngine:
     def _run_loop(self):
         while not self._stop_event.is_set():
             now = time.time()
+            settings = load_settings()
+            ingestion_mode = settings.get("pipeline", {}).get("ingestion_mode", "endpoint")
+
             if not self.is_paused and self.next_run_timestamp and now >= self.next_run_timestamp:
                 try:
-                    self.execute_cycle()
+                    if ingestion_mode == "pull":
+                        self.execute_cycle()
+                    else:
+                        from app.delivery_handler import dispatch_all_pending_deliveries
+                        dispatch_all_pending_deliveries()
                 except Exception as e:
                     add_log("ERROR", "PIPELINE", f"Pipeline execution cycle encountered an error: {str(e)}")
                 finally:
-                    settings = load_settings()
+                    self.last_run_timestamp = time.time()
                     self.interval_seconds = max(5, int(settings.get("pipeline", {}).get("interval_seconds", 30)))
                     self.next_run_timestamp = time.time() + self.interval_seconds
 
@@ -336,6 +344,8 @@ class DataPipelineEngine:
         if self.last_run_timestamp:
             last_run_iso = datetime.fromtimestamp(self.last_run_timestamp, tz=timezone.utc).isoformat()
 
+        settings = load_settings()
+
         # Determine currently enabled (active) mappings from config/mappings.json
         mappings = load_mappings()
         enabled_mappings = [m for m in mappings if m.get("enabled", True)]
@@ -422,6 +432,29 @@ class DataPipelineEngine:
         publishes = get_publish_history(limit=1)
         last_publish = publishes[0] if publishes else None
 
+        # Retrieve recent 5 received deliveries staged from PI Notifications
+        deliveries = get_received_deliveries(limit=5)
+        all_deliveries = get_received_deliveries(limit=200)
+        pending_deliveries = [
+            d for d in all_deliveries
+            if d.get("oracle_status") in ("FAILED", "PENDING_RETRY", "PENDING_ORACLE", "PENDING_SETUP")
+        ]
+        failed_deliveries = [
+            d for d in all_deliveries
+            if d.get("oracle_status") == "FAILED"
+        ]
+
+        delivery_info = {
+            "endpoint_url": "/api/v1/delivery",
+            "method": "POST",
+            "style": "REST",
+            "status": "LISTENING",
+            "total_received": len(all_deliveries),
+            "pending_oracle_count": len(pending_deliveries),
+            "failed_count": len(failed_deliveries),
+            "last_received_at": deliveries[0].get("received_at") if deliveries else None
+        }
+
         return {
             "scheduler": {
                 "is_running": self.is_running,
@@ -431,6 +464,9 @@ class DataPipelineEngine:
                 "last_run_at": last_run_iso,
                 "seconds_remaining": seconds_remaining
             },
+            "ingestion_mode": settings.get("pipeline", {}).get("ingestion_mode", "endpoint"),
+            "delivery_endpoint": delivery_info,
+            "recent_5_deliveries": deliveries,
             "pi_connection": self.pi_status,
             "oracle_erp_connection": self.erp_status,
             "last_5_pulls": last_5_triggers,

@@ -174,12 +174,21 @@ def push_git_release(version: str) -> bool:
         # Check if git is available
         subprocess.run(["git", "--version"], cwd=ROOT_DIR, check=True, capture_output=True)
 
-        # Stage updated version files
-        subprocess.run(["git", "add", "app/version.py", "app/main.py"], cwd=ROOT_DIR, check=True)
+        # Stage all updated application and source files
+        subprocess.run([
+            "git", "add",
+            "app",
+            "run.py",
+            "run_mock_erp.py",
+            "package_release.py",
+            "build_offline_package.py",
+            "config/settings.example.json",
+            "requirements.txt"
+        ], cwd=ROOT_DIR, check=True)
 
         # Commit if modified
-        status = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT_DIR, capture_output=True, text=True)
-        if "app/version.py" in status.stdout or "app/main.py" in status.stdout:
+        status = subprocess.run(["git", "status", "--porcelain", "app", "run.py", "package_release.py"], cwd=ROOT_DIR, capture_output=True, text=True)
+        if status.stdout.strip():
             subprocess.run(["git", "commit", "-m", f"chore(release): bump version to {version}"], cwd=ROOT_DIR, check=True)
             print(f"[OK] Committed version bump to {version}")
 

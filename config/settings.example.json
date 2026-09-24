@@ -33,6 +33,8 @@
   },
   "pipeline": {
     "interval_seconds": 30,
+    "ingestion_mode": "endpoint",
+    "auto_dispatch": true,
     "auto_start": true,
     "max_history_items": 100
   }
