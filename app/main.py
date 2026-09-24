@@ -60,6 +60,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Prevent stale browser caching of frontend UI scripts and HTML
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 # Mount static assets
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -68,7 +79,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def get_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return JSONResponse({"message": "Data Pipeline API is online. Static UI file pending."})
 
 

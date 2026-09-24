@@ -41,23 +41,54 @@ def parse_pi_notification_payload(raw_data: Any) -> Tuple[str, str, str, List[Di
             raw_data.get("NotificationName") or
             raw_data.get("EventFrame") or
             raw_data.get("Name") or
-            "Process_Engineering_XZV"
+            raw_data.get("notification") or
+            raw_data.get("name") or
+            "PI_Notification"
         )
-        event_type = raw_data.get("Event") or raw_data.get("EventType") or "Trigger"
-        target_path = raw_data.get("Target") or raw_data.get("Element") or raw_data.get("Path") or ""
+        event_type = (
+            raw_data.get("Event") or
+            raw_data.get("EventType") or
+            raw_data.get("event") or
+            raw_data.get("eventType") or
+            ("Test Ping" if not raw_data else "Trigger")
+        )
+        target_path = (
+            raw_data.get("Target") or
+            raw_data.get("Element") or
+            raw_data.get("Path") or
+            raw_data.get("target") or
+            raw_data.get("element") or
+            raw_data.get("path") or
+            ""
+        )
 
-        # 2. Check for nested Attributes dict or list
-        raw_attrs = raw_data.get("Attributes") or raw_data.get("Values") or raw_data.get("Data")
+        # 2. Check for nested Attributes dict or list under standard PI AF keys:
+        # Items (standard PI AF WebService format), Attributes, Values, Data, Content
+        raw_attrs = (
+            raw_data.get("Items") or
+            raw_data.get("items") or
+            raw_data.get("Attributes") or
+            raw_data.get("attributes") or
+            raw_data.get("Values") or
+            raw_data.get("values") or
+            raw_data.get("Data") or
+            raw_data.get("data") or
+            raw_data.get("Content") or
+            raw_data.get("content")
+        )
 
         if isinstance(raw_attrs, dict):
             for attr_name, attr_val in raw_attrs.items():
                 if isinstance(attr_val, dict):
+                    val = attr_val.get("Value") if "Value" in attr_val else attr_val.get("value", attr_val)
+                    if isinstance(val, dict):
+                        val = val.get("Value", val.get("value", val))
                     attributes.append({
                         "name": attr_name,
-                        "value": attr_val.get("Value", attr_val.get("value")),
+                        "value": val,
                         "uom": attr_val.get("UOM", attr_val.get("uom", "")),
                         "timestamp": attr_val.get("Timestamp", attr_val.get("time", now_iso)),
-                        "quality": attr_val.get("Quality", "Good")
+                        "quality": attr_val.get("Quality", attr_val.get("quality", "Good"))
                     })
                 else:
                     attributes.append({
@@ -70,36 +101,115 @@ def parse_pi_notification_payload(raw_data: Any) -> Tuple[str, str, str, List[Di
         elif isinstance(raw_attrs, list):
             for item in raw_attrs:
                 if isinstance(item, dict):
+                    name = (
+                        item.get("Name") or
+                        item.get("name") or
+                        item.get("Attribute") or
+                        item.get("attribute") or
+                        item.get("Tag") or
+                        item.get("tag") or
+                        item.get("TagName") or
+                        (item.get("Path", "").split("|")[-1] if "|" in item.get("Path", "") else None) or
+                        f"Attribute_{len(attributes)+1}"
+                    )
+                    raw_val = item.get("Value") if "Value" in item else (item.get("value") if "value" in item else item.get("Val"))
+                    if isinstance(raw_val, dict):
+                        val = raw_val.get("Value", raw_val.get("value", raw_val))
+                    else:
+                        val = raw_val
+
+                    uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
+                    ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
+                    quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
+
                     attributes.append({
-                        "name": item.get("Name") or item.get("Attribute") or item.get("Tag") or "Tag",
-                        "value": item.get("Value") if "Value" in item else item.get("value"),
-                        "uom": item.get("UOM", item.get("uom", "")),
-                        "timestamp": item.get("Timestamp") or item.get("Time") or now_iso,
-                        "quality": item.get("Quality", "Good")
+                        "name": name,
+                        "value": val,
+                        "uom": uom,
+                        "timestamp": ts,
+                        "quality": quality
                     })
-        else:
-            # Flat dictionary: treat top-level key-values as attributes (excluding metadata keys)
-            meta_keys = {"notification", "notificationname", "event", "eventtype", "target", "element", "path", "starttime", "endtime", "id"}
-            for k, v in raw_data.items():
-                if k.lower() not in meta_keys:
+                else:
                     attributes.append({
-                        "name": k,
-                        "value": v if not isinstance(v, dict) else v.get("Value", str(v)),
-                        "uom": v.get("UOM", "") if isinstance(v, dict) else "",
+                        "name": f"Value_{len(attributes)+1}",
+                        "value": item,
+                        "uom": "",
                         "timestamp": now_iso,
                         "quality": "Good"
                     })
+        else:
+            # Flat dictionary: treat top-level key-values as attributes (excluding metadata keys)
+            meta_keys = {
+                "notification", "notificationname", "event", "eventtype",
+                "target", "element", "path", "starttime", "endtime", "id",
+                "items", "attributes", "values", "data", "content"
+            }
+            for k, v in raw_data.items():
+                if k.lower() not in meta_keys:
+                    # If v is a list of dicts (e.g. wrapper), unpack each item
+                    if isinstance(v, list) and all(isinstance(x, dict) for x in v):
+                        for sub_idx, sub_item in enumerate(v):
+                            sub_name = sub_item.get("Name") or sub_item.get("Attribute") or sub_item.get("name") or f"{k}_{sub_idx+1}"
+                            sub_raw = sub_item.get("Value") if "Value" in sub_item else sub_item.get("value", sub_item)
+                            if isinstance(sub_raw, dict):
+                                sub_val = sub_raw.get("Value", sub_raw.get("value", sub_raw))
+                            else:
+                                sub_val = sub_raw
+                            attributes.append({
+                                "name": sub_name,
+                                "value": sub_val,
+                                "uom": sub_item.get("UOM", sub_item.get("uom", "")),
+                                "timestamp": sub_item.get("Timestamp", sub_item.get("Time", now_iso)),
+                                "quality": sub_item.get("Quality", "Good")
+                            })
+                    elif isinstance(v, dict):
+                        attributes.append({
+                            "name": k,
+                            "value": v.get("Value", v.get("value", str(v))),
+                            "uom": v.get("UOM", v.get("uom", "")),
+                            "timestamp": v.get("Timestamp", v.get("time", now_iso)),
+                            "quality": v.get("Quality", "Good")
+                        })
+                    else:
+                        attributes.append({
+                            "name": k,
+                            "value": v,
+                            "uom": "",
+                            "timestamp": now_iso,
+                            "quality": "Good"
+                        })
 
     elif isinstance(raw_data, list):
         # Array of attribute readings
         for item in raw_data:
             if isinstance(item, dict):
+                name = (
+                    item.get("Name") or
+                    item.get("name") or
+                    item.get("Attribute") or
+                    item.get("attribute") or
+                    item.get("Tag") or
+                    item.get("tag") or
+                    item.get("TagName") or
+                    (item.get("Path", "").split("|")[-1] if "|" in item.get("Path", "") else None) or
+                    f"Attribute_{len(attributes)+1}"
+                )
+                raw_val = item.get("Value") if "Value" in item else (item.get("value") if "value" in item else item.get("Val"))
+                if isinstance(raw_val, dict):
+                    val = raw_val.get("Value", raw_val.get("value", raw_val))
+                else:
+                    val = raw_val
+
+                uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
+                ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
+                quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
+
                 attributes.append({
-                    "name": item.get("Name") or item.get("Attribute") or item.get("Tag") or "Tag",
-                    "value": item.get("Value") if "Value" in item else item.get("value"),
-                    "uom": item.get("UOM", item.get("uom", "")),
-                    "timestamp": item.get("Timestamp") or now_iso,
-                    "quality": item.get("Quality", "Good")
+                    "name": name,
+                    "value": val,
+                    "uom": uom,
+                    "timestamp": ts,
+                    "quality": quality
                 })
             else:
                 attributes.append({

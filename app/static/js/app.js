@@ -560,17 +560,48 @@ function renderRecentDeliveriesTable(deliveries) {
     const attrs = deliv.attributes_summary || [];
     let attrsHtml = "";
     if (attrs.length === 0) {
-      attrsHtml = `<span style="color: var(--ink-tertiary); font-size: 11px;">No attributes parsed</span>`;
+      if (deliv.event_type === "Test Ping" || (!deliv.raw_payload || Object.keys(deliv.raw_payload).length === 0)) {
+        attrsHtml = `<span class="badge badge-info" style="font-size: 11px; padding: 2px 7px;"><span class="badge-dot"></span> Test Notification Ping (Empty Payload)</span>`;
+      } else {
+        attrsHtml = `<span style="color: var(--ink-tertiary); font-size: 11px;">No attributes parsed</span>`;
+      }
     } else {
       const displayAttrs = attrs.slice(0, 3);
       const remaining = attrs.length - displayAttrs.length;
       attrsHtml = displayAttrs.map(a => {
-        const val = a.value !== null && a.value !== undefined ? a.value : "N/A";
+        // Defensive unwrap: if an old record has an array of Items, unroll them cleanly
+        if (Array.isArray(a.value)) {
+          return a.value.map(it => {
+            const subName = it.Name || it.name || it.Attribute || it.attribute || "Item";
+            const subVal = it.Value !== undefined ? it.Value : (it.value !== undefined ? it.value : JSON.stringify(it));
+            const subUom = it.UOM || it.uom ? ` ${escapeHtml(it.UOM || it.uom)}` : "";
+            return `
+              <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
+                <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(subName)}:</span>
+                <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(String(subVal))}</strong>
+                <span style="font-size: 11px; color: var(--ink-tertiary);">${subUom}</span>
+              </div>
+            `;
+          }).join("");
+        }
+
+        let valStr = "N/A";
+        if (a.value !== null && a.value !== undefined) {
+          if (typeof a.value === "object") {
+            try {
+              valStr = JSON.stringify(a.value);
+            } catch (e) {
+              valStr = String(a.value);
+            }
+          } else {
+            valStr = String(a.value);
+          }
+        }
         const uom = a.uom ? ` ${escapeHtml(a.uom)}` : "";
         return `
           <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
             <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(a.name)}:</span>
-            <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(String(val))}</strong>
+            <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(valStr)}</strong>
             <span style="font-size: 11px; color: var(--ink-tertiary);">${uom}</span>
           </div>
         `;
