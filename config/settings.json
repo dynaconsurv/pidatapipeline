@@ -5,6 +5,10 @@
     "username": "pi_service_user",
     "password": "",
     "bearer_token": "",
+    "token_url": "",
+    "client_id": "",
+    "client_secret": "",
+    "scope": "",
     "verify_ssl": false,
     "simulation_mode": false,
     "af_server": "PISRV01",
@@ -12,28 +16,36 @@
     "timeout_seconds": 10
   },
   "oracle_erp": {
-    "enabled": false,
-    "auth_type": "oauth2",
-    "base_url": "https://your-pod.fa.oraclecloud.com",
-    "token_url": "https://idcs-your-instance.identity.oraclecloud.com/oauth2/v1/token",
+    "enabled": true,
+    "auth_type": "none",
+    "base_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int",
+    "token_url": "",
     "client_id": "",
     "client_secret": "",
-    "scope": "urn:opc:resource:consumer::all",
+    "scope": "",
     "username": "",
     "password": "",
     "bearer_token": "",
-    "resource_endpoint": "/fscmRestApi/resources/11.13.18.05/standardReceipts",
+    "resource_endpoint": "/Final_Discharge_Effluent/",
     "http_method": "POST",
     "dry_run": false,
     "custom_headers": {
-      "Content-Type": "application/vnd.oracle.adf.resourceitem+json",
-      "REST-Framework-Version": "4"
+      "Content-Type": "application/json",
+      "Accept": "application/json"
     },
     "timeout_seconds": 15
   },
   "pipeline": {
     "interval_seconds": 120,
+    "ingestion_mode": "endpoint",
+    "auto_dispatch": true,
     "auto_start": true,
     "max_history_items": 100
+  },
+  "endpoint_security": {
+    "api_key_enabled": false,
+    "api_key": "pi_sec_mysecrettoken123",
+    "ip_whitelist_enabled": false,
+    "allowed_ips": "10.60.2.20"
   }
 }

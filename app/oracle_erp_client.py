@@ -41,17 +41,21 @@ class OracleERPCloudClient:
     def is_configured(self) -> Tuple[bool, str]:
         """Check if minimum connection parameters are provided."""
         if not self.enabled:
-            return False, "Pending connection setup: Oracle ERP Cloud integration is toggled off."
+            return False, "Pending connection setup: Oracle integration is toggled off in settings."
+
+        if self.auth_type in ("none", "no_auth", "open"):
+            # Unauthenticated ORDS endpoint - ready!
+            return True, "Ready (ORDS Direct - No Auth)"
 
         if not self.base_url:
-            return False, "Pending connection setup: Oracle ERP Cloud Base URL is not configured."
+            return False, "Pending connection setup: Oracle Cloud Base URL is not configured."
 
         if self.auth_type == "oauth2":
             if not self.token_url or not self.client_id or not self.client_secret:
                 return False, "Pending connection setup: OAuth 2.0 Token URL, Client ID, or Client Secret is missing."
         elif self.auth_type == "basic":
             if not self.username:
-                return False, "Pending connection setup: Oracle ERP Cloud username is missing."
+                return False, "Pending connection setup: Oracle Cloud username is missing."
 
         return True, "Ready"
 
@@ -105,8 +109,8 @@ class OracleERPCloudClient:
         except Exception as e:
             return None, f"OAuth Token request exception: {str(e)}"
 
-    def test_connection(self) -> Dict[str, Any]:
-        """Validate Oracle ERP Cloud connection settings."""
+    def test_connection(self, test_url: Optional[str] = None) -> Dict[str, Any]:
+        """Validate Oracle Cloud / ORDS connection settings."""
         configured, reason = self.is_configured()
         if not configured:
             return {
@@ -135,27 +139,43 @@ class OracleERPCloudClient:
                     "error": err
                 }
 
-        # Test hitting the endpoint or base URL
-        full_endpoint = f"{self.base_url}{self.resource_endpoint}"
+        # Resolve endpoint URL to test
+        if test_url:
+            full_endpoint = test_url
+        elif self.base_url and self.resource_endpoint:
+            full_endpoint = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
+        elif self.base_url:
+            full_endpoint = self.base_url
+        else:
+            return {
+                "success": False,
+                "status": "FAILED",
+                "message": "No Oracle endpoint URL configured to test."
+            }
+
         headers = self._build_request_headers()
 
         try:
-            # Use OPTIONS or HEAD or GET with limit=1 to test endpoint availability
-            test_resp = requests.options(full_endpoint, headers=headers, timeout=self.timeout)
+            # For ORDS (auth_type in none, no_auth, open), use GET with limit=1 which ORDS natively supports
+            if self.auth_type in ("none", "no_auth", "open"):
+                test_resp = requests.get(full_endpoint, headers=headers, timeout=self.timeout, params={"limit": 1})
+            else:
+                test_resp = requests.options(full_endpoint, headers=headers, timeout=self.timeout)
+
             latency = round((time.time() - start_t) * 1000, 2)
 
-            # Oracle Fusion REST endpoints typically return 200, 204, or 405 for OPTIONS
-            if test_resp.status_code in (200, 204, 405):
+            if test_resp.status_code in (200, 201, 202, 204, 405):
+                auth_label = "ORDS Direct (No Auth)" if self.auth_type in ("none", "no_auth", "open") else self.auth_type.upper()
                 return {
                     "success": True,
                     "status": "CONNECTED",
                     "status_code": test_resp.status_code,
                     "latency_ms": latency,
-                    "message": f"Successfully connected to Oracle ERP Cloud endpoint ({self.auth_type.upper()})",
+                    "message": f"Successfully connected to Oracle endpoint ({auth_label})",
                     "details": {
                         "endpoint": full_endpoint,
-                        "method": "OPTIONS probe",
-                        "response_headers": dict(test_resp.headers)
+                        "auth_mode": auth_label,
+                        "http_code": test_resp.status_code
                     }
                 }
             else:
@@ -164,7 +184,7 @@ class OracleERPCloudClient:
                     "status": "FAILED",
                     "status_code": test_resp.status_code,
                     "latency_ms": latency,
-                    "message": f"Oracle ERP Cloud returned HTTP {test_resp.status_code}",
+                    "message": f"Oracle returned HTTP {test_resp.status_code}",
                     "error": test_resp.text[:400]
                 }
         except requests.exceptions.ConnectionError as e:
@@ -172,7 +192,7 @@ class OracleERPCloudClient:
                 "success": False,
                 "status": "FAILED",
                 "latency_ms": round((time.time() - start_t) * 1000, 2),
-                "message": "Connection error reaching Oracle ERP Cloud",
+                "message": "Connection error reaching Oracle endpoint",
                 "error": str(e)
             }
         except Exception as e:
@@ -180,20 +200,18 @@ class OracleERPCloudClient:
                 "success": False,
                 "status": "FAILED",
                 "latency_ms": round((time.time() - start_t) * 1000, 2),
-                "message": "Oracle ERP connection test failed",
+                "message": "Oracle connection test failed",
                 "error": str(e)
             }
 
     def _build_request_headers(self) -> Dict[str, str]:
         headers = {
-            "Content-Type": "application/vnd.oracle.adf.resourceitem+json",
-            "Accept": "application/json",
-            "REST-Framework-Version": "4"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
-        if isinstance(self.custom_headers, dict):
-            headers.update(self.custom_headers)
-
         if self.auth_type == "oauth2":
+            headers["Content-Type"] = "application/vnd.oracle.adf.resourceitem+json"
+            headers["REST-Framework-Version"] = "4"
             token, _ = self.get_token()
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -203,21 +221,25 @@ class OracleERPCloudClient:
             headers["Authorization"] = f"Basic {b64_cred}"
         elif self.auth_type == "bearer" and self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
+        # For 'none' / 'no_auth', no Authorization header is added!
+
+        if isinstance(self.custom_headers, dict):
+            headers.update(self.custom_headers)
 
         return headers
 
-    def publish_data(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def publish_data(self, payload: Dict[str, Any], target_endpoint: Optional[str] = None) -> Dict[str, Any]:
         """
-        Dispatches transformed PI AF data to Oracle ERP Cloud API.
-        If ERP is not enabled/configured, returns PENDING_SETUP status.
+        Dispatches transformed PI AF data to Oracle ORDS / ERP Cloud API.
+        If target_endpoint is specified, dispatches directly to that individual mapping endpoint URL.
         """
         configured, reason = self.is_configured()
         if not configured:
             return {
                 "status": "PENDING_SETUP",
                 "message": reason,
-                "record_count": len(payload.get("items", [payload])),
-                "target_endpoint": f"{self.base_url or 'https://... oracle cloud ...'}{self.resource_endpoint}",
+                "record_count": 1 if not isinstance(payload.get("items"), list) else len(payload.get("items")),
+                "target_endpoint": target_endpoint or f"{self.base_url}{self.resource_endpoint}",
                 "http_code": None,
                 "payload_sample": payload,
                 "response_body": None,
@@ -225,37 +247,38 @@ class OracleERPCloudClient:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
-        full_url = f"{self.base_url}{self.resource_endpoint}"
+        if target_endpoint:
+            if target_endpoint.startswith("http://") or target_endpoint.startswith("https://"):
+                full_url = target_endpoint
+            else:
+                full_url = f"{self.base_url.rstrip('/')}/{target_endpoint.lstrip('/')}"
+        elif self.base_url:
+            full_url = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
+        else:
+            full_url = "https://oracle-ords-endpoint.local"
+
         headers = self._build_request_headers()
         start_t = time.time()
 
         if self.dry_run:
             return {
                 "status": "SUCCESS",
-                "message": "Dry Run: Validated payload structure for Oracle ERP Cloud (Transmission simulated)",
-                "record_count": len(payload.get("items", [payload])),
+                "message": "Dry Run: Validated payload structure for Oracle (Transmission simulated)",
+                "record_count": 1 if not isinstance(payload.get("items"), list) else len(payload.get("items")),
                 "target_endpoint": full_url,
                 "http_code": 201,
                 "payload_sample": payload,
                 "response_body": {
                     "TransactionId": f"TXN-ORCL-DRY-{int(time.time())}",
                     "Status": "SIMULATED_ACCEPTED",
-                    "Message": "Record passed validation schema for Oracle ERP Cloud"
+                    "links": [{"rel": "self", "href": f"{full_url}SIMULATED_ITEM"}]
                 },
                 "error_detail": None,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         try:
-            if self.http_method == "POST":
-                resp = requests.post(full_url, json=payload, headers=headers, timeout=self.timeout)
-            elif self.http_method == "PATCH":
-                resp = requests.patch(full_url, json=payload, headers=headers, timeout=self.timeout)
-            elif self.http_method == "PUT":
-                resp = requests.put(full_url, json=payload, headers=headers, timeout=self.timeout)
-            else:
-                resp = requests.post(full_url, json=payload, headers=headers, timeout=self.timeout)
-
+            resp = requests.post(full_url, json=payload, headers=headers, timeout=self.timeout)
             latency = round((time.time() - start_t) * 1000, 2)
             is_success = resp.status_code in (200, 201, 202, 204)
 
@@ -266,8 +289,8 @@ class OracleERPCloudClient:
 
             return {
                 "status": "SUCCESS" if is_success else "FAILED",
-                "message": f"Oracle ERP Cloud responded with HTTP {resp.status_code}" if is_success else f"Oracle ERP Cloud rejection HTTP {resp.status_code}",
-                "record_count": len(payload.get("items", [payload])),
+                "message": f"Oracle responded with HTTP {resp.status_code}" if is_success else f"Oracle rejection HTTP {resp.status_code}",
+                "record_count": 1 if not isinstance(payload.get("items"), list) else len(payload.get("items")),
                 "target_endpoint": full_url,
                 "http_code": resp.status_code,
                 "latency_ms": latency,
@@ -279,8 +302,8 @@ class OracleERPCloudClient:
         except Exception as e:
             return {
                 "status": "FAILED",
-                "message": "Exception occurred while posting to Oracle ERP Cloud",
-                "record_count": len(payload.get("items", [payload])),
+                "message": f"Exception connecting to Oracle endpoint: {str(e)}",
+                "record_count": 1 if not isinstance(payload.get("items"), list) else len(payload.get("items")),
                 "target_endpoint": full_url,
                 "http_code": None,
                 "payload_sample": payload,

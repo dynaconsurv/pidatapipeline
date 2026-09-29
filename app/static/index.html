@@ -534,11 +534,10 @@
             <thead>
               <tr>
                 <th style="width: 44px;">Active</th>
-                <th>PI Attribute Name</th>
-                <th>Full AF Path</th>
-                <th>ERP Meter Tag</th>
-                <th>ERP Value Field</th>
-                <th>UOM</th>
+                <th>PI Attribute</th>
+                <th>Oracle Tag &amp; Description</th>
+                <th>Oracle Target Endpoint (POST URL)</th>
+                <th>Limit / Results</th>
                 <th>Scale / Round</th>
                 <th style="text-align: right;">Actions</th>
               </tr>
@@ -1087,15 +1086,27 @@
           <div class="form-group">
             <label class="form-label" for="setting-erp-auth-type">Authentication Method</label>
             <select id="setting-erp-auth-type" class="form-control">
-              <option value="oauth2">OAuth 2.0 (Oracle IDCS Client Credentials - Recommended)</option>
+              <option value="none">None / Direct (No Security / Tokens - ORDS Standard)</option>
+              <option value="oauth2">OAuth 2.0 (Oracle IDCS Client Credentials)</option>
               <option value="basic">Basic Authentication (Username / Password)</option>
               <option value="bearer">Static Bearer Token</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-erp-base-url">Oracle ERP Pod URL</label>
-            <input type="url" id="setting-erp-base-url" class="form-control" placeholder="https://xxxx.fa.oraclecloud.com">
+            <label class="form-label" for="setting-erp-base-url">Oracle Base URL / ORDS Root</label>
+            <input type="url" id="setting-erp-base-url" class="form-control" placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int">
+          </div>
+
+          <!-- ORDS None Auth Info Banner -->
+          <div class="form-group full-width erp-none-field" style="display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius); padding: 12px;">
+            <div style="font-weight: 600; font-size: 12px; color: #166534; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Oracle Autonomous Database REST Data Services (ORDS) Direct Mode Active
+            </div>
+            <div style="font-size: 11px; color: #15803d; margin-top: 4px;">
+              No tokens or credentials needed. Individual table endpoints (e.g. <code>/Final_Discharge_Effluent/</code>) are configured per attribute in <strong>Attribute Mapping</strong>.
+            </div>
           </div>
 
           <!-- OAuth Fields -->
@@ -1385,9 +1396,56 @@
         <input type="hidden" id="modal-mapping-id">
         <div class="form-grid">
           
+          <!-- Section 1: Oracle Destination Endpoint & Payload Mapping -->
+          <div class="form-group full-width" style="background: var(--bg-surface); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <div style="font-weight: 600; font-size: 12px; color: var(--ink-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Oracle Destination Endpoint (ORDS REST POST)
+            </div>
+
+            <div class="form-group full-width" style="margin-bottom: 8px;">
+              <label class="form-label" for="modal-target-endpoint-url">Target POST URL *</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="url" id="modal-target-endpoint-url" class="form-control form-control-mono" required placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/">
+                <button type="button" id="btn-modal-test-endpoint" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Test Endpoint
+                </button>
+              </div>
+              <div class="form-help" style="margin-top: 4px; font-size: 11px;">
+                Individual ORDS table/resource POST URL configured by Oracle team for this specific telemetry item.
+              </div>
+              <div id="modal-endpoint-test-box" class="error-console" style="display: none; margin-top: 8px; font-size: 11px;"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="form-group">
+                <label class="form-label" for="modal-target-tag">Oracle Tag (tag) *</label>
+                <input type="text" id="modal-target-tag" class="form-control form-control-mono" required placeholder="TAG2">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="modal-description">Oracle Description (description) *</label>
+                <input type="text" id="modal-description" class="form-control" required placeholder="DESCRIPTION2">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="modal-limit">Oracle Limit (limit)</label>
+                <input type="text" id="modal-limit" class="form-control form-control-mono" placeholder="LIMIT2 or 9.0">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="modal-results">Oracle Results (results)</label>
+                <input type="text" id="modal-results" class="form-control" placeholder="RESULTS2 or Normal">
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Source PI Attribute & AF Information -->
           <div class="form-group full-width">
             <label class="form-label" for="modal-attr-name">PI Attribute Name *</label>
-            <input type="text" id="modal-attr-name" class="form-control" required placeholder="e.g. Steam Temperature">
+            <input type="text" id="modal-attr-name" class="form-control" required placeholder="e.g. 30 Min Average">
+            <div class="form-help" style="font-size: 11px; margin-top: 3px;">Matches the attribute name sent in PI AF Notification delivery or PI Web API.</div>
           </div>
 
           <div class="form-group">
@@ -1402,27 +1460,17 @@
 
           <div class="form-group full-width">
             <label class="form-label" for="modal-element-path">AF Element Path</label>
-            <input type="text" id="modal-element-path" class="form-control form-control-mono" placeholder="Unit 1\Boilers\Boiler-101">
+            <input type="text" id="modal-element-path" class="form-control form-control-mono" placeholder="Effluent\Discharge">
           </div>
 
           <div class="form-group full-width">
             <label class="form-label" for="modal-full-path">Full AF Path *</label>
-            <input type="text" id="modal-full-path" class="form-control form-control-mono" required placeholder="\\PISRV01\Plant_Operations\Unit 1\Boilers\Boiler-101|Steam Temperature">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="modal-target-tag">ERP Meter Code / Tag *</label>
-            <input type="text" id="modal-target-tag" class="form-control form-control-mono" required placeholder="BLR101_STM_TEMP">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="modal-target-field">Target Value Field Name</label>
-            <input type="text" id="modal-target-field" class="form-control form-control-mono" value="readingValue">
+            <input type="text" id="modal-full-path" class="form-control form-control-mono" required placeholder="\\PISRV01\Plant_Operations\Effluent\Discharge|30 Min Average">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="modal-uom">Unit of Measure (UOM)</label>
-            <input type="text" id="modal-uom" class="form-control" placeholder="deg C, bar, MW">
+            <input type="text" id="modal-uom" class="form-control" placeholder="pH, bar, m3/h">
           </div>
 
           <div class="form-group">
@@ -1441,6 +1489,8 @@
               <span>Active in Pipeline</span>
             </label>
           </div>
+
+          <input type="hidden" id="modal-target-field" value="value">
 
         </div>
 

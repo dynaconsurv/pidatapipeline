@@ -183,6 +183,9 @@ def push_git_release(version: str) -> bool:
             "package_release.py",
             "build_offline_package.py",
             "config/settings.example.json",
+            "config/mappings.example.json",
+            "config/settings.json",
+            "config/mappings.json",
             "requirements.txt"
         ], cwd=ROOT_DIR, check=True)
 

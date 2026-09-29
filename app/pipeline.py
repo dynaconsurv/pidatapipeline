@@ -236,11 +236,55 @@ class DataPipelineEngine:
         }
         record_pull_batch(batch_record)
 
-        # Step 2: Build Oracle ERP Cloud payload
-        erp_payload = self._build_erp_payload(pull_items, enabled_mappings)
+        # Step 2: Build Oracle ERP / ORDS payload & dispatch
+        is_ords_mode = (
+            erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
+            any(bool(m.get("target_endpoint_url")) for m in enabled_mappings)
+        )
 
-        # Step 3: Dispatch to Oracle ERP Cloud
-        publish_result = erp_client.publish_data(erp_payload)
+        if is_ords_mode:
+            all_succeeded = True
+            item_results = []
+            mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
+
+            for item in pull_items:
+                attr_name = item.get("attribute_name", "")
+                m = mapping_by_name.get(attr_name.strip().lower(), {})
+                tag_val = m.get("tag") or m.get("meter_tag") or attr_name
+                desc_val = m.get("description") or m.get("name") or attr_name
+                limit_val = m.get("limit") if m.get("limit") is not None else ""
+                results_val = m.get("results") or ("Normal" if item.get("quality", "Good") == "Good" else "Check")
+
+                ords_payload = {
+                    "timestamp": item.get("timestamp", now_iso),
+                    "tag": str(tag_val),
+                    "description": str(desc_val),
+                    "value": str(item.get("value", "")),
+                    "limit": str(limit_val),
+                    "results": str(results_val)
+                }
+                target_url = m.get("target_endpoint_url") or None
+                res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
+                item_results.append(res)
+                if res.get("status") != "SUCCESS":
+                    all_succeeded = False
+
+            primary_code = item_results[0].get("http_code") if item_results else None
+            primary_endpoint = item_results[0].get("target_endpoint") if item_results else erp_cfg.get("base_url")
+            publish_result = {
+                "status": "SUCCESS" if (all_succeeded and item_results) else ("PENDING_SETUP" if erp_cfg.get("enabled") is False else "FAILED"),
+                "message": f"Successfully posted {len(item_results)} readings to Oracle ORDS" if all_succeeded else "ORDS post failed for some readings",
+                "record_count": len(item_results),
+                "http_code": primary_code,
+                "target_endpoint": primary_endpoint,
+                "payload_sample": ords_payload if item_results else {},
+                "response_body": item_results[0].get("response_body") if item_results else {},
+                "error_detail": next((r.get("error_detail") for r in item_results if r.get("error_detail")), None)
+            }
+        else:
+            erp_payload = self._build_erp_payload(pull_items, enabled_mappings)
+            publish_result = erp_client.publish_data(erp_payload)
+
         publish_result["publish_id"] = f"pub-{int(time.time())}-{uuid.uuid4().hex[:6]}"
         publish_result["batch_id"] = batch_id
         record_publish_event(publish_result)

@@ -403,13 +403,76 @@ def browse_af(path: str = ""):
     return {"path": path, "items": items}
 
 
+@app.post("/api/mappings/test-endpoint")
+def test_mapping_endpoint(data: Dict[str, Any]):
+    """Test connectivity to a specific ORDS / Oracle target endpoint URL."""
+    endpoint_url = (data.get("endpoint_url") or "").strip()
+    if not endpoint_url:
+        raise HTTPException(status_code=400, detail="Missing endpoint_url parameter.")
+    stored = load_settings()
+    config = stored.get("oracle_erp", {})
+    client = OracleERPCloudClient(config)
+    result = client.test_connection(test_url=endpoint_url)
+    return result
+
+
 @app.get("/api/mappings/preview")
 def preview_erp_payload():
-    """Generate a preview of the Oracle ERP Cloud payload based on currently configured mappings."""
+    """Generate a preview of the Oracle ERP / ORDS payload based on currently configured mappings."""
     mappings = load_mappings()
     enabled = [m for m in mappings if m.get("enabled", True)]
+    settings = load_settings()
+    erp_cfg = settings.get("oracle_erp", {})
+    now_iso = datetime.now(timezone.utc).isoformat()
+    base_url = (erp_cfg.get("base_url") or "").rstrip("/")
 
-    # Use the latest pulled values from pull history if available, else clean preview values
+    is_ords = (
+        erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
+        any(bool(m.get("target_endpoint_url")) for m in enabled)
+    )
+
+    if is_ords:
+        ords_previews = []
+        for m in enabled:
+            attr_name = m.get("attribute_name", "Tag")
+            scale = float(m.get("scale_factor", 1.0))
+            dec = int(m.get("round_decimals", 2))
+            sample_val = round(12.3 * scale, dec)
+
+            target_url = m.get("target_endpoint_url")
+            if not target_url:
+                res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+                target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
+
+            tag_val = m.get("tag") or m.get("meter_tag") or "TAG2"
+            desc_val = m.get("description") or m.get("name") or attr_name
+            limit_val = m.get("limit") if m.get("limit") is not None else "LIMIT2"
+            results_val = m.get("results") or "RESULTS2"
+
+            ords_previews.append({
+                "target_endpoint": target_url,
+                "http_method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                "body": {
+                    "timestamp": now_iso,
+                    "tag": str(tag_val),
+                    "description": str(desc_val),
+                    "value": str(sample_val),
+                    "limit": str(limit_val),
+                    "results": str(results_val)
+                }
+            })
+        return {
+            "mode": "Oracle ORDS Direct (Individual Endpoint per Attribute)",
+            "auth_security": "None / Direct (Unauthenticated ORDS Standard)",
+            "mapped_items_count": len(ords_previews),
+            "dispatches": ords_previews
+        }
+
+    # Monolithic Batch Mode (OAuth 2.0 Oracle Fusion ERP Cloud)
     recent_batches = get_pull_history(limit=1)
     cached_values = {}
     if recent_batches and recent_batches[0].get("items"):
@@ -428,7 +491,7 @@ def preview_erp_payload():
                 "full_path": m.get("full_path", ""),
                 "value": 100.0 * float(m.get("scale_factor", 1.0)),
                 "uom": m.get("uom", ""),
-                "timestamp": "2026-09-17T10:00:00Z",
+                "timestamp": now_iso,
                 "quality": "Good",
                 "status": "Sample"
             })

@@ -261,7 +261,9 @@ function renderDashboard(data) {
   const erpErrorText = document.getElementById("erp-error-text");
 
   if (currentSettings && currentSettings.oracle_erp) {
-    if (erpAuth) erpAuth.textContent = (currentSettings.oracle_erp.auth_type || "OAuth 2.0").toUpperCase();
+    const authType = currentSettings.oracle_erp.auth_type;
+    const authDisplay = (authType === "none" || authType === "no_auth" || authType === "open") ? "ORDS Direct (No Auth)" : (authType || "OAuth 2.0").toUpperCase();
+    if (erpAuth) erpAuth.textContent = authDisplay;
     if (erpResource) {
       erpResource.textContent = currentSettings.oracle_erp.resource_endpoint || "--";
       erpResource.title = currentSettings.oracle_erp.resource_endpoint || "";
@@ -998,6 +1000,7 @@ async function loadLogs() {
 // ============================================================
 // 3. ATTRIBUTE MAPPINGS VIEW
 // ============================================================
+// ============================================================
 function initMappings() {
   document.getElementById("btn-add-mapping-modal")?.addEventListener("click", () => openMappingModal());
   document.getElementById("btn-close-modal")?.addEventListener("click", closeMappingModal);
@@ -1006,6 +1009,7 @@ function initMappings() {
   document.getElementById("btn-save-all-mappings")?.addEventListener("click", saveMappingsToServer);
   document.getElementById("btn-load-sample-templates")?.addEventListener("click", loadSamplePresets);
   document.getElementById("btn-refresh-payload-preview")?.addEventListener("click", refreshPayloadPreview);
+  document.getElementById("btn-modal-test-endpoint")?.addEventListener("click", handleModalTestEndpoint);
 
   // Auto-compose full path when AF Server, Database, Element, or Attribute change in modal
   ["modal-af-server", "modal-af-database", "modal-element-path", "modal-attr-name"].forEach(id => {
@@ -1033,8 +1037,8 @@ function renderMappingsTable() {
   if (currentMappings.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-          No attribute mappings defined yet. Click <strong>"Add New Mapping"</strong> or <strong>"Load Preset Templates"</strong> to get started.
+        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+          No attribute mappings defined yet. Click <strong>"Add Attribute"</strong> or <strong>"Load Preset Assets"</strong> to get started.
         </td>
       </tr>
     `;
@@ -1043,20 +1047,48 @@ function renderMappingsTable() {
 
   tbody.innerHTML = currentMappings.map((m, idx) => {
     const scaleRound = `×${m.scale_factor || 1.0}, ${m.round_decimals ?? 2} dec`;
+    const targetUrl = m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : '--');
+    const tagDisplay = m.tag || m.meter_tag || m.attribute_name || '--';
+    const descDisplay = m.description || m.name || m.attribute_name || '--';
+    const limitDisplay = (m.limit !== undefined && m.limit !== null && m.limit !== "") ? m.limit : '--';
+    const resultsDisplay = m.results || 'Normal';
+
     return `
       <tr>
         <td>
           <input type="checkbox" ${m.enabled ? 'checked' : ''} onchange="toggleMappingActive(${idx}, this.checked)" style="width: 16px; height: 16px; cursor: pointer;">
         </td>
-        <td><strong>${escapeHtml(m.attribute_name || '')}</strong></td>
-        <td><span class="path-code" title="${escapeHtml(m.full_path || '')}">${escapeHtml(m.full_path || '')}</span></td>
-        <td><code>${escapeHtml(m.meter_tag || m.attribute_name || '')}</code></td>
-        <td><code>${escapeHtml(m.target_field || 'readingValue')}</code></td>
-        <td>${escapeHtml(m.uom || '--')}</td>
-        <td style="font-size: 0.78rem; color: #64748b;">${scaleRound}</td>
-        <td style="text-align: right;">
-          <button class="btn btn-secondary btn-sm" onclick="editMapping(${idx})" style="padding: 0.2rem 0.5rem; margin-right: 0.3rem;">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteMapping(${idx})" style="padding: 0.2rem 0.5rem;">Delete</button>
+        <td style="vertical-align: top;">
+          <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(m.attribute_name || '')}</strong>
+          <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;" title="${escapeHtml(m.full_path || '')}">
+            ${escapeHtml(m.element_path || m.full_path || '')}
+          </div>
+        </td>
+        <td style="vertical-align: top;">
+          <div style="display: flex; align-items: baseline; gap: 6px;">
+            <code style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--ink-primary); background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(tagDisplay)}</code>
+          </div>
+          <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px;">
+            ${escapeHtml(descDisplay)}
+          </div>
+        </td>
+        <td style="vertical-align: top; max-width: 250px;">
+          <span class="path-code" style="font-size: 10px; word-break: break-all; display: block;" title="${escapeHtml(targetUrl)}">
+            ${escapeHtml(targetUrl)}
+          </span>
+        </td>
+        <td style="vertical-align: top; font-size: 11px; white-space: nowrap;">
+          <div><span style="color: var(--ink-secondary);">Limit:</span> <code>${escapeHtml(String(limitDisplay))}</code></div>
+          <div style="margin-top: 2px;"><span style="color: var(--ink-secondary);">Results:</span> <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${escapeHtml(resultsDisplay)}</span></div>
+        </td>
+        <td style="font-size: 0.78rem; color: var(--ink-secondary); vertical-align: top;">
+          <div>${scaleRound}</div>
+          <div style="font-size: 10px; color: var(--ink-tertiary);">${escapeHtml(m.uom || '')}</div>
+        </td>
+        <td style="text-align: right; vertical-align: top; white-space: nowrap;">
+          <button class="btn btn-secondary btn-sm" onclick="editMapping(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;">Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to this specific Oracle endpoint">Test</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMapping(${idx})" style="padding: 0.2rem 0.45rem;">Delete</button>
         </td>
       </tr>
     `;
@@ -1088,18 +1120,30 @@ function deleteMapping(idx) {
 function openMappingModal(mapping = null, index = -1) {
   const modal = document.getElementById("mapping-modal");
   const title = document.getElementById("modal-title");
+  const testBox = document.getElementById("modal-endpoint-test-box");
+  if (testBox) {
+    testBox.style.display = "none";
+    testBox.innerHTML = "";
+  }
   modal.classList.add("active");
+
+  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
+    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
+    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
   if (mapping) {
     title.textContent = "Edit Attribute Mapping";
     document.getElementById("modal-mapping-id").value = index;
+    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url || defaultOrdsUrl;
+    document.getElementById("modal-target-tag").value = mapping.tag || mapping.meter_tag || "";
+    document.getElementById("modal-description").value = mapping.description || mapping.name || "";
+    document.getElementById("modal-limit").value = (mapping.limit !== undefined && mapping.limit !== null) ? mapping.limit : "";
+    document.getElementById("modal-results").value = mapping.results || "Normal";
     document.getElementById("modal-attr-name").value = mapping.attribute_name || "";
     document.getElementById("modal-af-server").value = mapping.af_server || "PISRV01";
     document.getElementById("modal-af-database").value = mapping.af_database || "Plant_Operations";
     document.getElementById("modal-element-path").value = mapping.element_path || "";
     document.getElementById("modal-full-path").value = mapping.full_path || "";
-    document.getElementById("modal-target-tag").value = mapping.meter_tag || "";
-    document.getElementById("modal-target-field").value = mapping.target_field || "readingValue";
     document.getElementById("modal-uom").value = mapping.uom || "";
     document.getElementById("modal-scale").value = mapping.scale_factor ?? 1.0;
     document.getElementById("modal-decimals").value = mapping.round_decimals ?? 2;
@@ -1108,11 +1152,19 @@ function openMappingModal(mapping = null, index = -1) {
     title.textContent = "Add Attribute Mapping";
     document.getElementById("modal-mapping-id").value = "-1";
     document.getElementById("mapping-form").reset();
+    document.getElementById("modal-target-endpoint-url").value = defaultOrdsUrl;
+    document.getElementById("modal-target-tag").value = "TAG2";
+    document.getElementById("modal-description").value = "DESCRIPTION2";
+    document.getElementById("modal-limit").value = "LIMIT2";
+    document.getElementById("modal-results").value = "RESULTS2";
+    document.getElementById("modal-attr-name").value = "30 Min Average";
     document.getElementById("modal-af-server").value = currentSettings?.pi_web_api?.af_server || "PISRV01";
     document.getElementById("modal-af-database").value = currentSettings?.pi_web_api?.af_database || "Plant_Operations";
-    document.getElementById("modal-target-field").value = "readingValue";
+    document.getElementById("modal-element-path").value = "Effluent\\Discharge";
+    document.getElementById("modal-full-path").value = "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|30 Min Average";
     document.getElementById("modal-scale").value = "1.0";
     document.getElementById("modal-decimals").value = "2";
+    document.getElementById("modal-uom").value = "pH";
     document.getElementById("modal-enabled").checked = true;
   }
 }
@@ -1135,9 +1187,83 @@ function autoComposeFullPath() {
   }
 }
 
+async function handleModalTestEndpoint() {
+  const urlInput = document.getElementById("modal-target-endpoint-url");
+  const box = document.getElementById("modal-endpoint-test-box");
+  const url = urlInput?.value?.trim();
+  if (!url) {
+    showToast("Please enter a Target POST URL to test.", "warning");
+    return;
+  }
+  if (box) {
+    box.style.display = "block";
+    box.className = "error-console";
+    box.innerHTML = "Testing connection to Oracle ORDS endpoint...";
+  }
+  try {
+    const res = await fetch("/api/mappings/test-endpoint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint_url: url })
+    });
+    const result = await res.json();
+    if (result.success) {
+      if (box) {
+        box.className = "error-console";
+        box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\nEndpoint: ${escapeHtml(url)}`;
+      }
+      showToast("Endpoint connected successfully!", "success");
+    } else {
+      if (box) {
+        box.className = "error-console danger";
+        box.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✕ Connection Test Failed</span>\n${escapeHtml(result.message)}\n${escapeHtml(result.error || '')}`;
+      }
+      showToast("Failed to connect to Oracle endpoint", "danger");
+    }
+  } catch (err) {
+    if (box) {
+      box.className = "error-console danger";
+      box.innerHTML = `Test Request Error: ${escapeHtml(err.message)}`;
+    }
+  }
+}
+window.handleModalTestEndpoint = handleModalTestEndpoint;
+
+async function testTableEndpoint(idx) {
+  const m = currentMappings[idx];
+  if (!m) return;
+  const url = m.target_endpoint_url || currentSettings?.oracle_erp?.base_url;
+  if (!url) {
+    showToast("No target endpoint URL configured for this mapping.", "warning");
+    return;
+  }
+  showToast(`Testing ORDS endpoint for "${m.attribute_name}"...`, "info");
+  try {
+    const res = await fetch("/api/mappings/test-endpoint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint_url: url })
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast(`✓ Connected (${result.latency_ms}ms): ${m.attribute_name}`, "success");
+    } else {
+      showToast(`✕ Test Failed (HTTP ${result.status_code || ''}): ${result.message}`, "danger");
+    }
+  } catch (err) {
+    showToast("Test Request Error: " + err.message, "danger");
+  }
+}
+window.testTableEndpoint = testTableEndpoint;
+
 function handleSaveMappingModal(e) {
   e.preventDefault();
   const editIdx = parseInt(document.getElementById("modal-mapping-id").value, 10);
+  const tagVal = document.getElementById("modal-target-tag").value.trim();
+  const descVal = document.getElementById("modal-description").value.trim();
+  const limitVal = document.getElementById("modal-limit").value.trim();
+  const resultsVal = document.getElementById("modal-results").value.trim();
+  const targetEndpointUrl = document.getElementById("modal-target-endpoint-url").value.trim();
 
   const newMapping = {
     id: editIdx >= 0 ? currentMappings[editIdx].id : `map-${Date.now()}`,
@@ -1147,9 +1273,14 @@ function handleSaveMappingModal(e) {
     element_path: document.getElementById("modal-element-path").value.trim(),
     full_path: document.getElementById("modal-full-path").value.trim(),
     web_id: editIdx >= 0 ? currentMappings[editIdx].web_id : "",
-    target_field: document.getElementById("modal-target-field").value.trim() || "readingValue",
-    meter_tag: document.getElementById("modal-target-tag").value.trim(),
-    target_tag_field: "meterCode",
+    target_endpoint_url: targetEndpointUrl,
+    tag: tagVal,
+    description: descVal,
+    limit: limitVal,
+    results: resultsVal,
+    meter_tag: tagVal,
+    target_field: "value",
+    target_tag_field: "tag",
     data_type: "number",
     transformation: "direct",
     scale_factor: parseFloat(document.getElementById("modal-scale").value) || 1.0,
@@ -1188,21 +1319,27 @@ async function saveMappingsToServer() {
 
 function loadSamplePresets() {
   if (confirm("Load standard industrial asset telemetry presets (Boiler, Turbine, Generator, Pumps)?")) {
+    const defaultOrdsUrl = "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
     currentMappings = [
       {
-        id: "map-blr-temp",
-        name: "Boiler 101 Steam Temperature",
-        attribute_name: "Steam Temperature",
+        id: "map-final-discharge",
+        name: "Final Discharge Effluent 30 Min Average",
+        attribute_name: "30 Min Average",
         af_server: "PISRV01",
         af_database: "Plant_Operations",
-        element_path: "Unit 1\\Boilers\\Boiler-101",
-        full_path: "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Temperature",
-        target_field: "readingValue",
-        meter_tag: "BLR101_STM_TEMP",
-        target_tag_field: "meterCode",
+        element_path: "Effluent\\Discharge",
+        full_path: "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|30 Min Average",
+        target_endpoint_url: defaultOrdsUrl,
+        tag: "TAG2",
+        description: "DESCRIPTION2",
+        limit: "LIMIT2",
+        results: "RESULTS2",
+        target_field: "value",
+        meter_tag: "TAG2",
+        target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 2,
-        uom: "deg C",
+        uom: "pH",
         enabled: true
       },
       {
@@ -1213,9 +1350,14 @@ function loadSamplePresets() {
         af_database: "Plant_Operations",
         element_path: "Unit 1\\Boilers\\Boiler-101",
         full_path: "\\\\PISRV01\\Plant_Operations\\Unit 1\\Boilers\\Boiler-101|Steam Pressure",
-        target_field: "readingValue",
+        target_endpoint_url: defaultOrdsUrl,
+        tag: "BLR101_STM_PRESS",
+        description: "Boiler 101 Steam Pressure",
+        limit: "100.0",
+        results: "Normal",
+        target_field: "value",
         meter_tag: "BLR101_STM_PRESS",
-        target_tag_field: "meterCode",
+        target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 2,
         uom: "bar",
@@ -1229,9 +1371,14 @@ function loadSamplePresets() {
         af_database: "Plant_Operations",
         element_path: "Unit 1\\Turbines\\Turbine-TG01",
         full_path: "\\\\PISRV01\\Plant_Operations\\Unit 1\\Turbines\\Turbine-TG01|Feedwater Flow",
-        target_field: "readingValue",
+        target_endpoint_url: defaultOrdsUrl,
+        tag: "TG01_FEED_FLOW",
+        description: "Turbine Feedwater Flow Rate",
+        limit: "500.0",
+        results: "Normal",
+        target_field: "value",
         meter_tag: "TG01_FEED_FLOW",
-        target_tag_field: "meterCode",
+        target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 1,
         uom: "m3/h",
@@ -1245,13 +1392,18 @@ function loadSamplePresets() {
         af_database: "Plant_Operations",
         element_path: "Unit 1\\Generators\\Gen-01",
         full_path: "\\\\PISRV01\\Plant_Operations\\Unit 1\\Generators\\Gen-01|Active Power",
-        target_field: "readingValue",
+        target_endpoint_url: defaultOrdsUrl,
+        tag: "GEN01_ACT_PWR",
+        description: "Generator Active Power Output",
+        limit: "50.0",
+        results: "Normal",
+        target_field: "value",
         meter_tag: "GEN01_ACT_PWR",
-        target_tag_field: "meterCode",
+        target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 3,
         uom: "MW",
-        enabled: true
+        enabled: false
       },
       {
         id: "map-pmp-vib",
@@ -1261,9 +1413,14 @@ function loadSamplePresets() {
         af_database: "Plant_Operations",
         element_path: "Utilities\\Pumps\\Pump-2A",
         full_path: "\\\\PISRV01\\Plant_Operations\\Utilities\\Pumps\\Pump-2A|Vibration Overall",
-        target_field: "readingValue",
+        target_endpoint_url: defaultOrdsUrl,
+        tag: "PMP2A_VIB_RMS",
+        description: "Cooling Pump 2A Vibration",
+        limit: "4.5",
+        results: "Normal",
+        target_field: "value",
         meter_tag: "PMP2A_VIB_RMS",
-        target_tag_field: "meterCode",
+        target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 2,
         uom: "mm/s",
@@ -1274,7 +1431,7 @@ function loadSamplePresets() {
     renderMappingsTable();
     saveMappingsToServer();
     refreshPayloadPreview();
-    showToast("Loaded industrial telemetry presets.", "success");
+    showToast("Loaded industrial telemetry presets with Oracle ORDS endpoints.", "success");
   }
 }
 
@@ -1995,6 +2152,7 @@ function handlePiAuthChange() {
 
 function handleErpAuthChange() {
   const type = document.getElementById("setting-erp-auth-type").value;
+  document.querySelectorAll(".erp-none-field").forEach(el => el.style.display = (type === "none") ? "block" : "none");
   document.querySelectorAll(".erp-oauth-field").forEach(el => el.style.display = (type === "oauth2") ? "flex" : "none");
   document.querySelectorAll(".erp-basic-field").forEach(el => el.style.display = (type === "basic") ? "flex" : "none");
   document.querySelectorAll(".erp-bearer-field").forEach(el => el.style.display = (type === "bearer") ? "flex" : "none");
