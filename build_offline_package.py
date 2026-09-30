@@ -192,11 +192,80 @@ schtasks /create /tn "PIDataPipeline" /tr "wscript.exe \\"%VBS_PATH%\\"" /sc ons
 if %errorLevel% neq 0 (
     schtasks /create /tn "PIDataPipeline" /tr "wscript.exe \\"%VBS_PATH%\\"" /sc onlogon /rl HIGHEST /f
 )
-echo [SUCCESS] Windows startup task created! It will run 24/7 on boot.
+echo.
+echo Starting PIDataPipeline background process now...
+schtasks /run /tn "PIDataPipeline" >nul 2>&1
+timeout /t 3 >nul
+
+echo.
+echo ================================================================
+echo Status Check:
+netstat -ano | findstr :8000 >nul 2>&1
+if %errorLevel% equ 0 (
+    echo [SUCCESS] PIDataPipeline is running and listening on port 8000!
+    echo Web Dashboard: http://127.0.0.1:8000
+) else (
+    echo [NOTE] Startup task registered. If port 8000 is not up immediately,
+    echo you can also launch directly via "start_silent.vbs" or "start.bat".
+)
+echo ================================================================
 pause
 '''
     with open(os.path.join(stage_dir, "install_service.bat"), "w", encoding="utf-8") as f:
         f.write(install_service_content)
+
+    # uninstall_service.bat
+    uninstall_service_content = '''@echo off
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo ================================================================
+    echo Error: Please right-click this file and select "Run as Administrator".
+    echo ================================================================
+    pause
+    exit /b 1
+)
+echo Stopping and removing PIDataPipeline Windows startup task...
+schtasks /end /tn "PIDataPipeline" >nul 2>&1
+schtasks /delete /tn "PIDataPipeline" /f >nul 2>&1
+echo Stopping running pipeline processes...
+call "%~dp0stop.bat"
+echo [SUCCESS] Windows service/startup task removed.
+pause
+'''
+    with open(os.path.join(stage_dir, "uninstall_service.bat"), "w", encoding="utf-8") as f:
+        f.write(uninstall_service_content)
+
+    # status.bat
+    status_bat_content = '''@echo off
+title PIDataPipeline - Status Check
+echo ================================================================
+echo   PIDataPipeline Status Check
+echo ================================================================
+echo.
+echo [1] Checking Port 8000 listener...
+netstat -ano | findstr :8000
+if %errorLevel% equ 0 (
+    echo -- Port 8000 is ACTIVE and listening!
+) else (
+    echo -- Port 8000 is NOT listening.
+)
+echo.
+echo [2] Checking Python process...
+tasklist /fi "imagename eq python*" 2>nul | findstr /i "python"
+if %errorLevel% equ 0 (
+    echo -- Python process found running.
+) else (
+    echo -- No active Python processes detected.
+)
+echo.
+echo [3] Checking Windows Scheduled Task "PIDataPipeline"...
+schtasks /query /tn "PIDataPipeline" /fo LIST 2>nul | findstr /i "Status TaskName State"
+echo.
+echo ================================================================
+pause
+'''
+    with open(os.path.join(stage_dir, "status.bat"), "w", encoding="utf-8") as f:
+        f.write(status_bat_content)
 
     # update.bat
     update_bat_content = """@echo off
