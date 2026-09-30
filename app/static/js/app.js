@@ -1204,7 +1204,7 @@ async function handleModalTestEndpoint() {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url, auth_type: "none" })
+      body: JSON.stringify({ endpoint_url: url })
     });
     const result = await res.json();
     if (result.success) {
@@ -1242,7 +1242,7 @@ async function testTableEndpoint(idx) {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url, auth_type: "none" })
+      body: JSON.stringify({ endpoint_url: url })
     });
     const result = await res.json();
     if (result.success) {

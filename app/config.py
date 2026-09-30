@@ -34,7 +34,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "enabled": True,
         "auth_type": "none",  # 'none', 'oauth2', 'basic', 'bearer'
         "base_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int",
-        "token_url": "",
+        "token_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/oauth/token",
         "client_id": "",
         "client_secret": "",
         "scope": "",

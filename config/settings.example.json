@@ -19,7 +19,7 @@
     "enabled": true,
     "auth_type": "none",
     "base_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int",
-    "token_url": "",
+    "token_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/oauth/token",
     "client_id": "",
     "client_secret": "",
     "scope": "",

@@ -40,15 +40,13 @@ class OracleERPCloudClient:
 
     def is_configured(self, target_endpoint: Optional[str] = None) -> Tuple[bool, str]:
         """Check if minimum connection parameters are provided."""
-        effective_endpoint = target_endpoint or self.base_url or ""
         is_direct = (
             self.auth_type in ("none", "no_auth", "open") or
-            "/ords/" in effective_endpoint.lower() or
-            bool(target_endpoint and not self.client_id)
+            not self.client_id
         )
         if is_direct:
-            # Unauthenticated ORDS endpoint - ready!
-            return True, "Ready (ORDS Direct - No Auth)"
+            # Unauthenticated endpoint - ready!
+            return True, "Ready (Direct - No Auth)"
 
         if not self.enabled and not target_endpoint:
             return False, "Pending connection setup: Oracle integration is toggled off in settings."
@@ -131,11 +129,10 @@ class OracleERPCloudClient:
                 "message": "No Oracle endpoint URL configured to test."
             }
 
-        # Check if direct/unauthenticated endpoint (ORDS or auth_type none or endpoint lacks client_id)
+        # Check if direct/unauthenticated endpoint (auth_type none or client_id is empty)
         is_direct = (
             self.auth_type in ("none", "no_auth", "open") or
-            "/ords/" in full_endpoint.lower() or
-            bool(test_url and not self.client_id)
+            not self.client_id
         )
 
         configured, reason = self.is_configured(target_endpoint=full_endpoint if is_direct else None)
@@ -233,18 +230,18 @@ class OracleERPCloudClient:
         effective_endpoint = target_endpoint or self.base_url or ""
         is_direct = (
             self.auth_type in ("none", "no_auth", "open") or
-            "/ords/" in effective_endpoint.lower() or
-            bool(target_endpoint and not self.client_id)
+            not self.client_id
         )
         if is_direct:
-            # Direct unauthenticated ORDS request - no Authorization header
+            # Direct unauthenticated request - no Authorization header
             if isinstance(self.custom_headers, dict):
                 headers.update(self.custom_headers)
             return headers
 
         if self.auth_type == "oauth2":
-            headers["Content-Type"] = "application/vnd.oracle.adf.resourceitem+json"
-            headers["REST-Framework-Version"] = "4"
+            if "/ords/" not in effective_endpoint.lower():
+                headers["Content-Type"] = "application/vnd.oracle.adf.resourceitem+json"
+                headers["REST-Framework-Version"] = "4"
             token, _ = self.get_token()
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -268,8 +265,7 @@ class OracleERPCloudClient:
         effective_endpoint = target_endpoint or self.base_url or ""
         is_direct = (
             self.auth_type in ("none", "no_auth", "open") or
-            "/ords/" in effective_endpoint.lower() or
-            bool(target_endpoint and not self.client_id)
+            not self.client_id
         )
         configured, reason = self.is_configured(target_endpoint=target_endpoint if is_direct else None)
         if not configured and not is_direct:
