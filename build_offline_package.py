@@ -186,11 +186,17 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 set SCRIPT_DIR=%~dp0
-set VBS_PATH=%SCRIPT_DIR%start_silent.vbs
-echo Registering PIDataPipeline portable Windows startup task...
-schtasks /create /tn "PIDataPipeline" /tr "wscript.exe \\"%VBS_PATH%\\"" /sc onstart /ru "SYSTEM" /rl HIGHEST /f
+set PYTHON_EXE=%SCRIPT_DIR%python\python.exe
+set RUN_PY=%SCRIPT_DIR%run.py
+
+echo Ensuring permissions for background service...
+icacls "%SCRIPT_DIR%*" /grant "SYSTEM":(OI)(CI)F /T /Q >nul 2>&1
+
+echo Registering PIDataPipeline 24/7 Windows background task...
+schtasks /delete /tn "PIDataPipeline" /f >nul 2>&1
+schtasks /create /tn "PIDataPipeline" /tr "\"%PYTHON_EXE%\" \"%RUN_PY%\"" /sc onstart /ru "SYSTEM" /rl HIGHEST /f
 if %errorLevel% neq 0 (
-    schtasks /create /tn "PIDataPipeline" /tr "wscript.exe \\"%VBS_PATH%\\"" /sc onlogon /rl HIGHEST /f
+    schtasks /create /tn "PIDataPipeline" /tr "\"%PYTHON_EXE%\" \"%RUN_PY%\"" /sc onlogon /rl HIGHEST /f
 )
 echo.
 echo Starting PIDataPipeline background process now...
