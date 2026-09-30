@@ -19,7 +19,7 @@ from app.storage import (
     add_log
 )
 from app.config import load_settings, load_mappings
-from app.oracle_erp_client import OracleERPCloudClient
+from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
 
 
 def validate_delivery_security(
@@ -475,7 +475,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             except Exception:
                 scaled_val = raw_val
 
-            timestamp_val = attr.get("timestamp") or now_iso
+            timestamp_val = format_ords_timestamp(attr.get("timestamp") or now_iso)
             tag_val = m.get("tag") or m.get("meter_tag") or attr_name
             desc_val = m.get("description") or m.get("name") or attr_name
             limit_val = m.get("limit") if m.get("limit") is not None else ""
@@ -491,7 +491,8 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 "results": str(results_val)
             }
 
-            target_url = m.get("target_endpoint_url") or m.get("endpoint_url") or None
+            raw_target = m.get("target_endpoint_url") or m.get("endpoint_url") or ""
+            target_url = raw_target.strip().strip('"').strip("'") or None
             pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
 
             item_results.append({

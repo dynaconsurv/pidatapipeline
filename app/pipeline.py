@@ -14,7 +14,7 @@ import uuid
 
 from app.config import load_settings, load_mappings
 from app.pi_client import PIWebApiClient
-from app.oracle_erp_client import OracleERPCloudClient
+from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
 from app.storage import (
     record_pull_batch,
     record_publish_event,
@@ -256,14 +256,15 @@ class DataPipelineEngine:
                 results_val = m.get("results") or ("Normal" if item.get("quality", "Good") == "Good" else "Check")
 
                 ords_payload = {
-                    "timestamp": item.get("timestamp", now_iso),
+                    "timestamp": format_ords_timestamp(item.get("timestamp") or now_iso),
                     "tag": str(tag_val),
                     "description": str(desc_val),
                     "value": str(item.get("value", "")),
                     "limit": str(limit_val),
                     "results": str(results_val)
                 }
-                target_url = m.get("target_endpoint_url") or None
+                raw_target = m.get("target_endpoint_url") or ""
+                target_url = raw_target.strip().strip('"').strip("'") or None
                 res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
                 item_results.append(res)
                 if res.get("status") != "SUCCESS":

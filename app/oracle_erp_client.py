@@ -15,6 +15,37 @@ from typing import Dict, Any, Optional, Tuple
 import requests
 
 
+def format_ords_timestamp(ts: Any) -> str:
+    """
+    Format timestamp to Oracle ORDS standard ISO 8601 Zulu UTC: YYYY-MM-DDTHH:MM:SSZ
+    Strips fractional microseconds which cause Oracle DATE column parsing issues.
+    """
+    if not ts:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(ts, (int, float)):
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(ts, str):
+        s = ts.strip().strip('"').strip("'")
+        try:
+            clean_s = s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean_s)
+            return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            if "." in s:
+                base = s.split(".")[0]
+                return f"{base}Z" if not base.endswith("Z") else base
+            if " " in s and "T" not in s:
+                s = s.replace(" ", "T")
+            if not s.endswith("Z") and ("+" not in s and "-" not in s[10:]):
+                return f"{s}Z"
+            return s
+    return str(ts)
+
+
 class OracleERPCloudClient:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -117,7 +148,8 @@ class OracleERPCloudClient:
         """Validate Oracle Cloud / ORDS connection settings."""
         # Resolve endpoint URL to test
         if test_url:
-            full_endpoint = test_url
+            clean_test = str(test_url).strip().strip('"').strip("'")
+            full_endpoint = clean_test
         elif self.base_url and self.resource_endpoint:
             full_endpoint = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
         elif self.base_url:
@@ -255,6 +287,14 @@ class OracleERPCloudClient:
         if isinstance(self.custom_headers, dict):
             headers.update(self.custom_headers)
 
+        # CRITICAL: For Oracle ORDS endpoints, Content-Type MUST ALWAYS be application/json
+        # Oracle ORDS ignores bodies sent with application/vnd.oracle.adf.resourceitem+json,
+        # resulting in empty NULL inserts!
+        if "/ords/" in effective_endpoint.lower():
+            headers["Content-Type"] = "application/json"
+            headers["Accept"] = "application/json"
+            headers.pop("REST-Framework-Version", None)
+
         return headers
 
     def publish_data(self, payload: Dict[str, Any], target_endpoint: Optional[str] = None) -> Dict[str, Any]:
@@ -282,10 +322,11 @@ class OracleERPCloudClient:
             }
 
         if target_endpoint:
-            if target_endpoint.startswith("http://") or target_endpoint.startswith("https://"):
-                full_url = target_endpoint
+            clean_target = str(target_endpoint).strip().strip('"').strip("'")
+            if clean_target.startswith("http://") or clean_target.startswith("https://"):
+                full_url = clean_target
             else:
-                full_url = f"{self.base_url.rstrip('/')}/{target_endpoint.lstrip('/')}"
+                full_url = f"{self.base_url.rstrip('/')}/{clean_target.lstrip('/')}"
         elif self.base_url:
             full_url = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
         else:
