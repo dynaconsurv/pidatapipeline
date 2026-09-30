@@ -202,6 +202,18 @@ def load_settings() -> Dict[str, Any]:
                         for sub_k, sub_v in v.items():
                             if sub_k not in data[k]:
                                 data[k][sub_k] = sub_v
+
+                # Auto-migrate unconfigured legacy OAuth2 to ORDS Direct (none)
+                erp = data.get("oracle_erp", {})
+                if erp.get("auth_type") == "oauth2" and not erp.get("client_id") and not erp.get("client_secret"):
+                    erp["auth_type"] = "none"
+                    erp["enabled"] = True
+                    if "your-pod" in erp.get("base_url", "") or not erp.get("base_url"):
+                        erp["base_url"] = DEFAULT_SETTINGS["oracle_erp"]["base_url"]
+                        erp["resource_endpoint"] = DEFAULT_SETTINGS["oracle_erp"]["resource_endpoint"]
+                        erp["custom_headers"] = DEFAULT_SETTINGS["oracle_erp"]["custom_headers"]
+                    save_settings(data)
+
                 return data
         except Exception as e:
             print(f"Error loading settings.json: {e}. Returning defaults.")

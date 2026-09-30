@@ -1204,7 +1204,7 @@ async function handleModalTestEndpoint() {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url })
+      body: JSON.stringify({ endpoint_url: url, auth_type: "none" })
     });
     const result = await res.json();
     if (result.success) {
@@ -1232,7 +1232,7 @@ window.handleModalTestEndpoint = handleModalTestEndpoint;
 async function testTableEndpoint(idx) {
   const m = currentMappings[idx];
   if (!m) return;
-  const url = m.target_endpoint_url || currentSettings?.oracle_erp?.base_url;
+  const url = m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : currentSettings?.oracle_erp?.base_url);
   if (!url) {
     showToast("No target endpoint URL configured for this mapping.", "warning");
     return;
@@ -1242,7 +1242,7 @@ async function testTableEndpoint(idx) {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url })
+      body: JSON.stringify({ endpoint_url: url, auth_type: "none" })
     });
     const result = await res.json();
     if (result.success) {

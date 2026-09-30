@@ -38,16 +38,22 @@ class OracleERPCloudClient:
         self._cached_token: Optional[str] = None
         self._token_expiry_timestamp: float = 0
 
-    def is_configured(self) -> Tuple[bool, str]:
+    def is_configured(self, target_endpoint: Optional[str] = None) -> Tuple[bool, str]:
         """Check if minimum connection parameters are provided."""
-        if not self.enabled:
-            return False, "Pending connection setup: Oracle integration is toggled off in settings."
-
-        if self.auth_type in ("none", "no_auth", "open"):
+        effective_endpoint = target_endpoint or self.base_url or ""
+        is_direct = (
+            self.auth_type in ("none", "no_auth", "open") or
+            "/ords/" in effective_endpoint.lower() or
+            bool(target_endpoint and not self.client_id)
+        )
+        if is_direct:
             # Unauthenticated ORDS endpoint - ready!
             return True, "Ready (ORDS Direct - No Auth)"
 
-        if not self.base_url:
+        if not self.enabled and not target_endpoint:
+            return False, "Pending connection setup: Oracle integration is toggled off in settings."
+
+        if not self.base_url and not target_endpoint:
             return False, "Pending connection setup: Oracle Cloud Base URL is not configured."
 
         if self.auth_type == "oauth2":
@@ -111,34 +117,6 @@ class OracleERPCloudClient:
 
     def test_connection(self, test_url: Optional[str] = None) -> Dict[str, Any]:
         """Validate Oracle Cloud / ORDS connection settings."""
-        configured, reason = self.is_configured()
-        if not configured:
-            return {
-                "success": False,
-                "status": "PENDING_SETUP",
-                "message": reason,
-                "details": {
-                    "auth_type": self.auth_type,
-                    "base_url": self.base_url or "(Not set)",
-                    "enabled": self.enabled
-                }
-            }
-
-        start_t = time.time()
-
-        # If OAuth 2.0, test token acquisition first
-        if self.auth_type == "oauth2":
-            token, err = self.get_token(force_refresh=True)
-            token_latency = round((time.time() - start_t) * 1000, 2)
-            if not token:
-                return {
-                    "success": False,
-                    "status": "FAILED",
-                    "latency_ms": token_latency,
-                    "message": "Failed to acquire OAuth 2.0 token from Oracle IDCS",
-                    "error": err
-                }
-
         # Resolve endpoint URL to test
         if test_url:
             full_endpoint = test_url
@@ -153,29 +131,72 @@ class OracleERPCloudClient:
                 "message": "No Oracle endpoint URL configured to test."
             }
 
-        headers = self._build_request_headers()
+        # Check if direct/unauthenticated endpoint (ORDS or auth_type none or endpoint lacks client_id)
+        is_direct = (
+            self.auth_type in ("none", "no_auth", "open") or
+            "/ords/" in full_endpoint.lower() or
+            bool(test_url and not self.client_id)
+        )
+
+        configured, reason = self.is_configured(target_endpoint=full_endpoint if is_direct else None)
+        if not configured and not is_direct:
+            return {
+                "success": False,
+                "status": "PENDING_SETUP",
+                "message": reason,
+                "details": {
+                    "auth_type": self.auth_type,
+                    "base_url": self.base_url or "(Not set)",
+                    "enabled": self.enabled
+                }
+            }
+
+        start_t = time.time()
+
+        # If OAuth 2.0 and NOT direct, test token acquisition first
+        if self.auth_type == "oauth2" and not is_direct:
+            token, err = self.get_token(force_refresh=True)
+            token_latency = round((time.time() - start_t) * 1000, 2)
+            if not token:
+                return {
+                    "success": False,
+                    "status": "FAILED",
+                    "latency_ms": token_latency,
+                    "message": "Failed to acquire OAuth 2.0 token from Oracle IDCS",
+                    "error": err
+                }
+
+        headers = self._build_request_headers(target_endpoint=full_endpoint)
 
         try:
-            # For ORDS (auth_type in none, no_auth, open), use GET with limit=1 which ORDS natively supports
-            if self.auth_type in ("none", "no_auth", "open"):
-                test_resp = requests.get(full_endpoint, headers=headers, timeout=self.timeout, params={"limit": 1})
-            else:
-                test_resp = requests.options(full_endpoint, headers=headers, timeout=self.timeout)
+            # Probe connectivity using OPTIONS (validates route existence, server response, and allowed verbs like POST without requiring table SELECT permissions)
+            test_resp = requests.options(full_endpoint, headers=headers, timeout=self.timeout)
+            if test_resp.status_code not in (200, 201, 202, 204, 405):
+                # Fallback to HEAD
+                try:
+                    head_resp = requests.head(full_endpoint, headers=headers, timeout=self.timeout)
+                    if head_resp.status_code in (200, 201, 202, 204, 405):
+                        test_resp = head_resp
+                except Exception:
+                    pass
 
             latency = round((time.time() - start_t) * 1000, 2)
 
             if test_resp.status_code in (200, 201, 202, 204, 405):
-                auth_label = "ORDS Direct (No Auth)" if self.auth_type in ("none", "no_auth", "open") else self.auth_type.upper()
+                auth_label = "ORDS Direct (No Auth)" if is_direct else self.auth_type.upper()
+                allowed_methods = test_resp.headers.get("Allow") or ""
+                method_info = f" [Allowed: {allowed_methods}]" if allowed_methods else ""
                 return {
                     "success": True,
                     "status": "CONNECTED",
                     "status_code": test_resp.status_code,
                     "latency_ms": latency,
-                    "message": f"Successfully connected to Oracle endpoint ({auth_label})",
+                    "message": f"Successfully connected to Oracle endpoint ({auth_label}) - HTTP {test_resp.status_code}{method_info}",
                     "details": {
                         "endpoint": full_endpoint,
                         "auth_mode": auth_label,
-                        "http_code": test_resp.status_code
+                        "http_code": test_resp.status_code,
+                        "allowed_methods": allowed_methods
                     }
                 }
             else:
@@ -204,11 +225,23 @@ class OracleERPCloudClient:
                 "error": str(e)
             }
 
-    def _build_request_headers(self) -> Dict[str, str]:
+    def _build_request_headers(self, target_endpoint: Optional[str] = None) -> Dict[str, str]:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
+        effective_endpoint = target_endpoint or self.base_url or ""
+        is_direct = (
+            self.auth_type in ("none", "no_auth", "open") or
+            "/ords/" in effective_endpoint.lower() or
+            bool(target_endpoint and not self.client_id)
+        )
+        if is_direct:
+            # Direct unauthenticated ORDS request - no Authorization header
+            if isinstance(self.custom_headers, dict):
+                headers.update(self.custom_headers)
+            return headers
+
         if self.auth_type == "oauth2":
             headers["Content-Type"] = "application/vnd.oracle.adf.resourceitem+json"
             headers["REST-Framework-Version"] = "4"
@@ -221,7 +254,6 @@ class OracleERPCloudClient:
             headers["Authorization"] = f"Basic {b64_cred}"
         elif self.auth_type == "bearer" and self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
-        # For 'none' / 'no_auth', no Authorization header is added!
 
         if isinstance(self.custom_headers, dict):
             headers.update(self.custom_headers)
@@ -233,8 +265,14 @@ class OracleERPCloudClient:
         Dispatches transformed PI AF data to Oracle ORDS / ERP Cloud API.
         If target_endpoint is specified, dispatches directly to that individual mapping endpoint URL.
         """
-        configured, reason = self.is_configured()
-        if not configured:
+        effective_endpoint = target_endpoint or self.base_url or ""
+        is_direct = (
+            self.auth_type in ("none", "no_auth", "open") or
+            "/ords/" in effective_endpoint.lower() or
+            bool(target_endpoint and not self.client_id)
+        )
+        configured, reason = self.is_configured(target_endpoint=target_endpoint if is_direct else None)
+        if not configured and not is_direct:
             return {
                 "status": "PENDING_SETUP",
                 "message": reason,
@@ -257,7 +295,7 @@ class OracleERPCloudClient:
         else:
             full_url = "https://oracle-ords-endpoint.local"
 
-        headers = self._build_request_headers()
+        headers = self._build_request_headers(target_endpoint=full_url)
         start_t = time.time()
 
         if self.dry_run:

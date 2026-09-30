@@ -410,7 +410,12 @@ def test_mapping_endpoint(data: Dict[str, Any]):
     if not endpoint_url:
         raise HTTPException(status_code=400, detail="Missing endpoint_url parameter.")
     stored = load_settings()
-    config = stored.get("oracle_erp", {})
+    config = dict(stored.get("oracle_erp", {}))
+    # Individual mapping endpoints are direct open ORDS endpoints
+    # Ensure they are tested directly without requiring OAuth 2.0 credentials
+    if "/ords/" in endpoint_url.lower() or not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
+        config["auth_type"] = "none"
+        config["enabled"] = True
     client = OracleERPCloudClient(config)
     result = client.test_connection(test_url=endpoint_url)
     return result
