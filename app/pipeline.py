@@ -267,6 +267,7 @@ class DataPipelineEngine:
                 desc_val = m.get("description") or m.get("name") or attr_name
                 limit_val = m.get("limit") if m.get("limit") is not None else ""
                 results_val = m.get("results") or ("Normal" if item.get("quality", "Good") == "Good" else "Check")
+                uom_val = item.get("uom") or item.get("UOM") or item.get("unit") or m.get("uom") or m.get("unit") or ""
 
                 ords_payload = {
                     "timestamp": format_ords_timestamp(item.get("timestamp") or now_iso),
@@ -274,7 +275,8 @@ class DataPipelineEngine:
                     "description": str(desc_val),
                     "value": str(item.get("value", "")),
                     "limit": str(limit_val),
-                    "results": str(results_val)
+                    "results": str(results_val),
+                    "uom": str(uom_val)
                 }
                 target_url = raw_target or None
                 res = erp_client.publish_data(ords_payload, target_endpoint=target_url)

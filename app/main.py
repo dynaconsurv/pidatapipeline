@@ -192,7 +192,7 @@ async def receive_pi_delivery(request: Request):
 
 
 @app.get("/api/deliveries")
-def get_deliveries_list(limit: int = 50, status: str = None):
+def get_deliveries_list(limit: int = 0, status: str = None):
     """Retrieve staged deliveries received from PI System Explorer."""
     return get_received_deliveries(limit=limit, status=status)
 
@@ -299,9 +299,9 @@ def simulate_pi_delivery():
     now_iso = datetime.now(timezone.utc).isoformat()
     val = round(random.uniform(0.18, 0.42), 2)
     sample_tags = [
-        {"tag": "TAG2", "desc": "Final Discharge Effluent Line", "limit": "LIMIT2", "result": "RESULTS2"},
-        {"tag": "U320.CO", "desc": "CO Concentration Current Value", "limit": "1.00", "result": "Normal"},
-        {"tag": "EFFLUENT_PH", "desc": "Effluent Basin pH Monitor", "limit": "6.0-9.0", "result": "Normal"}
+        {"tag": "TAG2", "desc": "Final Discharge Effluent Line", "limit": "LIMIT2", "result": "RESULTS2", "uom": "mg/L"},
+        {"tag": "U320.CO", "desc": "CO Concentration Current Value", "limit": "1.00", "result": "Normal", "uom": "ppm"},
+        {"tag": "EFFLUENT_PH", "desc": "Effluent Basin pH Monitor", "limit": "6.0-9.0", "result": "Normal", "uom": "pH"}
     ]
     chosen = random.choice(sample_tags)
 
@@ -312,6 +312,7 @@ def simulate_pi_delivery():
         "Value": str(val),
         "Limit": chosen["limit"],
         "Result": chosen["result"],
+        "UOM": chosen["uom"],
         "Timestamp": now_iso
     }
     result = process_incoming_delivery(mock_payload, client_ip="127.0.0.1 (Simulator)")
@@ -495,6 +496,7 @@ def preview_erp_payload():
             desc_val = m.get("description") or m.get("name") or attr_name
             limit_val = m.get("limit") if m.get("limit") is not None else "LIMIT2"
             results_val = m.get("results") or "RESULTS2"
+            uom_val = m.get("uom") or m.get("unit") or "mg/L"
 
             ords_payload = {
                 "timestamp": now_iso,
@@ -502,7 +504,8 @@ def preview_erp_payload():
                 "description": str(desc_val),
                 "value": str(sample_val),
                 "limit": str(limit_val),
-                "results": str(results_val)
+                "results": str(results_val),
+                "uom": str(uom_val)
             }
             previews.append({
                 "target_type": "Oracle ORDS",

@@ -19,7 +19,7 @@ LOGS_FILE = os.path.join(DATA_DIR, "logs.json")
 
 _storage_lock = threading.RLock()
 MAX_HISTORY_ENTRIES = 100
-MAX_DELIVERY_ENTRIES = 200
+MAX_DELIVERY_ENTRIES = 1000
 MAX_LOG_ENTRIES = 200
 
 
@@ -189,7 +189,9 @@ def get_received_deliveries(limit: int = 50, status: str = None) -> List[Dict[st
                     return []
                 if status and status.upper() != "ALL":
                     data = [d for d in data if d.get("oracle_status") == status.upper()]
-                return data[:limit]
+                if limit is not None and limit > 0:
+                    return data[:limit]
+                return data
         except Exception:
             return []
 

@@ -700,6 +700,20 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             else:
                 results_val = "Normal" if attr.get("quality", "Good") == "Good" else "Check"
 
+            # UOM: prioritize direct attribute from PI Notification, then mapping
+            if attr.get("uom") is not None and str(attr.get("uom")).strip() != "":
+                uom_val = attr.get("uom")
+            elif attr.get("UOM") is not None and str(attr.get("UOM")).strip() != "":
+                uom_val = attr.get("UOM")
+            elif attr.get("unit") is not None and str(attr.get("unit")).strip() != "":
+                uom_val = attr.get("unit")
+            elif m.get("uom") is not None and str(m.get("uom")).strip() != "":
+                uom_val = m.get("uom")
+            elif m.get("unit") is not None and str(m.get("unit")).strip() != "":
+                uom_val = m.get("unit")
+            else:
+                uom_val = ""
+
             # Exact JSON body schema required by Oracle Autonomous Database ORDS
             ords_payload = {
                 "timestamp": timestamp_val,
@@ -707,7 +721,8 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 "description": str(desc_val),
                 "value": str(scaled_val) if scaled_val is not None else "",
                 "limit": str(limit_val),
-                "results": str(results_val)
+                "results": str(results_val),
+                "uom": str(uom_val)
             }
 
             target_url = raw_target or None

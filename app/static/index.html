@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.0.5">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.2.1">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v1.0.0</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.1</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -23,6 +23,10 @@
         <button class="nav-tab active" data-tab="dashboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
           Dashboard
+        </button>
+        <button class="nav-tab" data-tab="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Historical Data
         </button>
         <button class="nav-tab" data-tab="mappings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3"></path><path d="m15 9 6-6"></path></svg>
@@ -444,7 +448,114 @@
 
 
     <!-- ========================================================
-         VIEW 2: ATTRIBUTE MAPPING
+         VIEW 2: HISTORICAL DATA & DELIVERIES
+         ======================================================== -->
+    <section id="view-history" class="page-view">
+      
+      <!-- Page Top Bar with Info Trigger -->
+      <div class="page-top-bar">
+        <div class="page-title-group">
+          <h1 class="page-heading">Historical Data Received &amp; Sent</h1>
+          <div class="page-subheading">Complete audit history of PI Notification deliveries received and dispatched to destination endpoints</div>
+        </div>
+        <button type="button" class="btn-info-trigger" data-target="history-info-card" title="Page Information">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Page Info</span>
+        </button>
+      </div>
+
+      <!-- Collapsible History Info Card (Hidden by default) -->
+      <div id="history-info-card" class="collapsible-info-card" style="display: none;">
+        <div class="info-card-header">
+          <div class="info-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Historical Delivery Logs &amp; Actions
+          </div>
+          <button type="button" class="info-card-close" data-close="history-info-card">✕</button>
+        </div>
+        <div class="info-card-body">
+          <p>This table displays all historical telemetry records received from AVEVA PI Notifications and their forwarding status to Oracle ORDS or Hexagon J5:</p>
+          <ul>
+            <li><strong>Pagination:</strong> Browse 10 deliveries per page with instant page switching and total record counts.</li>
+            <li><strong>Endpoint Response:</strong> Click <em>Endpoint Response</em> to inspect live echo and verification fields (including Tag, Description, Value, UOM, Limit, Results, and Timestamp).</li>
+            <li><strong>Raw JSON Inspection:</strong> Click <em>Inspect</em> to review the exact inbound PI Notification JSON payload.</li>
+            <li><strong>Dispatch / Re-send:</strong> Click <em>Send to Endpoint</em> to re-dispatch any pending or failed delivery to its mapped destination.</li>
+            <li><strong>Record Deletion &amp; Purge:</strong> Remove individual records or use <em>Purge Staged Data</em> to clear records in bulk.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- HISTORICAL DELIVERIES TABLE -->
+      <div id="section-history-deliveries" class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Historical PI Telemetry Deliveries
+            </div>
+            <div class="form-help">Audit log of all push deliveries received at /api/v1/delivery, paginated at 10 records per table</div>
+          </div>
+          <div class="btn-group" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <select id="history-filter-status" class="form-control" style="width: auto; height: 32px; font-size: 11px; padding: 2px 8px;">
+              <option value="ALL">All Statuses</option>
+              <option value="DISPATCHED">Dispatched Only</option>
+              <option value="PENDING_ORACLE">Staged in JSON Only</option>
+              <option value="PENDING_SETUP">Pending Setup Only</option>
+              <option value="FAILED">Failed Only</option>
+            </select>
+            <button id="btn-simulate-history" class="btn btn-primary btn-sm">+ Simulate Delivery</button>
+            <button id="btn-purge-history" class="btn btn-danger btn-sm" title="Purge accumulated deliveries from data/received_deliveries.json">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              Purge Staged Data
+            </button>
+            <button id="btn-refresh-history" class="btn btn-secondary btn-sm">Refresh Table</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="min-width: 150px;">Received At</th>
+                <th style="min-width: 180px;">Notification / Target</th>
+                <th>Attributes &amp; Values</th>
+                <th style="min-width: 140px;">Staging Status</th>
+                <th style="min-width: 170px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="history-deliveries-tbody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 32px;">
+                  Loading historical deliveries...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div id="history-pagination-bar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-surface); border-radius: 0 0 var(--radius) var(--radius); flex-wrap: wrap; gap: 8px;">
+          <div id="history-pagination-info" style="font-size: 12px; color: var(--ink-secondary);">
+            Showing <strong id="history-page-start">0</strong> to <strong id="history-page-end">0</strong> of <strong id="history-total-count">0</strong> deliveries
+          </div>
+          <div class="btn-group" id="history-pagination-controls" style="display: flex; gap: 4px; align-items: center;">
+            <button id="history-btn-prev" class="btn btn-secondary btn-sm" disabled style="padding: 4px 10px; font-size: 12px;">
+              &larr; Previous
+            </button>
+            <div id="history-page-numbers" style="display: flex; gap: 4px;"></div>
+            <button id="history-btn-next" class="btn btn-secondary btn-sm" disabled style="padding: 4px 10px; font-size: 12px;">
+              Next &rarr;
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ========================================================
+         VIEW 3: ATTRIBUTE MAPPING
          ======================================================== -->
     <section id="view-mappings" class="page-view">
       

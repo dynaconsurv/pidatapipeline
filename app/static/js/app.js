@@ -14,6 +14,7 @@ let currentAfPath = "\\";
 document.addEventListener("DOMContentLoaded", () => {
   initNavigation();
   initDashboard();
+  initHistory();
   initMappings();
   initSettings();
   initAFBrowser();
@@ -61,6 +62,8 @@ function switchTab(tabName) {
     loadSettingsIntoForm();
   } else if (tabName === "dashboard") {
     loadDashboardData();
+  } else if (tabName === "history") {
+    loadHistoryDeliveries();
   }
 }
 
@@ -151,12 +154,32 @@ function initDashboard() {
   });
 }
 
+function initHistory() {
+  document.getElementById("btn-simulate-history")?.addEventListener("click", async () => {
+    await triggerSimulateDelivery();
+    if (document.getElementById("view-history")?.classList.contains("active")) {
+      await loadHistoryDeliveries(true);
+    }
+  });
+  document.getElementById("btn-purge-history")?.addEventListener("click", openPurgeDeliveriesModal);
+  document.getElementById("btn-refresh-history")?.addEventListener("click", () => loadHistoryDeliveries(false));
+  document.getElementById("history-filter-status")?.addEventListener("change", () => {
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+  });
+  document.getElementById("history-btn-prev")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage - 1));
+  document.getElementById("history-btn-next")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage + 1));
+}
+
 async function loadDashboardData() {
   try {
     const res = await fetch("/api/dashboard");
     if (!res.ok) return;
     const data = await res.json();
     renderDashboard(data);
+    if (document.getElementById("view-history")?.classList.contains("active")) {
+      loadHistoryDeliveries(false);
+    }
   } catch (err) {
     console.error("Error loading dashboard data:", err);
   }
@@ -519,6 +542,160 @@ function renderLastPullsTable(triggers) {
 // ============================================================
 let currentInspectedDelivery = null;
 
+function renderDeliveryRowHtml(deliv) {
+  // 1. Received At
+  const timeFormatted = formatTimestamp(deliv.received_at);
+  const clientIp = deliv.client_ip || "Unknown";
+  const shortId = deliv.delivery_id || "";
+
+  // 2. Notification / Target
+  const notifName = escapeHtml(deliv.notification_name || "PI Notification");
+  const eventType = escapeHtml(deliv.event_type || "Update");
+  const targetPath = escapeHtml(deliv.target_path || "--");
+
+  // 3. Attributes & Values
+  const attrs = deliv.attributes_summary || [];
+  let attrsHtml = "";
+  if (attrs.length === 0) {
+    if (deliv.event_type === "Test Ping" || (!deliv.raw_payload || Object.keys(deliv.raw_payload).length === 0)) {
+      attrsHtml = `<span class="badge badge-info" style="font-size: 11px; padding: 2px 7px;"><span class="badge-dot"></span> Test Notification Ping (Empty Payload)</span>`;
+    } else {
+      attrsHtml = `<span style="color: var(--ink-tertiary); font-size: 11px;">No attributes parsed</span>`;
+    }
+  } else {
+    const displayAttrs = attrs.slice(0, 3);
+    const remaining = attrs.length - displayAttrs.length;
+    attrsHtml = displayAttrs.map(a => {
+      // Defensive unwrap: if an old record has an array of Items, unroll them cleanly
+      if (Array.isArray(a.value)) {
+        return a.value.map(it => {
+          const subName = it.Name || it.name || it.Attribute || it.attribute || "Item";
+          const subVal = it.Value !== undefined ? it.Value : (it.value !== undefined ? it.value : JSON.stringify(it));
+          const subUom = it.UOM || it.uom ? ` ${escapeHtml(it.UOM || it.uom)}` : "";
+          return `
+            <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
+              <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(subName)}:</span>
+              <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(String(subVal))}</strong>
+              <span style="font-size: 11px; color: var(--ink-tertiary);">${subUom}</span>
+            </div>
+          `;
+        }).join("");
+      }
+
+      let valStr = "N/A";
+      if (a.value !== null && a.value !== undefined) {
+        if (typeof a.value === "object") {
+          try {
+            valStr = JSON.stringify(a.value);
+          } catch (e) {
+            valStr = String(a.value);
+          }
+        } else {
+          valStr = String(a.value);
+        }
+      }
+      const uom = a.uom ? ` ${escapeHtml(a.uom)}` : "";
+      return `
+        <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
+          <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(a.name)}:</span>
+          <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(valStr)}</strong>
+          <span style="font-size: 11px; color: var(--ink-tertiary);">${uom}</span>
+        </div>
+      `;
+    }).join("");
+
+    if (remaining > 0) {
+      attrsHtml += `
+        <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
+          +${remaining} more attribute(s)...
+        </div>
+      `;
+    }
+  }
+
+  // 4. Staging Status badge
+  let statusBadge = "";
+  if (deliv.oracle_status === "DISPATCHED") {
+    const targets = deliv.oracle_dispatch?.target_types || [];
+    const targetLabel = targets.length > 0 ? targets.join(" & ") : "Endpoint";
+    statusBadge = `<span class="badge badge-success" title="Successfully dispatched to ${escapeHtml(targetLabel)}"><span class="badge-dot"></span> Dispatched (${escapeHtml(targetLabel)})</span>`;
+  } else if (deliv.oracle_status === "FAILED") {
+    const retryCount = deliv.retry_count || 0;
+    const retryLabel = retryCount > 0 ? `Failed (Retry #${retryCount})` : `Failed (Retry Queued)`;
+    const errMsg = escapeHtml(deliv.oracle_dispatch?.message || deliv.oracle_dispatch?.error || "Dispatch failed. Will retry on next scheduled interval.");
+    statusBadge = `<span class="badge badge-danger" title="${errMsg}"><span class="badge-dot"></span> ${retryLabel}</span>`;
+  } else if (deliv.oracle_status === "PENDING_SETUP") {
+    statusBadge = `<span class="badge badge-pending" title="Endpoint credentials pending setup in Settings"><span class="badge-dot"></span> Pending Setup</span>`;
+  } else {
+    statusBadge = `<span class="badge badge-pending" title="Held in JSON staging"><span class="badge-dot"></span> Staged in JSON</span>`;
+  }
+
+  // 5. Actions
+  return `
+    <tr>
+      <td style="vertical-align: top; padding-top: 12px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--ink-primary); white-space: nowrap;">
+          ${timeFormatted}
+        </div>
+        <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px; font-family: var(--font-mono);">
+          ${escapeHtml(clientIp)}
+        </div>
+        <div style="font-size: 10px; color: var(--ink-tertiary); font-family: var(--font-mono); margin-top: 2px;">
+          #${escapeHtml(shortId.slice(-10))}
+        </div>
+      </td>
+      <td style="vertical-align: top; padding-top: 12px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <strong style="font-size: 12px; color: var(--ink-primary);">${notifName}</strong>
+          <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${eventType}</span>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-top: 4px; word-break: break-all;">
+          ${targetPath}
+        </div>
+        <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
+          ${deliv.attribute_count || attrs.length} attribute(s)
+        </div>
+      </td>
+      <td style="vertical-align: top; padding-top: 10px;">
+        ${attrsHtml}
+      </td>
+      <td style="vertical-align: top; padding-top: 12px; white-space: nowrap;">
+        ${statusBadge}
+        <div style="font-size: 10px; color: var(--ink-tertiary); margin-top: 4px; font-family: var(--font-mono);">
+          received_deliveries.json
+        </div>
+      </td>
+      <td style="vertical-align: top; padding-top: 10px; text-align: right; white-space: nowrap;">
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+          <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
+            ${deliv.oracle_dispatch ? `
+              <button type="button" class="btn btn-primary btn-sm" onclick="showOracleResponseModal('${escapeHtml(deliv.delivery_id)}')" title="View exact response returned from destination endpoint (Oracle / J5)" style="font-size: 11px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                Endpoint Response
+              </button>
+            ` : ''}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="inspectDelivery('${escapeHtml(deliv.delivery_id)}')">
+              Inspect
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="deleteDeliveryRecord('${escapeHtml(deliv.delivery_id)}')" title="Delete this delivery from data/received_deliveries.json">
+              Delete
+            </button>
+          </div>
+          ${deliv.oracle_status !== "DISPATCHED" ? `
+            <button type="button" class="btn btn-outline btn-sm" onclick="dispatchSingleDelivery('${escapeHtml(deliv.delivery_id)}')">
+              Send to Endpoint
+            </button>
+          ` : `
+            <span style="font-size: 11px; color: var(--status-good); display: inline-flex; align-items: center; gap: 3px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg> Dispatched
+            </span>
+          `}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderRecentDeliveriesTable(deliveries) {
   const tbody = document.getElementById("recent-deliveries-tbody");
   if (!tbody) return;
@@ -547,159 +724,153 @@ function renderRecentDeliveriesTable(deliveries) {
     return;
   }
 
-  tbody.innerHTML = deliveries.map(deliv => {
-    // 1. Received At
-    const timeFormatted = formatTimestamp(deliv.received_at);
-    const clientIp = deliv.client_ip || "Unknown";
-    const shortId = deliv.delivery_id || "";
+  tbody.innerHTML = deliveries.map(deliv => renderDeliveryRowHtml(deliv)).join("");
+}
 
-    // 2. Notification / Target
-    const notifName = escapeHtml(deliv.notification_name || "PI Notification");
-    const eventType = escapeHtml(deliv.event_type || "Update");
-    const targetPath = escapeHtml(deliv.target_path || "--");
+// ============================================================
+// HISTORICAL DATA TABLE WITH PAGINATION (10 rows per page)
+// ============================================================
+let historyAllDeliveries = [];
+let historyFilteredDeliveries = [];
+let historyCurrentPage = 1;
+const HISTORY_PAGE_SIZE = 10;
+let historyStatusFilter = "ALL";
 
-    // 3. Attributes & Values
-    const attrs = deliv.attributes_summary || [];
-    let attrsHtml = "";
-    if (attrs.length === 0) {
-      if (deliv.event_type === "Test Ping" || (!deliv.raw_payload || Object.keys(deliv.raw_payload).length === 0)) {
-        attrsHtml = `<span class="badge badge-info" style="font-size: 11px; padding: 2px 7px;"><span class="badge-dot"></span> Test Notification Ping (Empty Payload)</span>`;
-      } else {
-        attrsHtml = `<span style="color: var(--ink-tertiary); font-size: 11px;">No attributes parsed</span>`;
-      }
-    } else {
-      const displayAttrs = attrs.slice(0, 3);
-      const remaining = attrs.length - displayAttrs.length;
-      attrsHtml = displayAttrs.map(a => {
-        // Defensive unwrap: if an old record has an array of Items, unroll them cleanly
-        if (Array.isArray(a.value)) {
-          return a.value.map(it => {
-            const subName = it.Name || it.name || it.Attribute || it.attribute || "Item";
-            const subVal = it.Value !== undefined ? it.Value : (it.value !== undefined ? it.value : JSON.stringify(it));
-            const subUom = it.UOM || it.uom ? ` ${escapeHtml(it.UOM || it.uom)}` : "";
-            return `
-              <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
-                <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(subName)}:</span>
-                <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(String(subVal))}</strong>
-                <span style="font-size: 11px; color: var(--ink-tertiary);">${subUom}</span>
-              </div>
-            `;
-          }).join("");
-        }
+async function loadHistoryDeliveries(resetPage = false) {
+  const tbody = document.getElementById("history-deliveries-tbody");
+  if (!tbody) return;
 
-        let valStr = "N/A";
-        if (a.value !== null && a.value !== undefined) {
-          if (typeof a.value === "object") {
-            try {
-              valStr = JSON.stringify(a.value);
-            } catch (e) {
-              valStr = String(a.value);
-            }
-          } else {
-            valStr = String(a.value);
-          }
-        }
-        const uom = a.uom ? ` ${escapeHtml(a.uom)}` : "";
-        return `
-          <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
-            <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(a.name)}:</span>
-            <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(valStr)}</strong>
-            <span style="font-size: 11px; color: var(--ink-tertiary);">${uom}</span>
-          </div>
-        `;
-      }).join("");
+  if (resetPage) {
+    historyCurrentPage = 1;
+  }
 
-      if (remaining > 0) {
-        attrsHtml += `
-          <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
-            +${remaining} more attribute(s)...
-          </div>
-        `;
-      }
-    }
-
-    // 4. Staging Status badge
-    let statusBadge = "";
-    if (deliv.oracle_status === "DISPATCHED") {
-      const targets = deliv.oracle_dispatch?.target_types || [];
-      const targetLabel = targets.length > 0 ? targets.join(" & ") : "Endpoint";
-      statusBadge = `<span class="badge badge-success" title="Successfully dispatched to ${escapeHtml(targetLabel)}"><span class="badge-dot"></span> Dispatched (${escapeHtml(targetLabel)})</span>`;
-    } else if (deliv.oracle_status === "FAILED") {
-      const retryCount = deliv.retry_count || 0;
-      const retryLabel = retryCount > 0 ? `Failed (Retry #${retryCount})` : `Failed (Retry Queued)`;
-      const errMsg = escapeHtml(deliv.oracle_dispatch?.message || deliv.oracle_dispatch?.error || "Dispatch failed. Will retry on next scheduled interval.");
-      statusBadge = `<span class="badge badge-danger" title="${errMsg}"><span class="badge-dot"></span> ${retryLabel}</span>`;
-    } else if (deliv.oracle_status === "PENDING_SETUP") {
-      statusBadge = `<span class="badge badge-pending" title="Endpoint credentials pending setup in Settings"><span class="badge-dot"></span> Pending Setup</span>`;
-    } else {
-      statusBadge = `<span class="badge badge-pending" title="Held in JSON staging"><span class="badge-dot"></span> Staged in JSON</span>`;
-    }
-
-    // 5. Actions
-    return `
+  try {
+    const res = await fetch("/api/deliveries?limit=0");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    historyAllDeliveries = Array.isArray(data) ? data : [];
+    applyHistoryFilterAndRender();
+  } catch (err) {
+    tbody.innerHTML = `
       <tr>
-        <td style="vertical-align: top; padding-top: 12px;">
-          <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--ink-primary); white-space: nowrap;">
-            ${timeFormatted}
-          </div>
-          <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 2px; font-family: var(--font-mono);">
-            ${escapeHtml(clientIp)}
-          </div>
-          <div style="font-size: 10px; color: var(--ink-tertiary); font-family: var(--font-mono); margin-top: 2px;">
-            #${escapeHtml(shortId.slice(-10))}
-          </div>
-        </td>
-        <td style="vertical-align: top; padding-top: 12px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <strong style="font-size: 12px; color: var(--ink-primary);">${notifName}</strong>
-            <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${eventType}</span>
-          </div>
-          <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-top: 4px; word-break: break-all;">
-            ${targetPath}
-          </div>
-          <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">
-            ${deliv.attribute_count || attrs.length} attribute(s)
-          </div>
-        </td>
-        <td style="vertical-align: top; padding-top: 10px;">
-          ${attrsHtml}
-        </td>
-        <td style="vertical-align: top; padding-top: 12px; white-space: nowrap;">
-          ${statusBadge}
-          <div style="font-size: 10px; color: var(--ink-tertiary); margin-top: 4px; font-family: var(--font-mono);">
-            received_deliveries.json
-          </div>
-        </td>
-        <td style="vertical-align: top; padding-top: 10px; text-align: right; white-space: nowrap;">
-          <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
-            <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
-              ${deliv.oracle_dispatch ? `
-                <button type="button" class="btn btn-primary btn-sm" onclick="showOracleResponseModal('${escapeHtml(deliv.delivery_id)}')" title="View exact response returned from destination endpoint (Oracle / J5)" style="font-size: 11px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                  Endpoint Response
-                </button>
-              ` : ''}
-              <button type="button" class="btn btn-secondary btn-sm" onclick="inspectDelivery('${escapeHtml(deliv.delivery_id)}')">
-                Inspect
-              </button>
-              <button type="button" class="btn btn-danger btn-sm" onclick="deleteDeliveryRecord('${escapeHtml(deliv.delivery_id)}')" title="Delete this delivery from data/received_deliveries.json">
-                Delete
-              </button>
-            </div>
-            ${deliv.oracle_status !== "DISPATCHED" ? `
-              <button type="button" class="btn btn-outline btn-sm" onclick="dispatchSingleDelivery('${escapeHtml(deliv.delivery_id)}')">
-                Send to Endpoint
-              </button>
-            ` : `
-              <span style="font-size: 11px; color: var(--status-good); display: inline-flex; align-items: center; gap: 3px;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg> Dispatched
-              </span>
-            `}
-          </div>
+        <td colspan="5" style="text-align: center; color: var(--danger); padding: 24px;">
+          Failed to load historical deliveries: ${escapeHtml(err.message)}
         </td>
       </tr>
     `;
-  }).join("");
+  }
+}
+
+function applyHistoryFilterAndRender() {
+  const filterSelect = document.getElementById("history-filter-status");
+  historyStatusFilter = filterSelect ? filterSelect.value : "ALL";
+
+  if (historyStatusFilter === "ALL") {
+    historyFilteredDeliveries = [...historyAllDeliveries];
+  } else {
+    historyFilteredDeliveries = historyAllDeliveries.filter(d => (d.oracle_status || "").toUpperCase() === historyStatusFilter.toUpperCase());
+  }
+
+  const totalPages = Math.ceil(historyFilteredDeliveries.length / HISTORY_PAGE_SIZE) || 1;
+  if (historyCurrentPage > totalPages) {
+    historyCurrentPage = totalPages;
+  }
+  if (historyCurrentPage < 1) {
+    historyCurrentPage = 1;
+  }
+
+  renderHistoryTable();
+  renderHistoryPagination();
+}
+
+function renderHistoryTable() {
+  const tbody = document.getElementById("history-deliveries-tbody");
+  if (!tbody) return;
+
+  if (historyFilteredDeliveries.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 2.5rem 1rem;">
+          <div style="font-weight: 500; font-size: 13px; color: var(--ink-primary); margin-bottom: 6px;">
+            No historical delivery records found
+          </div>
+          <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 12px;">
+            ${historyStatusFilter !== "ALL" ? `No records found with status <strong>${escapeHtml(historyStatusFilter)}</strong>.` : "No deliveries have been received at <code>/api/v1/delivery</code> yet."}
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="triggerSimulateDelivery()">
+            + Simulate Sample Push
+          </button>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const startIndex = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE;
+  const endIndex = Math.min(startIndex + HISTORY_PAGE_SIZE, historyFilteredDeliveries.length);
+  const pageSlice = historyFilteredDeliveries.slice(startIndex, endIndex);
+
+  tbody.innerHTML = pageSlice.map(deliv => renderDeliveryRowHtml(deliv)).join("");
+}
+
+function renderHistoryPagination() {
+  const infoEl = document.getElementById("history-pagination-info");
+  const prevBtn = document.getElementById("history-btn-prev");
+  const nextBtn = document.getElementById("history-btn-next");
+  const pageNumsEl = document.getElementById("history-page-numbers");
+
+  const totalRecords = historyFilteredDeliveries.length;
+  const totalPages = Math.ceil(totalRecords / HISTORY_PAGE_SIZE) || 1;
+
+  if (infoEl) {
+    if (totalRecords === 0) {
+      infoEl.innerHTML = "No deliveries found";
+    } else {
+      const start = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE + 1;
+      const end = Math.min(historyCurrentPage * HISTORY_PAGE_SIZE, totalRecords);
+      infoEl.innerHTML = `Showing <strong>${start}</strong> to <strong>${end}</strong> of <strong>${totalRecords}</strong> deliveries (Page ${historyCurrentPage} of ${totalPages})`;
+    }
+  }
+
+  if (prevBtn) {
+    prevBtn.disabled = (historyCurrentPage <= 1);
+  }
+  if (nextBtn) {
+    nextBtn.disabled = (historyCurrentPage >= totalPages);
+  }
+
+  if (pageNumsEl) {
+    let pagesToDisplay = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pagesToDisplay.push(i);
+    } else {
+      pagesToDisplay.push(1);
+      let left = Math.max(2, historyCurrentPage - 1);
+      let right = Math.min(totalPages - 1, historyCurrentPage + 1);
+      if (left > 2) pagesToDisplay.push("...");
+      for (let i = left; i <= right; i++) pagesToDisplay.push(i);
+      if (right < totalPages - 1) pagesToDisplay.push("...");
+      pagesToDisplay.push(totalPages);
+    }
+
+    pageNumsEl.innerHTML = pagesToDisplay.map(p => {
+      if (p === "...") {
+        return `<span style="padding: 4px 6px; color: var(--ink-tertiary); font-size: 12px;">...</span>`;
+      }
+      const isActive = (p === historyCurrentPage);
+      const btnClass = isActive ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+      return `<button type="button" class="${btnClass}" onclick="changeHistoryPage(${p})" style="min-width: 30px; padding: 4px 8px; font-size: 12px; font-weight: ${isActive ? '600' : '400'};">${p}</button>`;
+    }).join("");
+  }
+}
+
+function changeHistoryPage(newPage) {
+  const totalPages = Math.ceil(historyFilteredDeliveries.length / HISTORY_PAGE_SIZE) || 1;
+  if (newPage < 1) newPage = 1;
+  if (newPage > totalPages) newPage = totalPages;
+  historyCurrentPage = newPage;
+  renderHistoryTable();
+  renderHistoryPagination();
 }
 
 async function copyDeliveryEndpointUrl() {
@@ -944,6 +1115,7 @@ async function showOracleResponseModal(deliveryId) {
           value: data.attributes_summary[0].value,
           limit: data.attributes_summary[0].limit,
           results: data.attributes_summary[0].results,
+          uom: data.attributes_summary[0].uom,
           timestamp: data.attributes_summary[0].timestamp
         } : {}),
         response: disp.erp_response
@@ -1038,6 +1210,7 @@ async function showOracleResponseModal(deliveryId) {
             { key: "tag", label: "Tag / Meter ID" },
             { key: "description", label: "Description" },
             { key: "value", label: "Reading Value" },
+            { key: "uom", label: "Unit of Measure (UOM)" },
             { key: "limit", label: "Operating Limit" },
             { key: "results", label: "Analysis Results" },
             { key: "timestamp", label: "Timestamp (UTC Zulu)" }
