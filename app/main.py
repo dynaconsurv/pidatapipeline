@@ -291,43 +291,27 @@ def clear_storage_data_endpoint(request: Dict[str, Any]):
 def simulate_pi_delivery():
     """
     Generate and ingest a realistic sample PI AF Notification delivery
-    matching the 'Process Engineering_XZV' template from PI System Explorer.
+    with direct attributes (Tagname, Description, Value, Limit, Result, Timestamp)
+    matching the PI Notification WebService setup without requiring manual attribute mapping.
     """
     import random
-    import time
     now_iso = datetime.now(timezone.utc).isoformat()
+    val = round(random.uniform(0.18, 0.42), 2)
+    sample_tags = [
+        {"tag": "TAG2", "desc": "Final Discharge Effluent Line", "limit": "LIMIT2", "result": "RESULTS2"},
+        {"tag": "U320.CO", "desc": "CO Concentration Current Value", "limit": "1.00", "result": "Normal"},
+        {"tag": "EFFLUENT_PH", "desc": "Effluent Basin pH Monitor", "limit": "6.0-9.0", "result": "Normal"}
+    ]
+    chosen = random.choice(sample_tags)
+
     mock_payload = {
-        "Notification": "Process Engineering_XZV",
-        "Target": r"\\MYTLAVMPIMSAPP1\Plant_Operations\Process_Unit_1\Reactor_XZV",
-        "Event": "Trigger",
-        "StartTime": now_iso,
-        "EndTime": now_iso,
-        "Attributes": {
-            "Level_Sensor": {
-                "Value": round(75.0 + random.uniform(-10.0, 15.0), 2),
-                "UOM": "%",
-                "Timestamp": now_iso,
-                "Quality": "Good"
-            },
-            "Flow_Rate": {
-                "Value": round(120.0 + random.uniform(-15.0, 25.0), 2),
-                "UOM": "m3/h",
-                "Timestamp": now_iso,
-                "Quality": "Good"
-            },
-            "Temperature_Reactor": {
-                "Value": round(145.0 + random.uniform(-8.0, 12.0), 2),
-                "UOM": "degC",
-                "Timestamp": now_iso,
-                "Quality": "Good"
-            },
-            "Pressure_Inlet": {
-                "Value": round(4.2 + random.uniform(-0.4, 0.6), 2),
-                "UOM": "bar",
-                "Timestamp": now_iso,
-                "Quality": "Good"
-            }
-        }
+        "NotificationRule": "Process_Engineering_XZV",
+        "Tagname": chosen["tag"],
+        "Description": chosen["desc"],
+        "Value": str(val),
+        "Limit": chosen["limit"],
+        "Result": chosen["result"],
+        "Timestamp": now_iso
     }
     result = process_incoming_delivery(mock_payload, client_ip="127.0.0.1 (Simulator)")
     return {"success": True, "delivery": result}

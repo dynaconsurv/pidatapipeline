@@ -670,7 +670,13 @@ function renderRecentDeliveriesTable(deliveries) {
         </td>
         <td style="vertical-align: top; padding-top: 10px; text-align: right; white-space: nowrap;">
           <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
-            <div style="display: flex; gap: 4px;">
+            <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
+              ${deliv.oracle_dispatch ? `
+                <button type="button" class="btn btn-primary btn-sm" onclick="showOracleResponseModal('${escapeHtml(deliv.delivery_id)}')" title="View exact response returned from Oracle ORDS" style="font-size: 11px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                  Oracle Response
+                </button>
+              ` : ''}
               <button type="button" class="btn btn-secondary btn-sm" onclick="inspectDelivery('${escapeHtml(deliv.delivery_id)}')">
                 Inspect
               </button>
@@ -766,6 +772,7 @@ async function inspectDelivery(deliveryId) {
     const jsonEl = document.getElementById("modal-delivery-json-content");
     const metaEl = document.getElementById("modal-delivery-meta");
     const dispatchBtn = document.getElementById("btn-modal-dispatch-oracle");
+    const oracleBtn = document.getElementById("btn-modal-view-oracle");
 
     if (titleEl) titleEl.textContent = `PI Delivery: ${data.notification_name || "Notification"}`;
     if (subEl) subEl.textContent = `ID: ${data.delivery_id} · Received: ${formatTimestamp(data.received_at)} from ${data.client_ip || "Unknown"}`;
@@ -775,6 +782,17 @@ async function inspectDelivery(deliveryId) {
     }
     if (dispatchBtn) {
       dispatchBtn.style.display = data.oracle_status === "DISPATCHED" ? "none" : "inline-block";
+    }
+    if (oracleBtn) {
+      if (data.oracle_dispatch) {
+        oracleBtn.style.display = "inline-block";
+        oracleBtn.onclick = () => {
+          closeDeliveryModal();
+          showOracleResponseModal(data.delivery_id);
+        };
+      } else {
+        oracleBtn.style.display = "none";
+      }
     }
 
     if (modal) modal.classList.add("active");
@@ -835,6 +853,290 @@ async function dispatchSingleDelivery(deliveryId) {
     }
   } catch (err) {
     showToast("Error dispatching delivery: " + err.message, "danger");
+  }
+}
+
+// ------------------------------------------------------------
+// Oracle ORDS Response Inspection Modal
+// ------------------------------------------------------------
+let currentOracleModalDelivery = null;
+
+async function showOracleResponseModal(deliveryId) {
+  try {
+    const res = await fetch(`/api/deliveries/${deliveryId}`);
+    if (!res.ok) {
+      showToast("Failed to load delivery record", "danger");
+      return;
+    }
+    const data = await res.json();
+    currentOracleModalDelivery = data;
+
+    const modal = document.getElementById("modal-oracle-response");
+    const titleEl = document.getElementById("modal-oracle-title");
+    const subEl = document.getElementById("modal-oracle-subtitle");
+    const bannerEl = document.getElementById("modal-oracle-status-banner");
+    const containerEl = document.getElementById("modal-oracle-tables-container");
+    const rawJsonEl = document.getElementById("modal-oracle-raw-json");
+    const metaEl = document.getElementById("modal-oracle-meta");
+    const sendAgainBtn = document.getElementById("btn-oracle-modal-send-again");
+
+    if (titleEl) {
+      titleEl.textContent = `Oracle Response: ${data.notification_name || "PI Delivery"}`;
+    }
+    if (subEl) {
+      subEl.textContent = `Delivery ID: #${(data.delivery_id || "").slice(-10)} · Received: ${formatTimestamp(data.received_at)} · Client: ${data.client_ip || "Unknown"}`;
+    }
+
+    const disp = data.oracle_dispatch || {};
+    const dispatches = disp.dispatches || [];
+    const isSuccess = (data.oracle_status === "DISPATCHED" || disp.status === "DISPATCHED" || disp.status === "SUCCESS");
+    const httpCode = disp.http_code || (dispatches[0]?.http_code) || "--";
+    const targetEndpoint = disp.target_endpoint || dispatches[0]?.target_endpoint || "--";
+
+    // 1. Status Banner
+    if (bannerEl) {
+      const bannerBg = isSuccess ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)";
+      const bannerBorder = isSuccess ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)";
+      const badgeClass = isSuccess ? "badge-success" : (disp.status === "PENDING_SETUP" ? "badge-pending" : "badge-danger");
+      const badgeText = isSuccess ? `HTTP ${httpCode} Dispatched` : (disp.status === "PENDING_SETUP" ? "Pending Setup" : `HTTP ${httpCode} Failed`);
+
+      bannerEl.style.background = bannerBg;
+      bannerEl.style.borderColor = bannerBorder;
+      bannerEl.style.borderRadius = "var(--radius)";
+      bannerEl.style.padding = "10px 14px";
+      bannerEl.style.border = "1px solid " + bannerBorder;
+      bannerEl.style.display = "flex";
+      bannerEl.style.justifyContent = "space-between";
+      bannerEl.style.alignItems = "center";
+      bannerEl.style.flexWrap = "wrap";
+      bannerEl.style.gap = "8px";
+
+      bannerEl.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="badge ${badgeClass}" style="font-size: 11px; padding: 3px 8px;">
+            <span class="badge-dot"></span> ${badgeText}
+          </span>
+          <span style="font-size: 12px; color: var(--ink-primary); font-weight: 500;">
+            ${escapeHtml(disp.message || "No dispatch message")}
+          </span>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono);">
+          Dispatched: ${disp.dispatched_at ? formatTimestamp(disp.dispatched_at) : "--"}
+        </div>
+      `;
+    }
+
+    // 2. Comparison Table(s)
+    if (containerEl) {
+      let itemsToRender = [];
+      if (dispatches.length > 0) {
+        itemsToRender = dispatches;
+      } else if (disp.erp_response) {
+        itemsToRender = [{
+          attribute_name: data.attributes_summary?.[0]?.name || data.notification_name || "Attribute",
+          target_endpoint: targetEndpoint,
+          status: isSuccess ? "SUCCESS" : "FAILED",
+          http_code: httpCode,
+          payload: disp.payload || (data.attributes_summary?.[0] ? {
+            tag: data.attributes_summary[0].tag || data.attributes_summary[0].name,
+            description: data.attributes_summary[0].description,
+            value: data.attributes_summary[0].value,
+            limit: data.attributes_summary[0].limit,
+            results: data.attributes_summary[0].results,
+            timestamp: data.attributes_summary[0].timestamp
+          } : {}),
+          response: disp.erp_response
+        }];
+      }
+
+      if (itemsToRender.length === 0) {
+        containerEl.innerHTML = `
+          <div style="text-align: center; padding: 24px; color: var(--ink-secondary); font-size: 12px;">
+            No Oracle ORDS response has been recorded yet for this delivery.
+            ${data.oracle_status !== "DISPATCHED" ? '<div style="margin-top: 8px;"><button class="btn btn-primary btn-sm" onclick="dispatchCurrentOracleModalDelivery()">Send to Oracle Now</button></div>' : ''}
+          </div>
+        `;
+      } else {
+        containerEl.innerHTML = itemsToRender.map((it, idx) => {
+          const payload = it.payload || {};
+          const response = it.response || {};
+          const links = response.links || [];
+
+          const fields = [
+            { key: "tag", label: "Tag / Meter ID" },
+            { key: "description", label: "Description" },
+            { key: "value", label: "Reading Value" },
+            { key: "limit", label: "Operating Limit" },
+            { key: "results", label: "Analysis Results" },
+            { key: "timestamp", label: "Timestamp (UTC Zulu)" }
+          ];
+
+          const rowsHtml = fields.map(f => {
+            const pVal = payload[f.key] !== undefined && payload[f.key] !== null ? String(payload[f.key]) : "";
+            const rVal = response[f.key] !== undefined ? response[f.key] : null;
+            const rValStr = rVal !== null && rVal !== undefined ? String(rVal) : null;
+
+            let statusBadge = "";
+            let rValDisplay = "";
+
+            if (rValStr !== null) {
+              rValDisplay = `<code style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(rValStr)}</code>`;
+              if (pVal !== "" && pVal === rValStr) {
+                statusBadge = `<span class="badge badge-success" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Saved &amp; Verified</span>`;
+              } else {
+                statusBadge = `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Recorded</span>`;
+              }
+            } else {
+              rValDisplay = `<span style="color: #dc2626; font-style: italic; font-weight: 500; font-family: var(--font-mono);">null</span>`;
+              if (pVal !== "") {
+                statusBadge = `<span class="badge badge-warning" style="font-size: 10px; padding: 1px 6px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a;"><span class="badge-dot" style="background:#f59e0b;"></span> Returned NULL</span>`;
+              } else {
+                statusBadge = `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;">Empty</span>`;
+              }
+            }
+
+            const pValDisplay = pVal !== "" ? `<code style="font-family: var(--font-mono); font-size: 11px; color: var(--ink-primary);">${escapeHtml(pVal)}</code>` : `<span style="color: var(--ink-tertiary); font-style: italic;">(None)</span>`;
+
+            return `
+              <tr>
+                <td style="font-weight: 500; color: var(--ink-secondary); font-size: 12px; white-space: nowrap;">
+                  ${escapeHtml(f.label)}
+                </td>
+                <td style="font-size: 12px;">
+                  ${pValDisplay}
+                </td>
+                <td style="font-size: 12px;">
+                  ${rValDisplay}
+                </td>
+                <td style="text-align: right; white-space: nowrap;">
+                  ${statusBadge}
+                </td>
+              </tr>
+            `;
+          }).join("");
+
+          let linksHtml = "";
+          if (Array.isArray(links) && links.length > 0) {
+            linksHtml = `
+              <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 11px;">
+                <div style="font-weight: 600; color: var(--ink-secondary); margin-bottom: 4px;">Oracle Resource Links:</div>
+                <div style="display: flex; flex-direction: column; gap: 3px;">
+                  ${links.map(l => `
+                    <div style="display: flex; gap: 6px; align-items: baseline;">
+                      <span class="badge badge-secondary" style="font-size: 9px; padding: 1px 5px; font-family: var(--font-mono); text-transform: uppercase;">${escapeHtml(l.rel || "link")}</span>
+                      <a href="${escapeHtml(l.href)}" target="_blank" rel="noopener noreferrer" style="color: var(--brand); text-decoration: none; word-break: break-all; font-family: var(--font-mono); font-size: 11px;">
+                        ${escapeHtml(l.href)}
+                      </a>
+                    </div>
+                  `).join("")}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                <div style="font-weight: 600; font-size: 12px; color: var(--ink-primary);">
+                  ${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono);">
+                  Endpoint: <span style="color: var(--ink-primary);">${escapeHtml(it.target_endpoint || targetEndpoint)}</span>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" style="font-size: 11px; margin: 0;">
+                  <thead>
+                    <tr>
+                      <th style="width: 140px;">Property</th>
+                      <th>Sent Payload (PI &rarr; Pipeline)</th>
+                      <th>Echoed by Oracle ORDS</th>
+                      <th style="width: 130px; text-align: right;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rowsHtml}
+                  </tbody>
+                </table>
+              </div>
+              ${linksHtml}
+            </div>
+          `;
+        }).join("");
+      }
+    }
+
+    // 3. Raw Oracle JSON
+    if (rawJsonEl) {
+      const rawData = disp.erp_response || disp;
+      rawJsonEl.textContent = JSON.stringify(rawData, null, 2);
+    }
+
+    // 4. Meta & Buttons
+    if (metaEl) {
+      metaEl.innerHTML = `Dispatched via <strong>Oracle ORDS REST API</strong> · HTTP Code: <strong>${httpCode}</strong>`;
+    }
+    if (sendAgainBtn) {
+      sendAgainBtn.style.display = "inline-block";
+    }
+
+    if (modal) modal.classList.add("active");
+  } catch (err) {
+    showToast("Error inspecting Oracle response: " + err.message, "danger");
+  }
+}
+
+function closeOracleResponseModal() {
+  const modal = document.getElementById("modal-oracle-response");
+  if (modal) modal.classList.remove("active");
+}
+
+function copyOracleResponseJson(event) {
+  if (event) event.stopPropagation();
+  const rawJsonEl = document.getElementById("modal-oracle-raw-json");
+  if (!rawJsonEl) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(rawJsonEl.textContent);
+    } else {
+      const tmp = document.createElement("textarea");
+      tmp.value = rawJsonEl.textContent;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand("copy");
+      document.body.removeChild(tmp);
+    }
+    showToast("Oracle response JSON copied to clipboard!", "success");
+  } catch (err) {
+    showToast("Failed to copy JSON: " + err.message, "danger");
+  }
+}
+
+async function dispatchCurrentOracleModalDelivery() {
+  if (!currentOracleModalDelivery) return;
+  const id = currentOracleModalDelivery.delivery_id;
+  await dispatchSingleDelivery(id);
+  // Reload and refresh modal
+  await showOracleResponseModal(id);
+}
+
+function copyPiTemplateBody() {
+  const codeEl = document.getElementById("pi-notification-template-code");
+  if (!codeEl) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(codeEl.textContent);
+    } else {
+      const tmp = document.createElement("textarea");
+      tmp.value = codeEl.textContent;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand("copy");
+      document.body.removeChild(tmp);
+    }
+    showToast("PI Notification JSON template copied to clipboard!", "success");
+  } catch (err) {
+    showToast("Failed to copy template", "danger");
   }
 }
 

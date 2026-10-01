@@ -88,6 +88,131 @@ def validate_delivery_security(
     return True, 200, "Authorized"
 
 
+def extract_direct_telemetry_record(
+    item_dict: Dict[str, Any],
+    default_timestamp: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Checks if a dictionary represents a direct PI Notification telemetry record containing
+    fields like Tagname, Description, Value, Limit, Result, Timestamp (instead of being wrapped in Items).
+    Returns parsed attribute dictionary or None if not a direct record.
+    """
+    if not isinstance(item_dict, dict) or not item_dict:
+        return None
+
+    lower_map = {str(k).strip().lower(): v for k, v in item_dict.items() if k is not None}
+
+    # Identify if direct variables exist
+    has_tagname = any(k in lower_map for k in ("tagname", "tag_name", "meter_tag"))
+    has_tag = has_tagname or ("tag" in lower_map and "notification" not in str(lower_map.get("tag", "")).lower())
+    has_val = any(k in lower_map for k in ("value", "val", "readingvalue", "reading_value"))
+    has_desc = any(k in lower_map for k in ("description", "desc"))
+    has_limit = any(k in lower_map for k in ("limit", "limits"))
+    has_result = any(k in lower_map for k in ("result", "results"))
+
+    # Direct telemetry record condition:
+    # 1. Has Tagname/Tag and Value
+    # 2. Or has Value and (Description or Limit or Result)
+    # 3. Or has Tagname and (Description or Limit or Result)
+    is_direct = (
+        (has_tag and has_val) or
+        (has_val and (has_desc or has_limit or has_result)) or
+        (has_tag and (has_desc or has_limit or has_result))
+    )
+
+    if not is_direct:
+        return None
+
+    # Tag extraction
+    tag_val = (
+        lower_map.get("tagname") or
+        lower_map.get("tag_name") or
+        lower_map.get("tag") or
+        lower_map.get("meter_tag") or
+        lower_map.get("name") or
+        lower_map.get("attribute") or
+        ""
+    )
+
+    # Description extraction
+    desc_val = (
+        lower_map.get("description") or
+        lower_map.get("desc") or
+        ""
+    )
+
+    # Value extraction
+    raw_val = None
+    if "value" in lower_map:
+        raw_val = lower_map["value"]
+    elif "val" in lower_map:
+        raw_val = lower_map["val"]
+    elif "readingvalue" in lower_map:
+        raw_val = lower_map["readingvalue"]
+    elif "reading_value" in lower_map:
+        raw_val = lower_map["reading_value"]
+
+    if isinstance(raw_val, dict):
+        raw_val = raw_val.get("Value", raw_val.get("value", raw_val))
+
+    # Limit extraction
+    limit_val = (
+        lower_map.get("limit") if "limit" in lower_map else
+        lower_map.get("limits") if "limits" in lower_map else
+        ""
+    )
+
+    # Result extraction
+    result_val = (
+        lower_map.get("result") if "result" in lower_map else
+        lower_map.get("results") if "results" in lower_map else
+        ""
+    )
+
+    # Timestamp extraction
+    ts_val = (
+        lower_map.get("timestamp") or
+        lower_map.get("time") or
+        lower_map.get("starttime") or
+        lower_map.get("start_time") or
+        lower_map.get("readingtimestamp") or
+        default_timestamp or
+        datetime.now(timezone.utc).isoformat()
+    )
+
+    # UOM extraction
+    uom_val = lower_map.get("uom") or lower_map.get("unit") or lower_map.get("unitofmeasure") or ""
+
+    # Target endpoint override (if PI notification specifies an explicit individual URL)
+    target_endpoint = (
+        lower_map.get("target_endpoint_url") or
+        lower_map.get("endpoint_url") or
+        lower_map.get("target_endpoint") or
+        lower_map.get("endpoint") or
+        None
+    )
+
+    quality_val = (
+        lower_map.get("quality") or
+        ("Normal" if str(result_val).lower() in ("normal", "ok", "good") else "Good")
+    )
+
+    attr_name = str(tag_val).strip() or str(desc_val).strip() or "PI_Telemetry"
+
+    return {
+        "name": attr_name,
+        "tag": str(tag_val).strip() if tag_val is not None else "",
+        "description": str(desc_val).strip() if desc_val is not None else "",
+        "value": raw_val,
+        "limit": str(limit_val).strip() if limit_val is not None else "",
+        "results": str(result_val).strip() if result_val is not None else "",
+        "uom": str(uom_val).strip() if uom_val is not None else "",
+        "timestamp": ts_val,
+        "quality": quality_val,
+        "target_endpoint_url": str(target_endpoint).strip().strip('"').strip("'") if target_endpoint else None
+    }
+
+
 def parse_pi_notification_payload(
     raw_data: Any,
     query_params: Optional[Dict[str, str]] = None,
@@ -96,6 +221,7 @@ def parse_pi_notification_payload(
     """
     Parses various PI AF Notification WebService JSON payload structures:
     Extracts notification name from URL query parameter, HTTP headers, or payload body.
+    Supports direct attributes (Tagname, Description, Value, Limit, Result) as well as legacy wrapped Items.
     Returns: (notification_name, event_type, target_path, attributes_list)
     """
     query_params = {k.lower(): v for k, v in (query_params or {}).items()}
@@ -156,8 +282,7 @@ def parse_pi_notification_payload(
             ""
         )
 
-        # 2. Check for nested Attributes dict or list under standard PI AF keys:
-        # Items (standard PI AF WebService format), Attributes, Values, Data, Content
+        # Check for nested Attributes dict or list under standard PI AF keys:
         raw_attrs = (
             raw_data.get("Items") or
             raw_data.get("items") or
@@ -171,7 +296,55 @@ def parse_pi_notification_payload(
             raw_data.get("content")
         )
 
-        if isinstance(raw_attrs, dict):
+        # Check if raw_data itself is a direct telemetry record (Tagname, Description, Value, Limit, Result)
+        direct_top = extract_direct_telemetry_record(raw_data, default_timestamp=now_iso)
+
+        if raw_attrs and isinstance(raw_attrs, list):
+            for item in raw_attrs:
+                if isinstance(item, dict):
+                    # Check if item is a direct telemetry record (Tagname, Description, Limit, Result, Value)
+                    direct_item = extract_direct_telemetry_record(item, default_timestamp=now_iso)
+                    if direct_item:
+                        attributes.append(direct_item)
+                    else:
+                        name = (
+                            item.get("Name") or
+                            item.get("name") or
+                            item.get("Attribute") or
+                            item.get("attribute") or
+                            item.get("Tag") or
+                            item.get("tag") or
+                            item.get("TagName") or
+                            (item.get("Path", "").split("|")[-1] if "|" in item.get("Path", "") else None) or
+                            f"Attribute_{len(attributes)+1}"
+                        )
+                        raw_val = item.get("Value") if "Value" in item else (item.get("value") if "value" in item else item.get("Val"))
+                        if isinstance(raw_val, dict):
+                            val = raw_val.get("Value", raw_val.get("value", raw_val))
+                        else:
+                            val = raw_val
+
+                        uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
+                        ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
+                        quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
+
+                        attributes.append({
+                            "name": name,
+                            "value": val,
+                            "uom": uom,
+                            "timestamp": ts,
+                            "quality": quality
+                        })
+                else:
+                    attributes.append({
+                        "name": f"Value_{len(attributes)+1}",
+                        "value": item,
+                        "uom": "",
+                        "timestamp": now_iso,
+                        "quality": "Good"
+                    })
+
+        elif raw_attrs and isinstance(raw_attrs, dict):
             for attr_name, attr_val in raw_attrs.items():
                 if isinstance(attr_val, dict):
                     val = attr_val.get("Value") if "Value" in attr_val else attr_val.get("value", attr_val)
@@ -192,9 +365,65 @@ def parse_pi_notification_payload(
                         "timestamp": now_iso,
                         "quality": "Good"
                     })
-        elif isinstance(raw_attrs, list):
-            for item in raw_attrs:
-                if isinstance(item, dict):
+
+        elif direct_top:
+            # Direct attributes in top-level payload (Tagname, Description, Value, Limit, Result)
+            attributes.append(direct_top)
+
+        else:
+            # Flat dictionary: treat top-level key-values as attributes (excluding metadata keys)
+            meta_keys = {
+                "notification", "notificationname", "notificationrule", "event", "eventtype",
+                "target", "element", "path", "starttime", "endtime", "id",
+                "items", "attributes", "values", "data", "content"
+            }
+            for k, v in raw_data.items():
+                if k.lower() not in meta_keys:
+                    # If v is a list of dicts (e.g. wrapper), unpack each item
+                    if isinstance(v, list) and all(isinstance(x, dict) for x in v):
+                        for sub_idx, sub_item in enumerate(v):
+                            sub_direct = extract_direct_telemetry_record(sub_item, default_timestamp=now_iso)
+                            if sub_direct:
+                                attributes.append(sub_direct)
+                            else:
+                                sub_name = sub_item.get("Name") or sub_item.get("Attribute") or sub_item.get("name") or f"{k}_{sub_idx+1}"
+                                sub_raw = sub_item.get("Value") if "Value" in sub_item else sub_item.get("value", sub_item)
+                                if isinstance(sub_raw, dict):
+                                    sub_val = sub_raw.get("Value", sub_raw.get("value", sub_raw))
+                                else:
+                                    sub_val = sub_raw
+                                attributes.append({
+                                    "name": sub_name,
+                                    "value": sub_val,
+                                    "uom": sub_item.get("UOM", sub_item.get("uom", "")),
+                                    "timestamp": sub_item.get("Timestamp", sub_item.get("Time", now_iso)),
+                                    "quality": sub_item.get("Quality", "Good")
+                                })
+                    elif isinstance(v, dict):
+                        attributes.append({
+                            "name": k,
+                            "value": v.get("Value", v.get("value", str(v))),
+                            "uom": v.get("UOM", v.get("uom", "")),
+                            "timestamp": v.get("Timestamp", v.get("time", now_iso)),
+                            "quality": v.get("Quality", "Good")
+                        })
+                    else:
+                        attributes.append({
+                            "name": k,
+                            "value": v,
+                            "uom": "",
+                            "timestamp": now_iso,
+                            "quality": "Good"
+                        })
+
+    elif isinstance(raw_data, list):
+        # Array of attribute readings or records
+        for item in raw_data:
+            if isinstance(item, dict):
+                direct_item = extract_direct_telemetry_record(item, default_timestamp=now_iso)
+                if direct_item:
+                    attributes.append(direct_item)
+                else:
                     name = (
                         item.get("Name") or
                         item.get("name") or
@@ -223,88 +452,6 @@ def parse_pi_notification_payload(
                         "timestamp": ts,
                         "quality": quality
                     })
-                else:
-                    attributes.append({
-                        "name": f"Value_{len(attributes)+1}",
-                        "value": item,
-                        "uom": "",
-                        "timestamp": now_iso,
-                        "quality": "Good"
-                    })
-        else:
-            # Flat dictionary: treat top-level key-values as attributes (excluding metadata keys)
-            meta_keys = {
-                "notification", "notificationname", "event", "eventtype",
-                "target", "element", "path", "starttime", "endtime", "id",
-                "items", "attributes", "values", "data", "content"
-            }
-            for k, v in raw_data.items():
-                if k.lower() not in meta_keys:
-                    # If v is a list of dicts (e.g. wrapper), unpack each item
-                    if isinstance(v, list) and all(isinstance(x, dict) for x in v):
-                        for sub_idx, sub_item in enumerate(v):
-                            sub_name = sub_item.get("Name") or sub_item.get("Attribute") or sub_item.get("name") or f"{k}_{sub_idx+1}"
-                            sub_raw = sub_item.get("Value") if "Value" in sub_item else sub_item.get("value", sub_item)
-                            if isinstance(sub_raw, dict):
-                                sub_val = sub_raw.get("Value", sub_raw.get("value", sub_raw))
-                            else:
-                                sub_val = sub_raw
-                            attributes.append({
-                                "name": sub_name,
-                                "value": sub_val,
-                                "uom": sub_item.get("UOM", sub_item.get("uom", "")),
-                                "timestamp": sub_item.get("Timestamp", sub_item.get("Time", now_iso)),
-                                "quality": sub_item.get("Quality", "Good")
-                            })
-                    elif isinstance(v, dict):
-                        attributes.append({
-                            "name": k,
-                            "value": v.get("Value", v.get("value", str(v))),
-                            "uom": v.get("UOM", v.get("uom", "")),
-                            "timestamp": v.get("Timestamp", v.get("time", now_iso)),
-                            "quality": v.get("Quality", "Good")
-                        })
-                    else:
-                        attributes.append({
-                            "name": k,
-                            "value": v,
-                            "uom": "",
-                            "timestamp": now_iso,
-                            "quality": "Good"
-                        })
-
-    elif isinstance(raw_data, list):
-        # Array of attribute readings
-        for item in raw_data:
-            if isinstance(item, dict):
-                name = (
-                    item.get("Name") or
-                    item.get("name") or
-                    item.get("Attribute") or
-                    item.get("attribute") or
-                    item.get("Tag") or
-                    item.get("tag") or
-                    item.get("TagName") or
-                    (item.get("Path", "").split("|")[-1] if "|" in item.get("Path", "") else None) or
-                    f"Attribute_{len(attributes)+1}"
-                )
-                raw_val = item.get("Value") if "Value" in item else (item.get("value") if "value" in item else item.get("Val"))
-                if isinstance(raw_val, dict):
-                    val = raw_val.get("Value", raw_val.get("value", raw_val))
-                else:
-                    val = raw_val
-
-                uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
-                ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
-                quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
-
-                attributes.append({
-                    "name": name,
-                    "value": val,
-                    "uom": uom,
-                    "timestamp": ts,
-                    "quality": quality
-                })
             else:
                 attributes.append({
                     "name": f"Value_{len(attributes)+1}",
@@ -449,9 +596,11 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             "quality": "Good"
         }]
 
-    # Determine if using Oracle ORDS Direct format (Open / None auth, individual endpoints per attribute)
+    # Determine if using Oracle ORDS Direct format (ORDS endpoint, Open / None auth, or individual endpoints per attribute)
     is_ords_mode = (
         erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
+        "/ords/" in erp_cfg.get("base_url", "").lower() or
+        "/ords/" in erp_cfg.get("token_url", "").lower() or
         any(bool(m.get("target_endpoint_url")) for m in enabled_mappings)
     )
 
@@ -464,22 +613,41 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
 
         for attr in raw_attrs:
             attr_name = attr.get("name", "")
+            # Check mappings if configured by attribute name or tag
             m = mapping_by_name.get(attr_name.strip().lower(), {})
+            if not m and attr.get("tag"):
+                m = mapping_by_name.get(str(attr.get("tag")).strip().lower(), {})
 
             scale = float(m.get("scale_factor", 1.0))
             raw_val = attr.get("value")
             scaled_val = raw_val
             try:
-                if raw_val is not None:
+                if raw_val is not None and str(raw_val).strip() != "":
                     scaled_val = round(float(raw_val) * scale, int(m.get("round_decimals", 2)))
             except Exception:
                 scaled_val = raw_val
 
             timestamp_val = format_ords_timestamp(attr.get("timestamp") or now_iso)
-            tag_val = m.get("tag") or m.get("meter_tag") or attr_name
-            desc_val = m.get("description") or m.get("name") or attr_name
-            limit_val = m.get("limit") if m.get("limit") is not None else ""
-            results_val = m.get("results") or ("Normal" if attr.get("quality", "Good") == "Good" else "Check")
+            tag_val = attr.get("tag") or m.get("tag") or m.get("meter_tag") or attr_name
+            desc_val = attr.get("description") or m.get("description") or m.get("name") or attr_name
+
+            # Limit: prioritize direct attribute from PI Notification
+            if attr.get("limit") is not None and str(attr.get("limit")).strip() != "":
+                limit_val = attr.get("limit")
+            elif m.get("limit") is not None and str(m.get("limit")).strip() != "":
+                limit_val = m.get("limit")
+            else:
+                limit_val = ""
+
+            # Results: prioritize direct attribute from PI Notification
+            if attr.get("results") is not None and str(attr.get("results")).strip() != "":
+                results_val = attr.get("results")
+            elif attr.get("result") is not None and str(attr.get("result")).strip() != "":
+                results_val = attr.get("result")
+            elif m.get("results"):
+                results_val = m.get("results")
+            else:
+                results_val = "Normal" if attr.get("quality", "Good") == "Good" else "Check"
 
             # Exact JSON body schema required by Oracle Autonomous Database ORDS
             ords_payload = {
@@ -491,7 +659,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 "results": str(results_val)
             }
 
-            raw_target = m.get("target_endpoint_url") or m.get("endpoint_url") or ""
+            raw_target = attr.get("target_endpoint_url") or m.get("target_endpoint_url") or m.get("endpoint_url") or ""
             target_url = raw_target.strip().strip('"').strip("'") or None
             pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
 

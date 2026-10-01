@@ -239,6 +239,8 @@ class DataPipelineEngine:
         # Step 2: Build Oracle ERP / ORDS payload & dispatch
         is_ords_mode = (
             erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
+            "/ords/" in erp_cfg.get("base_url", "").lower() or
+            "/ords/" in erp_cfg.get("token_url", "").lower() or
             any(bool(m.get("target_endpoint_url")) for m in enabled_mappings)
         )
 
