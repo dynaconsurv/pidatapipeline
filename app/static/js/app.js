@@ -621,14 +621,16 @@ function renderRecentDeliveriesTable(deliveries) {
     // 4. Staging Status badge
     let statusBadge = "";
     if (deliv.oracle_status === "DISPATCHED") {
-      statusBadge = `<span class="badge badge-success" title="Successfully dispatched to Oracle ERP"><span class="badge-dot"></span> Dispatched to Oracle</span>`;
+      const targets = deliv.oracle_dispatch?.target_types || [];
+      const targetLabel = targets.length > 0 ? targets.join(" & ") : "Endpoint";
+      statusBadge = `<span class="badge badge-success" title="Successfully dispatched to ${escapeHtml(targetLabel)}"><span class="badge-dot"></span> Dispatched (${escapeHtml(targetLabel)})</span>`;
     } else if (deliv.oracle_status === "FAILED") {
       const retryCount = deliv.retry_count || 0;
       const retryLabel = retryCount > 0 ? `Failed (Retry #${retryCount})` : `Failed (Retry Queued)`;
       const errMsg = escapeHtml(deliv.oracle_dispatch?.message || deliv.oracle_dispatch?.error || "Dispatch failed. Will retry on next scheduled interval.");
       statusBadge = `<span class="badge badge-danger" title="${errMsg}"><span class="badge-dot"></span> ${retryLabel}</span>`;
     } else if (deliv.oracle_status === "PENDING_SETUP") {
-      statusBadge = `<span class="badge badge-pending" title="Oracle ERP credentials pending setup in Settings"><span class="badge-dot"></span> Pending Setup</span>`;
+      statusBadge = `<span class="badge badge-pending" title="Endpoint credentials pending setup in Settings"><span class="badge-dot"></span> Pending Setup</span>`;
     } else {
       statusBadge = `<span class="badge badge-pending" title="Held in JSON staging"><span class="badge-dot"></span> Staged in JSON</span>`;
     }
@@ -672,9 +674,9 @@ function renderRecentDeliveriesTable(deliveries) {
           <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
             <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
               ${deliv.oracle_dispatch ? `
-                <button type="button" class="btn btn-primary btn-sm" onclick="showOracleResponseModal('${escapeHtml(deliv.delivery_id)}')" title="View exact response returned from Oracle ORDS" style="font-size: 11px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="showOracleResponseModal('${escapeHtml(deliv.delivery_id)}')" title="View exact response returned from destination endpoint (Oracle / J5)" style="font-size: 11px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                  Oracle Response
+                  Endpoint Response
                 </button>
               ` : ''}
               <button type="button" class="btn btn-secondary btn-sm" onclick="inspectDelivery('${escapeHtml(deliv.delivery_id)}')">
@@ -686,7 +688,7 @@ function renderRecentDeliveriesTable(deliveries) {
             </div>
             ${deliv.oracle_status !== "DISPATCHED" ? `
               <button type="button" class="btn btn-outline btn-sm" onclick="dispatchSingleDelivery('${escapeHtml(deliv.delivery_id)}')">
-                Send to Oracle
+                Send to Endpoint
               </button>
             ` : `
               <span style="font-size: 11px; color: var(--status-good); display: inline-flex; align-items: center; gap: 3px;">
@@ -881,7 +883,7 @@ async function showOracleResponseModal(deliveryId) {
     const sendAgainBtn = document.getElementById("btn-oracle-modal-send-again");
 
     if (titleEl) {
-      titleEl.textContent = `Oracle Response: ${data.notification_name || "PI Delivery"}`;
+      titleEl.textContent = `Endpoint Response: ${data.notification_name || "PI Delivery"}`;
     }
     if (subEl) {
       subEl.textContent = `Delivery ID: #${(data.delivery_id || "").slice(-10)} · Received: ${formatTimestamp(data.received_at)} · Client: ${data.client_ip || "Unknown"}`;
@@ -926,42 +928,112 @@ async function showOracleResponseModal(deliveryId) {
       `;
     }
 
-    // 2. Comparison Table(s)
-    if (containerEl) {
-      let itemsToRender = [];
-      if (dispatches.length > 0) {
-        itemsToRender = dispatches;
-      } else if (disp.erp_response) {
-        itemsToRender = [{
-          attribute_name: data.attributes_summary?.[0]?.name || data.notification_name || "Attribute",
-          target_endpoint: targetEndpoint,
-          status: isSuccess ? "SUCCESS" : "FAILED",
-          http_code: httpCode,
-          payload: disp.payload || (data.attributes_summary?.[0] ? {
-            tag: data.attributes_summary[0].tag || data.attributes_summary[0].name,
-            description: data.attributes_summary[0].description,
-            value: data.attributes_summary[0].value,
-            limit: data.attributes_summary[0].limit,
-            results: data.attributes_summary[0].results,
-            timestamp: data.attributes_summary[0].timestamp
-          } : {}),
-          response: disp.erp_response
-        }];
-      }
+    // 2. Response / Comparison Table(s)
+    let itemsToRender = [];
+    if (dispatches.length > 0) {
+      itemsToRender = dispatches;
+    } else if (disp.erp_response) {
+      itemsToRender = [{
+        attribute_name: data.attributes_summary?.[0]?.name || data.notification_name || "Attribute",
+        target_endpoint: targetEndpoint,
+        status: isSuccess ? "SUCCESS" : "FAILED",
+        http_code: httpCode,
+        payload: disp.payload || (data.attributes_summary?.[0] ? {
+          tag: data.attributes_summary[0].tag || data.attributes_summary[0].name,
+          description: data.attributes_summary[0].description,
+          value: data.attributes_summary[0].value,
+          limit: data.attributes_summary[0].limit,
+          results: data.attributes_summary[0].results,
+          timestamp: data.attributes_summary[0].timestamp
+        } : {}),
+        response: disp.erp_response
+      }];
+    }
 
+    if (containerEl) {
       if (itemsToRender.length === 0) {
         containerEl.innerHTML = `
           <div style="text-align: center; padding: 24px; color: var(--ink-secondary); font-size: 12px;">
-            No Oracle ORDS response has been recorded yet for this delivery.
-            ${data.oracle_status !== "DISPATCHED" ? '<div style="margin-top: 8px;"><button class="btn btn-primary btn-sm" onclick="dispatchCurrentOracleModalDelivery()">Send to Oracle Now</button></div>' : ''}
+            No endpoint response has been recorded yet for this delivery.
+            ${data.oracle_status !== "DISPATCHED" ? '<div style="margin-top: 8px;"><button class="btn btn-primary btn-sm" onclick="dispatchCurrentOracleModalDelivery()">Send to Endpoint Now</button></div>' : ''}
           </div>
         `;
       } else {
         containerEl.innerHTML = itemsToRender.map((it, idx) => {
+          const isJ5 = (it.target_type === 'j5' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
           const payload = it.payload || {};
           const response = it.response || {};
-          const links = response.links || [];
 
+          // --- J5 Inbound Message Response Layout ---
+          if (isJ5) {
+            const isItemSuccess = it.status === "SUCCESS";
+            const itemBadgeClass = isItemSuccess ? "badge-success" : "badge-danger";
+            const statusText = isItemSuccess ? `HTTP ${it.http_code || 200} Accepted` : `HTTP ${it.http_code || 500} Failed`;
+
+            const payloadEntries = [
+              { label: "Tag / Key", val: payload.tag || payload.messageTag || "--" },
+              { label: "Reading Value", val: payload.value ?? payload.readingValue ?? "--" },
+              { label: "Timestamp", val: payload.timestamp || "--" },
+              { label: "Description", val: payload.description || "--" },
+              { label: "UOM", val: payload.uom || "--" },
+              { label: "Limit", val: (payload.limit !== undefined && payload.limit !== null && payload.limit !== "") ? payload.limit : "--" },
+              { label: "Results", val: payload.results || "--" }
+            ];
+
+            const payloadRowsHtml = payloadEntries.map(e => `
+              <tr>
+                <td style="font-weight: 500; color: var(--ink-secondary); font-size: 11px; width: 110px; white-space: nowrap; padding: 3px 6px;">${escapeHtml(e.label)}</td>
+                <td style="font-size: 11px; padding: 3px 6px;"><code style="font-family: var(--font-mono); color: var(--ink-primary);">${escapeHtml(String(e.val))}</code></td>
+              </tr>
+            `).join("");
+
+            let responseBodyHtml = "";
+            if (typeof response === "string" && response.trim().length > 0) {
+              responseBodyHtml = `<div style="font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--ink-primary);">${escapeHtml(response)}</div>`;
+            } else if (response && typeof response === "object" && Object.keys(response).length > 0) {
+              responseBodyHtml = `<pre style="margin: 0; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto; color: var(--ink-primary);">${escapeHtml(JSON.stringify(response, null, 2))}</pre>`;
+            } else if (it.error) {
+              responseBodyHtml = `<div style="color: #dc2626; font-size: 11px; font-weight: 500;">${escapeHtml(it.error)}</div>`;
+            } else {
+              responseBodyHtml = `<div style="color: var(--ink-tertiary); font-style: italic; font-size: 11px;">(Empty body returned with HTTP ${it.http_code || 200} OK)</div>`;
+            }
+
+            return `
+              <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);">
+                      <span class="badge-dot" style="background:#6366f1;"></span> J5 Hexagon Smart Cloud
+                    </span>
+                    <strong style="font-size: 12px; color: var(--ink-primary);">${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}</strong>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge ${itemBadgeClass}" style="font-size: 10px; padding: 2px 7px;">
+                      <span class="badge-dot"></span> ${statusText}
+                    </span>
+                  </div>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-bottom: 8px; word-break: break-all;">
+                  Endpoint: <span style="color: var(--ink-primary);">${escapeHtml(it.target_endpoint || targetEndpoint)}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;">
+                  <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: var(--ink-secondary); margin-bottom: 6px;">Sent Telemetry Payload:</div>
+                    <table class="data-table" style="font-size: 11px; margin: 0; background: transparent; width: 100%;">
+                      <tbody>${payloadRowsHtml}</tbody>
+                    </table>
+                  </div>
+                  <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 8px;">
+                    <div style="font-size: 11px; font-weight: 600; color: var(--ink-secondary); margin-bottom: 6px;">J5 Server Response:</div>
+                    ${responseBodyHtml}
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+
+          // --- Oracle ORDS Comparison Layout ---
+          const links = response.links || [];
           const fields = [
             { key: "tag", label: "Tag / Meter ID" },
             { key: "description", label: "Description" },
@@ -1037,8 +1109,11 @@ async function showOracleResponseModal(deliveryId) {
           return `
             <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-                <div style="font-weight: 600; font-size: 12px; color: var(--ink-primary);">
-                  ${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;">
+                    <span class="badge-dot"></span> Oracle ORDS
+                  </span>
+                  <strong style="font-size: 12px; color: var(--ink-primary);">${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}</strong>
                 </div>
                 <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono);">
                   Endpoint: <span style="color: var(--ink-primary);">${escapeHtml(it.target_endpoint || targetEndpoint)}</span>
@@ -1066,15 +1141,20 @@ async function showOracleResponseModal(deliveryId) {
       }
     }
 
-    // 3. Raw Oracle JSON
+    // 3. Raw Response JSON
     if (rawJsonEl) {
       const rawData = disp.erp_response || disp;
-      rawJsonEl.textContent = JSON.stringify(rawData, null, 2);
+      rawJsonEl.textContent = typeof rawData === "string" ? rawData : JSON.stringify(rawData, null, 2);
     }
 
     // 4. Meta & Buttons
     if (metaEl) {
-      metaEl.innerHTML = `Dispatched via <strong>Oracle ORDS REST API</strong> · HTTP Code: <strong>${httpCode}</strong>`;
+      const hasJ5 = itemsToRender.some(it => it.target_type === 'j5' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
+      const hasOracle = itemsToRender.some(it => it.target_type !== 'j5' && (!it.target_endpoint || !it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
+      let sysLabel = "Oracle ORDS REST API";
+      if (hasJ5 && hasOracle) sysLabel = "Oracle ORDS & Hexagon J5 Cloud";
+      else if (hasJ5) sysLabel = "Hexagon J5 Cloud Inbound API (Basic Auth)";
+      metaEl.innerHTML = `Dispatched via <strong>${escapeHtml(sysLabel)}</strong> · HTTP Code: <strong>${httpCode}</strong>`;
     }
     if (sendAgainBtn) {
       sendAgainBtn.style.display = "inline-block";
@@ -1082,9 +1162,11 @@ async function showOracleResponseModal(deliveryId) {
 
     if (modal) modal.classList.add("active");
   } catch (err) {
-    showToast("Error inspecting Oracle response: " + err.message, "danger");
+    showToast("Error inspecting Endpoint response: " + err.message, "danger");
   }
 }
+window.showOracleResponseModal = showOracleResponseModal;
+window.showEndpointResponseModal = showOracleResponseModal;
 
 function closeOracleResponseModal() {
   const modal = document.getElementById("modal-oracle-response");
@@ -1106,7 +1188,7 @@ function copyOracleResponseJson(event) {
       document.execCommand("copy");
       document.body.removeChild(tmp);
     }
-    showToast("Oracle response JSON copied to clipboard!", "success");
+    showToast("Endpoint response JSON copied to clipboard!", "success");
   } catch (err) {
     showToast("Failed to copy JSON: " + err.message, "danger");
   }
@@ -1349,11 +1431,18 @@ function renderMappingsTable() {
 
   tbody.innerHTML = currentMappings.map((m, idx) => {
     const scaleRound = `×${m.scale_factor || 1.0}, ${m.round_decimals ?? 2} dec`;
-    const targetUrl = m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : '--');
+    const isJ5 = (m.target_type === 'j5' || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
+    const defaultUrl = isJ5
+      ? (currentSettings?.j5_endpoint?.url || 'https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder')
+      : (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : '--');
+    const targetUrl = m.target_endpoint_url || defaultUrl;
     const tagDisplay = m.tag || m.meter_tag || m.attribute_name || '--';
     const descDisplay = m.description || m.name || m.attribute_name || '--';
     const limitDisplay = (m.limit !== undefined && m.limit !== null && m.limit !== "") ? m.limit : '--';
     const resultsDisplay = m.results || 'Normal';
+    const targetBadge = isJ5
+      ? `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`
+      : `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
 
     return `
       <tr>
@@ -1361,7 +1450,10 @@ function renderMappingsTable() {
           <input type="checkbox" ${m.enabled ? 'checked' : ''} onchange="toggleMappingActive(${idx}, this.checked)" style="width: 16px; height: 16px; cursor: pointer;">
         </td>
         <td style="vertical-align: top;">
-          <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(m.attribute_name || '')}</strong>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(m.attribute_name || '')}</strong>
+            ${targetBadge}
+          </div>
           <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;" title="${escapeHtml(m.full_path || '')}">
             ${escapeHtml(m.element_path || m.full_path || '')}
           </div>
@@ -1389,7 +1481,7 @@ function renderMappingsTable() {
         </td>
         <td style="text-align: right; vertical-align: top; white-space: nowrap;">
           <button class="btn btn-secondary btn-sm" onclick="editMapping(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;">Edit</button>
-          <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to this specific Oracle endpoint">Test</button>
+          <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to this destination endpoint">Test</button>
           <button class="btn btn-danger btn-sm" onclick="deleteMapping(${idx})" style="padding: 0.2rem 0.45rem;">Delete</button>
         </td>
       </tr>
@@ -1419,6 +1511,53 @@ function deleteMapping(idx) {
   }
 }
 
+function handleModalTargetTypeChange() {
+  const isJ5 = document.getElementById("target-type-j5")?.checked;
+  const heading = document.getElementById("modal-destination-heading");
+  const labelUrl = document.getElementById("modal-label-endpoint-url");
+  const inputUrl = document.getElementById("modal-target-endpoint-url");
+  const helpUrl = document.getElementById("modal-endpoint-url-help");
+  const labelTag = document.getElementById("modal-label-tag");
+  const labelDesc = document.getElementById("modal-label-desc");
+  const labelLimit = document.getElementById("modal-label-limit");
+  const labelResults = document.getElementById("modal-label-results");
+  const testBox = document.getElementById("modal-endpoint-test-box");
+  if (testBox) {
+    testBox.style.display = "none";
+    testBox.innerHTML = "";
+  }
+
+  const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
+  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
+    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
+    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+
+  if (isJ5) {
+    if (heading) heading.textContent = "J5 Destination Endpoint (Hexagon Smart Cloud)";
+    if (labelUrl) labelUrl.textContent = "J5 Inbound Message URL *";
+    if (helpUrl) helpUrl.textContent = "Hexagon J5 Inbound Message API endpoint receiving JSON telemetry via HTTP Basic Auth.";
+    if (labelTag) labelTag.textContent = "J5 Message Tag / Key *";
+    if (labelDesc) labelDesc.textContent = "J5 Description *";
+    if (labelLimit) labelLimit.textContent = "Operating Limit (Optional)";
+    if (labelResults) labelResults.textContent = "Result / Status (Optional)";
+    if (inputUrl && (!inputUrl.value || inputUrl.value.includes("oraclecloudapps.com"))) {
+      inputUrl.value = defaultJ5Url;
+    }
+  } else {
+    if (heading) heading.textContent = "Oracle Destination Endpoint (ORDS REST POST)";
+    if (labelUrl) labelUrl.textContent = "Target POST URL *";
+    if (helpUrl) helpUrl.textContent = "Individual ORDS table/resource POST URL configured by Oracle team for this specific telemetry item.";
+    if (labelTag) labelTag.textContent = "Oracle Tag (tag) *";
+    if (labelDesc) labelDesc.textContent = "Oracle Description (description) *";
+    if (labelLimit) labelLimit.textContent = "Limit (limit)";
+    if (labelResults) labelResults.textContent = "Results (results)";
+    if (inputUrl && (!inputUrl.value || inputUrl.value.includes("hxgnsmartcloud.com"))) {
+      inputUrl.value = defaultOrdsUrl;
+    }
+  }
+}
+window.handleModalTargetTypeChange = handleModalTargetTypeChange;
+
 function openMappingModal(mapping = null, index = -1) {
   const modal = document.getElementById("mapping-modal");
   const title = document.getElementById("modal-title");
@@ -1432,11 +1571,23 @@ function openMappingModal(mapping = null, index = -1) {
   const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
     ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
     : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+  const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
 
   if (mapping) {
     title.textContent = "Edit Attribute Mapping";
     document.getElementById("modal-mapping-id").value = index;
-    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url || defaultOrdsUrl;
+
+    const isJ5 = (mapping.target_type === 'j5' || (mapping.target_endpoint_url && mapping.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
+    const radOracle = document.getElementById("target-type-oracle");
+    const radJ5 = document.getElementById("target-type-j5");
+    if (isJ5) {
+      if (radJ5) radJ5.checked = true;
+    } else {
+      if (radOracle) radOracle.checked = true;
+    }
+    handleModalTargetTypeChange();
+
+    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url || (isJ5 ? defaultJ5Url : defaultOrdsUrl);
     document.getElementById("modal-target-tag").value = mapping.tag || mapping.meter_tag || "";
     document.getElementById("modal-description").value = mapping.description || mapping.name || "";
     document.getElementById("modal-limit").value = (mapping.limit !== undefined && mapping.limit !== null) ? mapping.limit : "";
@@ -1454,6 +1605,10 @@ function openMappingModal(mapping = null, index = -1) {
     title.textContent = "Add Attribute Mapping";
     document.getElementById("modal-mapping-id").value = "-1";
     document.getElementById("mapping-form").reset();
+    const radOracle = document.getElementById("target-type-oracle");
+    if (radOracle) radOracle.checked = true;
+    handleModalTargetTypeChange();
+
     document.getElementById("modal-target-endpoint-url").value = defaultOrdsUrl;
     document.getElementById("modal-target-tag").value = "TAG2";
     document.getElementById("modal-description").value = "DESCRIPTION2";
@@ -1492,6 +1647,9 @@ function autoComposeFullPath() {
 async function handleModalTestEndpoint() {
   const urlInput = document.getElementById("modal-target-endpoint-url");
   const box = document.getElementById("modal-endpoint-test-box");
+  const isJ5 = document.getElementById("target-type-j5")?.checked;
+  const targetType = isJ5 ? "j5" : "oracle";
+  const epName = isJ5 ? "Hexagon J5" : "Oracle ORDS";
   const url = urlInput?.value?.trim();
   if (!url) {
     showToast("Please enter a Target POST URL to test.", "warning");
@@ -1500,13 +1658,13 @@ async function handleModalTestEndpoint() {
   if (box) {
     box.style.display = "block";
     box.className = "error-console";
-    box.innerHTML = "Testing connection to Oracle ORDS endpoint...";
+    box.innerHTML = `Testing connection to ${epName} endpoint...`;
   }
   try {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url })
+      body: JSON.stringify({ endpoint_url: url, target_type: targetType })
     });
     const result = await res.json();
     if (result.success) {
@@ -1514,13 +1672,13 @@ async function handleModalTestEndpoint() {
         box.className = "error-console";
         box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\nEndpoint: ${escapeHtml(url)}`;
       }
-      showToast("Endpoint connected successfully!", "success");
+      showToast(`${epName} endpoint connected successfully!`, "success");
     } else {
       if (box) {
         box.className = "error-console danger";
         box.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✕ Connection Test Failed</span>\n${escapeHtml(result.message)}\n${escapeHtml(result.error || '')}`;
       }
-      showToast("Failed to connect to Oracle endpoint", "danger");
+      showToast(`Failed to connect to ${epName} endpoint`, "danger");
     }
   } catch (err) {
     if (box) {
@@ -1534,17 +1692,23 @@ window.handleModalTestEndpoint = handleModalTestEndpoint;
 async function testTableEndpoint(idx) {
   const m = currentMappings[idx];
   if (!m) return;
-  const url = m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : currentSettings?.oracle_erp?.base_url);
+  const isJ5 = (m.target_type === 'j5' || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
+  const targetType = isJ5 ? 'j5' : 'oracle';
+  const defaultUrl = isJ5
+    ? (currentSettings?.j5_endpoint?.url || 'https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder')
+    : (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : currentSettings?.oracle_erp?.base_url);
+  const url = m.target_endpoint_url || defaultUrl;
   if (!url) {
     showToast("No target endpoint URL configured for this mapping.", "warning");
     return;
   }
-  showToast(`Testing ORDS endpoint for "${m.attribute_name}"...`, "info");
+  const epLabel = isJ5 ? "J5" : "Oracle ORDS";
+  showToast(`Testing ${epLabel} endpoint for "${m.attribute_name}"...`, "info");
   try {
     const res = await fetch("/api/mappings/test-endpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url })
+      body: JSON.stringify({ endpoint_url: url, target_type: targetType })
     });
     const result = await res.json();
     if (result.success) {
@@ -1561,6 +1725,7 @@ window.testTableEndpoint = testTableEndpoint;
 function handleSaveMappingModal(e) {
   e.preventDefault();
   const editIdx = parseInt(document.getElementById("modal-mapping-id").value, 10);
+  const targetType = document.getElementById("target-type-j5")?.checked ? "j5" : "oracle";
   const tagVal = document.getElementById("modal-target-tag").value.trim();
   const descVal = document.getElementById("modal-description").value.trim();
   const limitVal = document.getElementById("modal-limit").value.trim();
@@ -1569,6 +1734,7 @@ function handleSaveMappingModal(e) {
 
   const newMapping = {
     id: editIdx >= 0 ? currentMappings[editIdx].id : `map-${Date.now()}`,
+    target_type: targetType,
     attribute_name: document.getElementById("modal-attr-name").value.trim(),
     af_server: document.getElementById("modal-af-server").value.trim(),
     af_database: document.getElementById("modal-af-database").value.trim(),
@@ -1727,13 +1893,35 @@ function loadSamplePresets() {
         round_decimals: 2,
         uom: "mm/s",
         enabled: true
+      },
+      {
+        id: "map-j5-purchaseorder",
+        name: "J5 Inbound Message Telemetry",
+        attribute_name: "Effluent Turbidity",
+        af_server: "PISRV01",
+        af_database: "Plant_Operations",
+        element_path: "Effluent\\Discharge",
+        full_path: "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|Effluent Turbidity",
+        target_type: "j5",
+        target_endpoint_url: currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+        tag: "TURBIDITY_01",
+        description: "Effluent Discharge Turbidity NTU",
+        limit: "25.0",
+        results: "Normal",
+        target_field: "value",
+        meter_tag: "TURBIDITY_01",
+        target_tag_field: "tag",
+        scale_factor: 1.0,
+        round_decimals: 2,
+        uom: "NTU",
+        enabled: true
       }
     ];
 
     renderMappingsTable();
     saveMappingsToServer();
     refreshPayloadPreview();
-    showToast("Loaded industrial telemetry presets with Oracle ORDS endpoints.", "success");
+    showToast("Loaded industrial telemetry presets with Oracle ORDS & J5 endpoints.", "success");
   }
 }
 
@@ -1879,6 +2067,8 @@ function initSettings() {
   document.getElementById("btn-save-settings")?.addEventListener("click", handleSaveSettings);
   document.getElementById("btn-test-pi-settings")?.addEventListener("click", handleTestPiSettings);
   document.getElementById("btn-test-erp-settings")?.addEventListener("click", handleTestErpSettings);
+  document.getElementById("btn-test-j5-settings")?.addEventListener("click", handleTestJ5Settings);
+  document.getElementById("btn-toggle-j5-password")?.addEventListener("click", toggleJ5PasswordVisibility);
 
   document.getElementById("setting-pi-auth-type")?.addEventListener("change", handlePiAuthChange);
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
@@ -2000,6 +2190,20 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-erp-resource-endpoint").value = erp.resource_endpoint || "/fscmRestApi/resources/11.13.18.05/standardReceipts";
     document.getElementById("setting-erp-http-method").value = erp.http_method || "POST";
     document.getElementById("setting-erp-dry-run").checked = !!erp.dry_run;
+
+    // J5 Inbound Message Settings (Hexagon Smart Cloud)
+    const j5 = currentSettings.j5_endpoint || {};
+    const j5EnabledEl = document.getElementById("setting-j5-enabled");
+    const j5UrlEl = document.getElementById("setting-j5-url");
+    const j5UserEl = document.getElementById("setting-j5-username");
+    const j5PassEl = document.getElementById("setting-j5-password");
+    const j5TimeoutEl = document.getElementById("setting-j5-timeout");
+
+    if (j5EnabledEl) j5EnabledEl.checked = j5.enabled !== undefined ? !!j5.enabled : true;
+    if (j5UrlEl) j5UrlEl.value = j5.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
+    if (j5UserEl) j5UserEl.value = j5.username || "HIRUJR_JZNOT1742577235_TST";
+    if (j5PassEl) j5PassEl.value = j5.password || "kah4YAH!bvm-vkt_jzd";
+    if (j5TimeoutEl) j5TimeoutEl.value = j5.timeout_seconds || 15;
 
     // Pipeline Settings
     document.getElementById("setting-pipeline-interval").value = pipe.interval_seconds || 30;
@@ -2498,6 +2702,14 @@ function collectSettingsFromForm() {
       },
       timeout_seconds: 15
     },
+    j5_endpoint: {
+      enabled: document.getElementById("setting-j5-enabled") ? document.getElementById("setting-j5-enabled").checked : true,
+      url: document.getElementById("setting-j5-url") ? document.getElementById("setting-j5-url").value.trim() : "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+      auth_type: "basic",
+      username: document.getElementById("setting-j5-username") ? document.getElementById("setting-j5-username").value.trim() : "HIRUJR_JZNOT1742577235_TST",
+      password: document.getElementById("setting-j5-password") ? document.getElementById("setting-j5-password").value : "kah4YAH!bvm-vkt_jzd",
+      timeout_seconds: parseInt(document.getElementById("setting-j5-timeout")?.value, 10) || 15
+    },
     pipeline: {
       interval_seconds: parseInt(document.getElementById("setting-pipeline-interval").value, 10) || 30,
       ingestion_mode: document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint",
@@ -2641,6 +2853,59 @@ async function handleTestErpSettings() {
     box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
   }
 }
+
+async function handleTestJ5Settings() {
+  const cfg = collectSettingsFromForm().j5_endpoint;
+  const box = document.getElementById("j5-test-result-box");
+  if (!box) return;
+  box.style.display = "block";
+  box.className = "error-console";
+  box.innerHTML = "Testing connection to Hexagon J5 Cloud endpoint with Basic Authentication...";
+
+  try {
+    const res = await fetch("/api/settings/test-j5", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg)
+    });
+    const result = await res.json();
+    if (result.success) {
+      box.className = "error-console";
+      box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\nEndpoint: ${escapeHtml(result.endpoint_tested || cfg.url)}`;
+      showToast("J5 endpoint connected successfully!", "success");
+    } else {
+      box.className = "error-console danger";
+      let text = `<span style="color: var(--danger); font-weight: bold;">✕ J5 Connection Test Failed</span>\nMessage: ${escapeHtml(result.message)}`;
+      if (result.status_code) {
+        text += `\nHTTP Status: ${result.status_code}`;
+      }
+      if (result.endpoint_tested) {
+        text += `\nTested Endpoint: ${escapeHtml(result.endpoint_tested)}`;
+      }
+      text += `\n\n${escapeHtml(result.error || '')}`;
+      box.innerHTML = text;
+      showToast("Failed to connect to J5 endpoint", "danger");
+    }
+  } catch (e) {
+    box.className = "error-console danger";
+    box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
+  }
+}
+window.handleTestJ5Settings = handleTestJ5Settings;
+
+function toggleJ5PasswordVisibility() {
+  const input = document.getElementById("setting-j5-password");
+  const btn = document.getElementById("btn-toggle-j5-password");
+  if (!input || !btn) return;
+  if (input.type === "password") {
+    input.type = "text";
+    btn.textContent = "Hide";
+  } else {
+    input.type = "password";
+    btn.textContent = "Show";
+  }
+}
+window.toggleJ5PasswordVisibility = toggleJ5PasswordVisibility;
 
 // ------------------------------------------------------------
 // Storage Files Cleanup & Production Pre-Flight Handlers

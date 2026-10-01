@@ -20,6 +20,7 @@ from app.storage import (
 )
 from app.config import load_settings, load_mappings
 from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
+from app.j5_client import J5Client, DEFAULT_J5_URL, format_j5_timestamp
 
 
 def validate_delivery_security(
@@ -506,12 +507,15 @@ def process_incoming_delivery(
         {"delivery_id": delivery_id, "attributes_count": len(attributes)}
     )
 
-    # Step 2: Immediate Auto-Dispatch to Oracle ERP Cloud upon receipt
+    # Step 2: Immediate Auto-Dispatch to Oracle ERP Cloud or J5 upon receipt
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    j5_cfg = settings.get("j5_endpoint", {})
     auto_dispatch_enabled = settings.get("pipeline", {}).get("auto_dispatch", True) and settings.get("pipeline", {}).get("auto_dispatch_deliveries", True)
 
-    if erp_cfg.get("enabled", False) and auto_dispatch_enabled:
+    any_endpoint_enabled = erp_cfg.get("enabled", False) or j5_cfg.get("enabled", False)
+
+    if any_endpoint_enabled and auto_dispatch_enabled:
         try:
             dispatch_result = dispatch_delivery_to_oracle(delivery_id, is_retry=False, retry_count=0)
             delivery_record["oracle_status"] = dispatch_result.get("status", "DISPATCHED")
@@ -519,14 +523,14 @@ def process_incoming_delivery(
             if delivery_record["oracle_status"] == "DISPATCHED":
                 add_log(
                     "SUCCESS",
-                    "ORACLE_ERP",
-                    f"Immediate auto-dispatch succeeded for PI delivery [{notif_name}] ({delivery_id}) to Oracle ERP Cloud."
+                    "ENDPOINT_DISPATCH",
+                    f"Immediate auto-dispatch succeeded for PI delivery [{notif_name}] ({delivery_id}) to destination endpoint(s)."
                 )
             else:
                 interval = settings.get("pipeline", {}).get("interval_seconds", 30)
                 add_log(
                     "WARNING",
-                    "ORACLE_ERP",
+                    "ENDPOINT_DISPATCH",
                     f"Immediate dispatch for [{notif_name}] ({delivery_id}) failed: {dispatch_result.get('message')}. Queued for scheduler retry every {interval}s."
                 )
         except Exception as e:
@@ -534,13 +538,13 @@ def process_incoming_delivery(
             interval = settings.get("pipeline", {}).get("interval_seconds", 30)
             add_log(
                 "WARNING",
-                "ORACLE_ERP",
+                "ENDPOINT_DISPATCH",
                 f"Immediate dispatch exception for [{notif_name}] ({delivery_id}): {str(e)}. Queued for scheduler retry every {interval}s."
             )
-    elif not erp_cfg.get("enabled", False):
+    elif not any_endpoint_enabled:
         dispatch_info = {
             "status": "PENDING_SETUP",
-            "message": "Oracle ERP Cloud integration is not enabled in settings. Delivery held in JSON staging.",
+            "message": "Destination endpoints (Oracle ERP / J5) are not enabled in settings. Delivery held in JSON staging.",
             "dispatched_at": now_iso
         }
         update_delivery_status(delivery_id, "PENDING_SETUP", dispatch_info)
@@ -561,7 +565,8 @@ def process_incoming_delivery(
 
 def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_count: int = 0) -> Dict[str, Any]:
     """
-    Reads a staged delivery record from JSON, maps its attributes, and dispatches to Oracle ERP Cloud.
+    Reads a staged delivery record from JSON, maps its attributes, and dispatches to
+    configured destination endpoints (Oracle ORDS / ERP Cloud or J5 Inbound Message API).
     """
     delivery = get_delivery_by_id(delivery_id)
     if not delivery:
@@ -569,19 +574,11 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
 
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    j5_cfg = settings.get("j5_endpoint", {})
     erp_client = OracleERPCloudClient(erp_cfg)
+    j5_client = J5Client(j5_cfg)
 
-    # Check if Oracle ERP is configured & enabled
-    if not erp_cfg.get("enabled", False):
-        dispatch_info = {
-            "status": "PENDING_SETUP",
-            "message": "Oracle ERP Cloud integration is not enabled in settings.json. Delivery held in JSON staging.",
-            "dispatched_at": datetime.now(timezone.utc).isoformat()
-        }
-        update_delivery_status(delivery_id, "PENDING_SETUP", dispatch_info)
-        return dispatch_info
-
-    # Build Oracle ERP / ORDS Payload based on attributes & mappings
+    # Build destination payload based on attributes & mappings
     mappings = load_mappings()
     enabled_mappings = [m for m in mappings if m.get("enabled", True)]
     mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
@@ -596,27 +593,81 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             "quality": "Good"
         }]
 
-    # Determine if using Oracle ORDS Direct format (ORDS endpoint, Open / None auth, or individual endpoints per attribute)
-    is_ords_mode = (
-        erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
-        "/ords/" in erp_cfg.get("base_url", "").lower() or
-        "/ords/" in erp_cfg.get("token_url", "").lower() or
-        any(bool(m.get("target_endpoint_url")) for m in enabled_mappings)
-    )
+    item_results = []
+    all_succeeded = True
+    any_succeeded = False
+    is_pending_setup = False
 
-    if is_ords_mode:
-        # Fan-out: Dispatch each attribute individually to its configured ORDS endpoint
-        item_results = []
-        all_succeeded = True
-        any_succeeded = False
-        is_pending_setup = False
+    for attr in raw_attrs:
+        attr_name = attr.get("name", "")
+        # Check mappings if configured by attribute name or tag
+        m = mapping_by_name.get(attr_name.strip().lower(), {})
+        if not m and attr.get("tag"):
+            m = mapping_by_name.get(str(attr.get("tag")).strip().lower(), {})
 
-        for attr in raw_attrs:
-            attr_name = attr.get("name", "")
-            # Check mappings if configured by attribute name or tag
-            m = mapping_by_name.get(attr_name.strip().lower(), {})
-            if not m and attr.get("tag"):
-                m = mapping_by_name.get(str(attr.get("tag")).strip().lower(), {})
+        raw_target = str(attr.get("target_endpoint_url") or m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
+        target_type = str(m.get("target_type") or "").strip().lower()
+        if not target_type:
+            if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                target_type = "j5"
+            else:
+                target_type = "oracle"
+
+        if target_type == "j5":
+            if not j5_cfg.get("enabled", True):
+                item_results.append({
+                    "target_type": "j5",
+                    "attribute_name": attr_name,
+                    "target_endpoint": raw_target or j5_cfg.get("url") or DEFAULT_J5_URL,
+                    "status": "PENDING_SETUP",
+                    "http_code": None,
+                    "payload": {},
+                    "response": None,
+                    "error": "J5 endpoint integration is disabled in settings.",
+                    "message": "J5 integration is disabled in settings."
+                })
+                is_pending_setup = True
+                all_succeeded = False
+                continue
+
+            j5_payload = J5Client.build_j5_payload(attr, mapping=m)
+            target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
+            pub_res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
+
+            item_results.append({
+                "target_type": "j5",
+                "attribute_name": attr_name,
+                "target_endpoint": pub_res.get("target_endpoint"),
+                "status": pub_res.get("status"),
+                "http_code": pub_res.get("http_code"),
+                "payload": j5_payload,
+                "response": pub_res.get("response_body"),
+                "error": pub_res.get("error_detail"),
+                "message": pub_res.get("message")
+            })
+
+            if pub_res.get("status") == "SUCCESS":
+                any_succeeded = True
+            else:
+                all_succeeded = False
+
+        else:
+            # Oracle ORDS / ERP Cloud
+            if not erp_cfg.get("enabled", False):
+                item_results.append({
+                    "target_type": "oracle",
+                    "attribute_name": attr_name,
+                    "target_endpoint": raw_target or erp_cfg.get("base_url"),
+                    "status": "PENDING_SETUP",
+                    "http_code": None,
+                    "payload": {},
+                    "response": None,
+                    "error": "Oracle ERP integration is disabled in settings.",
+                    "message": "Oracle ERP integration is disabled in settings."
+                })
+                is_pending_setup = True
+                all_succeeded = False
+                continue
 
             scale = float(m.get("scale_factor", 1.0))
             raw_val = attr.get("value")
@@ -659,11 +710,11 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 "results": str(results_val)
             }
 
-            raw_target = attr.get("target_endpoint_url") or m.get("target_endpoint_url") or m.get("endpoint_url") or ""
-            target_url = raw_target.strip().strip('"').strip("'") or None
+            target_url = raw_target or None
             pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
 
             item_results.append({
+                "target_type": "oracle",
                 "attribute_name": attr_name,
                 "target_endpoint": pub_res.get("target_endpoint"),
                 "status": pub_res.get("status"),
@@ -682,151 +733,69 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             else:
                 all_succeeded = False
 
-        if all_succeeded and item_results:
-            status = "SUCCESS"
-            oracle_status = "DISPATCHED"
-        elif is_pending_setup:
-            status = "PENDING_SETUP"
-            oracle_status = "PENDING_SETUP"
-        else:
-            status = "FAILED"
-            oracle_status = "FAILED"
-
-        is_success = (status == "SUCCESS")
-        primary_code = item_results[0].get("http_code") if item_results else None
-        primary_endpoint = item_results[0].get("target_endpoint") if item_results else erp_cfg.get("base_url")
-        payload_samples = [r["payload"] for r in item_results] if len(item_results) > 1 else (item_results[0]["payload"] if item_results else {})
-        response_samples = [r["response"] for r in item_results] if len(item_results) > 1 else (item_results[0]["response"] if item_results else {})
-        error_msgs = [f"[{r['attribute_name']}]: {r['error'] or r['message']}" for r in item_results if r.get("status") != "SUCCESS"]
-        error_summary = "; ".join(error_msgs) if error_msgs else None
-
-        dispatch_info = {
-            "status": oracle_status,
-            "http_code": primary_code,
-            "target_endpoint": primary_endpoint,
-            "message": f"Successfully dispatched {len(item_results)} attribute(s) to Oracle ORDS." if is_success else f"ORDS dispatch failed for {len(error_msgs)} attribute(s): {error_summary}",
-            "dispatched_at": now_iso,
-            "items_count": len(item_results),
-            "is_retry": is_retry,
-            "retry_count": retry_count,
-            "erp_response": response_samples,
-            "error": error_summary,
-            "dispatches": item_results
-        }
-
-        update_delivery_status(delivery_id, oracle_status, dispatch_info, retry_count=retry_count)
-
-        publish_record = {
-            "publish_id": f"pub-{delivery_id}" if not is_retry else f"pub-{delivery_id}-r{retry_count}",
-            "timestamp": now_iso,
-            "status": status,
-            "message": dispatch_info["message"],
-            "record_count": len(item_results),
-            "target_endpoint": primary_endpoint,
-            "http_code": primary_code,
-            "payload_sample": payload_samples,
-            "response_body": response_samples,
-            "error_detail": error_summary
-        }
-        record_publish_event(publish_record)
-
-        retry_label = f" (Retry attempt #{retry_count})" if is_retry else ""
-        add_log(
-            "SUCCESS" if is_success else "ERROR",
-            "ORACLE_ERP",
-            f"Delivery {delivery_id}{retry_label} dispatch to Oracle ORDS: {status}. HTTP {primary_code}",
-            dispatch_info
-        )
-        return dispatch_info
-
+    if all_succeeded and item_results:
+        status = "SUCCESS"
+        oracle_status = "DISPATCHED"
+    elif is_pending_setup and not any_succeeded:
+        status = "PENDING_SETUP"
+        oracle_status = "PENDING_SETUP"
     else:
-        # Legacy / Standard Monolithic Batch Payload (OAuth 2.0 Oracle Fusion ERP Cloud)
-        items_to_send = []
-        for attr in raw_attrs:
-            attr_name = attr.get("name", "")
-            m = mapping_by_name.get(attr_name.strip().lower(), {})
+        status = "FAILED"
+        oracle_status = "FAILED"
 
-            target_field = m.get("target_field", "readingValue")
-            target_tag_field = m.get("target_tag_field", "meterCode")
-            meter_tag = m.get("meter_tag") or attr_name
+    is_success = (status == "SUCCESS")
+    primary_code = item_results[0].get("http_code") if item_results else None
+    primary_endpoint = item_results[0].get("target_endpoint") if item_results else None
+    payload_samples = [r["payload"] for r in item_results] if len(item_results) > 1 else (item_results[0]["payload"] if item_results else {})
+    response_samples = [r["response"] for r in item_results] if len(item_results) > 1 else (item_results[0]["response"] if item_results else {})
+    error_msgs = [f"[{r['attribute_name']}]: {r['error'] or r['message']}" for r in item_results if r.get("status") != "SUCCESS"]
+    error_summary = "; ".join(error_msgs) if error_msgs else None
 
-            scale = float(m.get("scale_factor", 1.0))
-            raw_val = attr.get("value")
-            scaled_val = raw_val
-            try:
-                scaled_val = round(float(raw_val) * scale, int(m.get("round_decimals", 2)))
-            except Exception:
-                pass
+    # Summary of target endpoints used (e.g. "Oracle", "J5", or "Oracle & J5")
+    target_types_used = list(dict.fromkeys(r.get("target_type", "oracle").upper() for r in item_results))
+    targets_label = " & ".join(target_types_used) if target_types_used else "Endpoint"
 
-            items_to_send.append({
-                target_tag_field: meter_tag,
-                target_field: scaled_val,
-                "readingTimestamp": attr.get("timestamp", now_iso),
-                "unitOfMeasure": m.get("uom") or attr.get("uom", ""),
-                "sourceQuality": attr.get("quality", "Good")
-            })
+    dispatch_info = {
+        "status": oracle_status,
+        "http_code": primary_code,
+        "target_endpoint": primary_endpoint,
+        "target_types": target_types_used,
+        "message": f"Successfully dispatched {len(item_results)} attribute(s) to {targets_label}." if is_success else f"{targets_label} dispatch failed for {len(error_msgs)} attribute(s): {error_summary}",
+        "dispatched_at": now_iso,
+        "items_count": len(item_results),
+        "is_retry": is_retry,
+        "retry_count": retry_count,
+        "erp_response": response_samples,
+        "error": error_summary,
+        "dispatches": item_results
+    }
 
-        erp_payload = {
-            "sourceSystem": "AVEVA_PI_NOTIFICATION",
-            "notificationName": delivery.get("notification_name"),
-            "deliveryId": delivery_id,
-            "batchTimestamp": now_iso,
-            "itemCount": len(items_to_send),
-            "items": items_to_send
-        }
+    update_delivery_status(delivery_id, oracle_status, dispatch_info, retry_count=retry_count)
 
-        publish_result = erp_client.publish_data(erp_payload)
+    publish_record = {
+        "publish_id": f"pub-{delivery_id}" if not is_retry else f"pub-{delivery_id}-r{retry_count}",
+        "timestamp": now_iso,
+        "status": status,
+        "message": dispatch_info["message"],
+        "record_count": len(item_results),
+        "target_endpoint": primary_endpoint,
+        "http_code": primary_code,
+        "payload_sample": payload_samples,
+        "response_body": response_samples,
+        "error_detail": error_summary
+    }
+    record_publish_event(publish_record)
 
-        if publish_result.get("status") == "SUCCESS":
-            status = "SUCCESS"
-            oracle_status = "DISPATCHED"
-        elif publish_result.get("status") == "PENDING_SETUP":
-            status = "PENDING_SETUP"
-            oracle_status = "PENDING_SETUP"
-        else:
-            status = "FAILED"
-            oracle_status = "FAILED"
+    retry_label = f" (Retry attempt #{retry_count})" if is_retry else ""
+    add_log(
+        "SUCCESS" if is_success else "ERROR",
+        "ENDPOINT_DISPATCH",
+        f"Delivery {delivery_id}{retry_label} dispatch to {targets_label}: {status}. HTTP {primary_code}",
+        dispatch_info
+    )
+    return dispatch_info
 
-        is_success = (status == "SUCCESS")
-
-        dispatch_info = {
-            "status": oracle_status,
-            "http_code": publish_result.get("http_code"),
-            "message": publish_result.get("message"),
-            "dispatched_at": now_iso,
-            "items_count": len(items_to_send),
-            "is_retry": is_retry,
-            "retry_count": retry_count,
-            "erp_response": publish_result.get("response_body"),
-            "error": publish_result.get("error_detail")
-        }
-
-        update_delivery_status(delivery_id, oracle_status, dispatch_info, retry_count=retry_count)
-
-        # Record in publish history
-        publish_record = {
-            "publish_id": f"pub-{delivery_id}" if not is_retry else f"pub-{delivery_id}-r{retry_count}",
-            "timestamp": now_iso,
-            "status": status,
-            "message": publish_result.get("message", "Dispatched from PI Delivery Endpoint"),
-            "record_count": len(items_to_send),
-            "target_endpoint": erp_cfg.get("base_url", "") + erp_cfg.get("resource_endpoint", ""),
-            "http_code": publish_result.get("http_code"),
-            "payload_sample": erp_payload,
-            "response_body": publish_result.get("response_body"),
-            "error_detail": publish_result.get("error_detail")
-        }
-        record_publish_event(publish_record)
-
-        retry_label = f" (Retry attempt #{retry_count})" if is_retry else ""
-        add_log(
-            "SUCCESS" if is_success else "ERROR",
-            "ORACLE_ERP",
-            f"Delivery {delivery_id}{retry_label} dispatch to Oracle ERP: {status}. HTTP {publish_result.get('http_code')}",
-            dispatch_info
-        )
-
-        return dispatch_info
+dispatch_delivery_to_endpoint = dispatch_delivery_to_oracle
 
 
 def dispatch_all_pending_deliveries() -> Dict[str, Any]:
@@ -836,15 +805,17 @@ def dispatch_all_pending_deliveries() -> Dict[str, Any]:
     """
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    j5_cfg = settings.get("j5_endpoint", {})
     auto_dispatch_enabled = settings.get("pipeline", {}).get("auto_dispatch", True) and settings.get("pipeline", {}).get("auto_dispatch_deliveries", True)
+    any_enabled = erp_cfg.get("enabled", False) or j5_cfg.get("enabled", False)
 
-    if not auto_dispatch_enabled or not erp_cfg.get("enabled", False):
+    if not auto_dispatch_enabled or not any_enabled:
         return {
             "total_pending": 0,
             "dispatched": 0,
             "failed": 0,
             "errors": [],
-            "message": "Auto-dispatch disabled or Oracle ERP not configured."
+            "message": "Auto-dispatch disabled or destination endpoints not configured."
         }
 
     all_deliveries = get_received_deliveries(limit=200)

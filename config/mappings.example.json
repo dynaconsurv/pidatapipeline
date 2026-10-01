@@ -103,5 +103,27 @@
     "round_decimals": 2,
     "uom": "mm/s",
     "enabled": true
+  },
+  {
+    "id": "map-j5-purchaseorder",
+    "name": "J5 Inbound Message Telemetry",
+    "attribute_name": "Effluent Turbidity",
+    "af_server": "PISRV01",
+    "af_database": "Plant_Operations",
+    "element_path": "Effluent\\Discharge",
+    "full_path": "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|Effluent Turbidity",
+    "target_type": "j5",
+    "target_endpoint_url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+    "tag": "TURBIDITY_01",
+    "description": "Effluent Discharge Turbidity NTU",
+    "limit": "25.0",
+    "results": "Normal",
+    "target_field": "value",
+    "meter_tag": "TURBIDITY_01",
+    "target_tag_field": "tag",
+    "scale_factor": 1.0,
+    "round_decimals": 2,
+    "uom": "NTU",
+    "enabled": true
   }
 ]

@@ -15,6 +15,7 @@ import uuid
 from app.config import load_settings, load_mappings
 from app.pi_client import PIWebApiClient
 from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
+from app.j5_client import J5Client, DEFAULT_J5_URL, format_j5_timestamp
 from app.storage import (
     record_pull_batch,
     record_publish_event,
@@ -119,9 +120,11 @@ class DataPipelineEngine:
 
         pi_cfg = settings.get("pi_web_api", {})
         erp_cfg = settings.get("oracle_erp", {})
+        j5_cfg = settings.get("j5_endpoint", {})
 
         pi_client = PIWebApiClient(pi_cfg)
         erp_client = OracleERPCloudClient(erp_cfg)
+        j5_client = J5Client(j5_cfg)
 
         batch_id = f"batch-{int(time.time())}-{uuid.uuid4().hex[:6]}"
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -236,22 +239,30 @@ class DataPipelineEngine:
         }
         record_pull_batch(batch_record)
 
-        # Step 2: Build Oracle ERP / ORDS payload & dispatch
-        is_ords_mode = (
-            erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
-            "/ords/" in erp_cfg.get("base_url", "").lower() or
-            "/ords/" in erp_cfg.get("token_url", "").lower() or
-            any(bool(m.get("target_endpoint_url")) for m in enabled_mappings)
-        )
+        # Step 2: Dispatch to configured endpoints (Oracle ORDS or J5)
+        all_succeeded = True
+        item_results = []
+        mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
 
-        if is_ords_mode:
-            all_succeeded = True
-            item_results = []
-            mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
+        for item in pull_items:
+            attr_name = item.get("attribute_name", "")
+            m = mapping_by_name.get(attr_name.strip().lower(), {})
+            raw_target = str(m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
+            target_type = str(m.get("target_type") or "").strip().lower()
+            if not target_type:
+                if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                    target_type = "j5"
+                else:
+                    target_type = "oracle"
 
-            for item in pull_items:
-                attr_name = item.get("attribute_name", "")
-                m = mapping_by_name.get(attr_name.strip().lower(), {})
+            if target_type == "j5":
+                j5_payload = J5Client.build_j5_payload(item, mapping=m)
+                target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
+                res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
+                item_results.append(res)
+                if res.get("status") != "SUCCESS":
+                    all_succeeded = False
+            else:
                 tag_val = m.get("tag") or m.get("meter_tag") or attr_name
                 desc_val = m.get("description") or m.get("name") or attr_name
                 limit_val = m.get("limit") if m.get("limit") is not None else ""
@@ -265,28 +276,24 @@ class DataPipelineEngine:
                     "limit": str(limit_val),
                     "results": str(results_val)
                 }
-                raw_target = m.get("target_endpoint_url") or ""
-                target_url = raw_target.strip().strip('"').strip("'") or None
+                target_url = raw_target or None
                 res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
                 item_results.append(res)
                 if res.get("status") != "SUCCESS":
                     all_succeeded = False
 
-            primary_code = item_results[0].get("http_code") if item_results else None
-            primary_endpoint = item_results[0].get("target_endpoint") if item_results else erp_cfg.get("base_url")
-            publish_result = {
-                "status": "SUCCESS" if (all_succeeded and item_results) else ("PENDING_SETUP" if erp_cfg.get("enabled") is False else "FAILED"),
-                "message": f"Successfully posted {len(item_results)} readings to Oracle ORDS" if all_succeeded else "ORDS post failed for some readings",
-                "record_count": len(item_results),
-                "http_code": primary_code,
-                "target_endpoint": primary_endpoint,
-                "payload_sample": ords_payload if item_results else {},
-                "response_body": item_results[0].get("response_body") if item_results else {},
-                "error_detail": next((r.get("error_detail") for r in item_results if r.get("error_detail")), None)
-            }
-        else:
-            erp_payload = self._build_erp_payload(pull_items, enabled_mappings)
-            publish_result = erp_client.publish_data(erp_payload)
+        primary_code = item_results[0].get("http_code") if item_results else None
+        primary_endpoint = item_results[0].get("target_endpoint") if item_results else None
+        publish_result = {
+            "status": "SUCCESS" if (all_succeeded and item_results) else "FAILED",
+            "message": f"Successfully posted {len(item_results)} readings to endpoint(s)" if all_succeeded else "Dispatch failed for some readings",
+            "record_count": len(item_results),
+            "http_code": primary_code,
+            "target_endpoint": primary_endpoint,
+            "payload_sample": item_results[0].get("payload_sample", {}) if item_results else {},
+            "response_body": item_results[0].get("response_body") if item_results else {},
+            "error_detail": next((r.get("error_detail") for r in item_results if r.get("error_detail")), None)
+        }
 
         publish_result["publish_id"] = f"pub-{int(time.time())}-{uuid.uuid4().hex[:6]}"
         publish_result["batch_id"] = batch_id

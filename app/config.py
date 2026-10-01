@@ -49,6 +49,14 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         },
         "timeout_seconds": 15
     },
+    "j5_endpoint": {
+        "enabled": True,
+        "auth_type": "basic",
+        "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+        "username": "HIRUJR_JZNOT1742577235_TST",
+        "password": "kah4YAH!bvm-vkt_jzd",
+        "timeout_seconds": 15
+    },
     "pipeline": {
         "interval_seconds": 120,
         "auto_start": True,
@@ -70,6 +78,7 @@ DEFAULT_MAPPINGS: List[Dict[str, Any]] = [
         "af_database": "Plant_Operations",
         "element_path": "Effluent\\Discharge",
         "attribute_name": "30 Min Average",
+        "target_type": "oracle",
         "full_path": "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|30 Min Average",
         "target_endpoint_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/",
         "tag": "TAG2",
@@ -176,7 +185,32 @@ DEFAULT_MAPPINGS: List[Dict[str, Any]] = [
         "scale_factor": 1.0,
         "round_decimals": 2,
         "uom": "mm/s",
+        "target_type": "oracle",
         "enabled": True
+    },
+    {
+        "id": "map-j5-sample",
+        "name": "J5 Inbound Telemetry Stream",
+        "target_type": "j5",
+        "af_server": "PISRV01",
+        "af_database": "Plant_Operations",
+        "element_path": "Effluent\\Discharge",
+        "attribute_name": "Discharge Flow Rate",
+        "full_path": "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|Discharge Flow Rate",
+        "target_endpoint_url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+        "tag": "purchaseorder",
+        "description": "J5 Inbound Telemetry Message",
+        "limit": "100.0",
+        "results": "Normal",
+        "target_field": "value",
+        "meter_tag": "purchaseorder",
+        "target_tag_field": "tag",
+        "data_type": "number",
+        "transformation": "direct",
+        "scale_factor": 1.0,
+        "round_decimals": 2,
+        "uom": "m3/h",
+        "enabled": False
     }
 ]
 

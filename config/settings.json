@@ -35,6 +35,14 @@
     },
     "timeout_seconds": 15
   },
+  "j5_endpoint": {
+    "enabled": true,
+    "auth_type": "basic",
+    "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+    "username": "HIRUJR_JZNOT1742577235_TST",
+    "password": "kah4YAH!bvm-vkt_jzd",
+    "timeout_seconds": 15
+  },
   "pipeline": {
     "interval_seconds": 120,
     "ingestion_mode": "endpoint",

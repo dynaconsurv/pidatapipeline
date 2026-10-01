@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.config import load_settings, save_settings, load_mappings, save_mappings
 from app.pi_client import PIWebApiClient
 from app.oracle_erp_client import OracleERPCloudClient
+from app.j5_client import J5Client, DEFAULT_J5_URL
 from app.pipeline import pipeline_engine
 from app.storage import (
     get_pull_history,
@@ -363,6 +364,17 @@ def test_oracle_erp_connection(config: Dict[str, Any] = None):
     return result
 
 
+@app.post("/api/settings/test-j5")
+def test_j5_connection(config: Dict[str, Any] = None):
+    """Test connection to J5 Inbound Message API endpoint using HTTP Basic Authentication."""
+    if not config:
+        stored = load_settings()
+        config = stored.get("j5_endpoint", {})
+    client = J5Client(config)
+    result = client.test_connection()
+    return result
+
+
 # -------------------------------------------------------------
 # Attribute Mappings API & PI AF Explorer
 # -------------------------------------------------------------
@@ -389,45 +401,92 @@ def browse_af(path: str = ""):
 
 @app.post("/api/mappings/test-endpoint")
 def test_mapping_endpoint(data: Dict[str, Any]):
-    """Test connectivity to a specific ORDS / Oracle target endpoint URL."""
+    """Test connectivity to a specific destination endpoint URL (Oracle ORDS or J5)."""
     endpoint_url = (data.get("endpoint_url") or "").strip()
     if not endpoint_url:
         raise HTTPException(status_code=400, detail="Missing endpoint_url parameter.")
+
+    target_type = (data.get("target_type") or "").strip().lower()
+    if not target_type:
+        if "hxgnsmartcloud" in endpoint_url.lower() or "tag=purchaseorder" in endpoint_url.lower():
+            target_type = "j5"
+        else:
+            target_type = "oracle"
+
     stored = load_settings()
-    config = dict(stored.get("oracle_erp", {}))
-    # If the user has not configured OAuth credentials or set auth_type to none, test directly without requiring OAuth 2.0
-    if not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
-        config["auth_type"] = "none"
-        config["enabled"] = True
-    client = OracleERPCloudClient(config)
-    result = client.test_connection(test_url=endpoint_url)
-    return result
+    if target_type == "j5":
+        j5_config = dict(stored.get("j5_endpoint", {}))
+        if data.get("username"):
+            j5_config["username"] = data.get("username")
+        if data.get("password"):
+            j5_config["password"] = data.get("password")
+        client = J5Client(j5_config)
+        result = client.test_connection(test_url=endpoint_url)
+        return result
+    else:
+        config = dict(stored.get("oracle_erp", {}))
+        # If the user has not configured OAuth credentials or set auth_type to none, test directly without requiring OAuth 2.0
+        if not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
+            config["auth_type"] = "none"
+            config["enabled"] = True
+        client = OracleERPCloudClient(config)
+        result = client.test_connection(test_url=endpoint_url)
+        return result
 
 
 @app.get("/api/mappings/preview")
 def preview_erp_payload():
-    """Generate a preview of the Oracle ERP / ORDS payload based on currently configured mappings."""
+    """Generate a preview of destination payloads (Oracle ORDS and J5) based on currently configured mappings."""
     mappings = load_mappings()
     enabled = [m for m in mappings if m.get("enabled", True)]
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    j5_cfg = settings.get("j5_endpoint", {})
     now_iso = datetime.now(timezone.utc).isoformat()
     base_url = (erp_cfg.get("base_url") or "").rstrip("/")
 
-    is_ords = (
-        erp_cfg.get("auth_type") in ("none", "no_auth", "open") or
-        any(bool(m.get("target_endpoint_url")) for m in enabled)
-    )
+    previews = []
+    for m in enabled:
+        attr_name = m.get("attribute_name", "Tag")
+        scale = float(m.get("scale_factor", 1.0))
+        dec = int(m.get("round_decimals", 2))
+        sample_val = round(12.3 * scale, dec)
+        raw_target = str(m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
 
-    if is_ords:
-        ords_previews = []
-        for m in enabled:
-            attr_name = m.get("attribute_name", "Tag")
-            scale = float(m.get("scale_factor", 1.0))
-            dec = int(m.get("round_decimals", 2))
-            sample_val = round(12.3 * scale, dec)
+        target_type = str(m.get("target_type") or "").strip().lower()
+        if not target_type:
+            if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                target_type = "j5"
+            else:
+                target_type = "oracle"
 
-            target_url = m.get("target_endpoint_url")
+        if target_type == "j5":
+            target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
+            sample_attr = {
+                "name": attr_name,
+                "value": sample_val,
+                "timestamp": now_iso,
+                "quality": "Good",
+                "tag": m.get("tag") or m.get("meter_tag") or "purchaseorder",
+                "description": m.get("description") or m.get("name") or attr_name,
+                "limit": m.get("limit") or "100.0",
+                "results": m.get("results") or "Normal"
+            }
+            j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m)
+            previews.append({
+                "target_type": "J5 (Hexagon Smart Cloud)",
+                "target_endpoint": target_url,
+                "http_method": "POST",
+                "auth_type": "HTTP Basic Auth",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]"
+                },
+                "body": j5_payload
+            })
+        else:
+            target_url = raw_target
             if not target_url:
                 res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
                 target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
@@ -437,28 +496,31 @@ def preview_erp_payload():
             limit_val = m.get("limit") if m.get("limit") is not None else "LIMIT2"
             results_val = m.get("results") or "RESULTS2"
 
-            ords_previews.append({
+            ords_payload = {
+                "timestamp": now_iso,
+                "tag": str(tag_val),
+                "description": str(desc_val),
+                "value": str(sample_val),
+                "limit": str(limit_val),
+                "results": str(results_val)
+            }
+            previews.append({
+                "target_type": "Oracle ORDS",
                 "target_endpoint": target_url,
                 "http_method": "POST",
+                "auth_type": "ORDS Direct / None",
                 "headers": {
                     "Content-Type": "application/json",
                     "Accept": "application/json"
                 },
-                "body": {
-                    "timestamp": now_iso,
-                    "tag": str(tag_val),
-                    "description": str(desc_val),
-                    "value": str(sample_val),
-                    "limit": str(limit_val),
-                    "results": str(results_val)
-                }
+                "body": ords_payload
             })
-        return {
-            "mode": "Oracle ORDS Direct (Individual Endpoint per Attribute)",
-            "auth_security": "None / Direct (Unauthenticated ORDS Standard)",
-            "mapped_items_count": len(ords_previews),
-            "dispatches": ords_previews
-        }
+
+    return {
+        "mode": "Destination Endpoints (Oracle ORDS & J5 Inbound Message)",
+        "mapped_items_count": len(previews),
+        "dispatches": previews
+    }
 
     # Monolithic Batch Mode (OAuth 2.0 Oracle Fusion ERP Cloud)
     recent_batches = get_pull_history(limit=1)
