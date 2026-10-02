@@ -1609,10 +1609,10 @@ function renderMappingsTable() {
       ? (currentSettings?.j5_endpoint?.url || 'https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder')
       : (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : '--');
     const targetUrl = m.target_endpoint_url || defaultUrl;
-    const tagDisplay = m.tag || m.meter_tag || m.attribute_name || '--';
-    const descDisplay = m.description || m.name || m.attribute_name || '--';
+    const tagDisplay = m.tag || m.meter_tag || '--';
+    const descDisplay = m.description || m.name || '--';
     const limitDisplay = (m.limit !== undefined && m.limit !== null && m.limit !== "") ? m.limit : '--';
-    const resultsDisplay = m.results || 'Normal';
+    const resultsDisplay = (m.results !== undefined && m.results !== null && m.results !== "") ? m.results : '--';
     const targetBadge = isJ5
       ? `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`
       : `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
@@ -1646,7 +1646,7 @@ function renderMappingsTable() {
         </td>
         <td style="vertical-align: top; font-size: 11px; white-space: nowrap;">
           <div><span style="color: var(--ink-secondary);">Limit:</span> <code>${escapeHtml(String(limitDisplay))}</code></div>
-          <div style="margin-top: 2px;"><span style="color: var(--ink-secondary);">Results:</span> <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${escapeHtml(resultsDisplay)}</span></div>
+          <div style="margin-top: 2px;"><span style="color: var(--ink-secondary);">Results:</span> ${resultsDisplay !== '--' ? `<span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${escapeHtml(resultsDisplay)}</span>` : `<span style="color: var(--ink-tertiary);">--</span>`}</div>
         </td>
         <td style="font-size: 0.78rem; color: var(--ink-secondary); vertical-align: top;">
           <div>${scaleRound}</div>
@@ -1709,8 +1709,8 @@ function handleModalTargetTypeChange() {
     if (heading) heading.textContent = "J5 Destination Endpoint (Hexagon Smart Cloud)";
     if (labelUrl) labelUrl.textContent = "J5 Inbound Message URL *";
     if (helpUrl) helpUrl.textContent = "Hexagon J5 Inbound Message API endpoint receiving JSON telemetry via HTTP Basic Auth.";
-    if (labelTag) labelTag.textContent = "J5 Message Tag / Key *";
-    if (labelDesc) labelDesc.textContent = "J5 Description *";
+    if (labelTag) labelTag.textContent = "J5 Message Tag / Key";
+    if (labelDesc) labelDesc.textContent = "J5 Description";
     if (labelLimit) labelLimit.textContent = "Operating Limit (Optional)";
     if (labelResults) labelResults.textContent = "Result / Status (Optional)";
     if (inputUrl && (!inputUrl.value || inputUrl.value.includes("oraclecloudapps.com"))) {
@@ -1720,8 +1720,8 @@ function handleModalTargetTypeChange() {
     if (heading) heading.textContent = "Oracle Destination Endpoint (ORDS REST POST)";
     if (labelUrl) labelUrl.textContent = "Target POST URL *";
     if (helpUrl) helpUrl.textContent = "Individual ORDS table/resource POST URL configured by Oracle team for this specific telemetry item.";
-    if (labelTag) labelTag.textContent = "Oracle Tag (tag) *";
-    if (labelDesc) labelDesc.textContent = "Oracle Description (description) *";
+    if (labelTag) labelTag.textContent = "Oracle Tag (tag)";
+    if (labelDesc) labelDesc.textContent = "Oracle Description (description)";
     if (labelLimit) labelLimit.textContent = "Limit (limit)";
     if (labelResults) labelResults.textContent = "Results (results)";
     if (inputUrl && (!inputUrl.value || inputUrl.value.includes("hxgnsmartcloud.com"))) {
@@ -1764,7 +1764,7 @@ function openMappingModal(mapping = null, index = -1) {
     document.getElementById("modal-target-tag").value = mapping.tag || mapping.meter_tag || "";
     document.getElementById("modal-description").value = mapping.description || mapping.name || "";
     document.getElementById("modal-limit").value = (mapping.limit !== undefined && mapping.limit !== null) ? mapping.limit : "";
-    document.getElementById("modal-results").value = mapping.results || "Normal";
+    document.getElementById("modal-results").value = (mapping.results !== undefined && mapping.results !== null) ? mapping.results : "";
     document.getElementById("modal-attr-name").value = mapping.attribute_name || "";
     document.getElementById("modal-af-server").value = mapping.af_server || "PISRV01";
     document.getElementById("modal-af-database").value = mapping.af_database || "Plant_Operations";
@@ -1783,18 +1783,18 @@ function openMappingModal(mapping = null, index = -1) {
     handleModalTargetTypeChange();
 
     document.getElementById("modal-target-endpoint-url").value = defaultOrdsUrl;
-    document.getElementById("modal-target-tag").value = "TAG2";
-    document.getElementById("modal-description").value = "DESCRIPTION2";
-    document.getElementById("modal-limit").value = "LIMIT2";
-    document.getElementById("modal-results").value = "RESULTS2";
-    document.getElementById("modal-attr-name").value = "30 Min Average";
+    document.getElementById("modal-target-tag").value = "";
+    document.getElementById("modal-description").value = "";
+    document.getElementById("modal-limit").value = "";
+    document.getElementById("modal-results").value = "";
+    document.getElementById("modal-uom").value = "";
+    document.getElementById("modal-attr-name").value = "";
     document.getElementById("modal-af-server").value = currentSettings?.pi_web_api?.af_server || "PISRV01";
     document.getElementById("modal-af-database").value = currentSettings?.pi_web_api?.af_database || "Plant_Operations";
-    document.getElementById("modal-element-path").value = "Effluent\\Discharge";
-    document.getElementById("modal-full-path").value = "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|30 Min Average";
+    document.getElementById("modal-element-path").value = "";
+    document.getElementById("modal-full-path").value = "";
     document.getElementById("modal-scale").value = "1.0";
     document.getElementById("modal-decimals").value = "2";
-    document.getElementById("modal-uom").value = "pH";
     document.getElementById("modal-enabled").checked = true;
   }
 }
@@ -1971,16 +1971,16 @@ function loadSamplePresets() {
         element_path: "Effluent\\Discharge",
         full_path: "\\\\PISRV01\\Plant_Operations\\Effluent\\Discharge|30 Min Average",
         target_endpoint_url: defaultOrdsUrl,
-        tag: "TAG2",
-        description: "DESCRIPTION2",
-        limit: "LIMIT2",
-        results: "RESULTS2",
+        tag: "",
+        description: "",
+        limit: "",
+        results: "",
         target_field: "value",
-        meter_tag: "TAG2",
+        meter_tag: "",
         target_tag_field: "tag",
         scale_factor: 1.0,
         round_decimals: 2,
-        uom: "pH",
+        uom: "",
         enabled: true
       },
       {
@@ -2206,14 +2206,17 @@ window.quickAddFromAF = function(path, name, uom) {
     }
   }
 
-  const cleanTag = name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
   openMappingModal({
     attribute_name: name,
     af_server: server,
     af_database: db,
     element_path: elemPath,
     full_path: path,
-    meter_tag: cleanTag,
+    tag: "",
+    description: "",
+    limit: "",
+    results: "",
+    meter_tag: "",
     target_field: "readingValue",
     uom: uom || "",
     scale_factor: 1.0,
@@ -2370,12 +2373,14 @@ async function loadSettingsIntoForm() {
     const j5UrlEl = document.getElementById("setting-j5-url");
     const j5UserEl = document.getElementById("setting-j5-username");
     const j5PassEl = document.getElementById("setting-j5-password");
+    const j5TenantEl = document.getElementById("setting-j5-tenant-id");
     const j5TimeoutEl = document.getElementById("setting-j5-timeout");
 
     if (j5EnabledEl) j5EnabledEl.checked = j5.enabled !== undefined ? !!j5.enabled : true;
     if (j5UrlEl) j5UrlEl.value = j5.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
     if (j5UserEl) j5UserEl.value = j5.username || "HIRUJR_JZNOT1742577235_TST";
     if (j5PassEl) j5PassEl.value = j5.password || "kah4YAH!bvm-vkt_jzd";
+    if (j5TenantEl) j5TenantEl.value = j5.tenant_id || "JZNOT1742577235_TST";
     if (j5TimeoutEl) j5TimeoutEl.value = j5.timeout_seconds || 15;
 
     // Pipeline Settings
@@ -2881,6 +2886,7 @@ function collectSettingsFromForm() {
       auth_type: "basic",
       username: document.getElementById("setting-j5-username") ? document.getElementById("setting-j5-username").value.trim() : "HIRUJR_JZNOT1742577235_TST",
       password: document.getElementById("setting-j5-password") ? document.getElementById("setting-j5-password").value : "kah4YAH!bvm-vkt_jzd",
+      tenant_id: document.getElementById("setting-j5-tenant-id") ? document.getElementById("setting-j5-tenant-id").value.trim() : "JZNOT1742577235_TST",
       timeout_seconds: parseInt(document.getElementById("setting-j5-timeout")?.value, 10) || 15
     },
     pipeline: {

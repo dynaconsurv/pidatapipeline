@@ -20,6 +20,7 @@ from requests.auth import HTTPBasicAuth
 DEFAULT_J5_URL = "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
 DEFAULT_J5_USERNAME = "HIRUJR_JZNOT1742577235_TST"
 DEFAULT_J5_PASSWORD = "kah4YAH!bvm-vkt_jzd"
+DEFAULT_J5_TENANT_ID = "JZNOT1742577235_TST"
 
 
 def format_j5_timestamp(ts: Any) -> str:
@@ -64,6 +65,7 @@ class J5Client:
         self.url = (cfg.get("url") or DEFAULT_J5_URL).strip()
         self.username = (cfg.get("username") or DEFAULT_J5_USERNAME).strip()
         self.password = cfg.get("password") or DEFAULT_J5_PASSWORD
+        self.tenant_id = (cfg.get("tenant_id") or DEFAULT_J5_TENANT_ID).strip()
         self.timeout = cfg.get("timeout_seconds", 15)
         self.custom_headers = cfg.get("custom_headers") or {}
 
@@ -84,7 +86,8 @@ class J5Client:
     def _build_headers(self, custom: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         headers = {
             "Content-Type": "text/plain",
-            "Accept": "application/json, text/plain, */*"
+            "Accept": "application/json, text/plain, */*",
+            "X-Tenant-Id": self.tenant_id
         }
         if self.username and self.password:
             user_pass = f"{self.username}:{self.password}"
@@ -276,34 +279,34 @@ class J5Client:
         except Exception:
             scaled_val = raw_val
 
-        # Tag selection: mapping tag > attr tag > attr name > default
+        # Tag selection: attr tag > mapping tag > meter_tag > empty
         tag_val = (
-            mapping.get("tag") or
-            mapping.get("meter_tag") or
-            attr_data.get("tag") or
-            attr_data.get("name") or
-            "purchaseorder"
+            attr_data.get("tag") if attr_data.get("tag") is not None and str(attr_data.get("tag")).strip() != ""
+            else (mapping.get("tag") if mapping.get("tag") is not None else (mapping.get("meter_tag") or ""))
         )
 
+        # Description selection: attr description > mapping description > mapping name > empty
         desc_val = (
-            mapping.get("description") or
-            attr_data.get("description") or
-            mapping.get("name") or
-            attr_data.get("name") or
-            ""
+            attr_data.get("description") if attr_data.get("description") is not None and str(attr_data.get("description")).strip() != ""
+            else (mapping.get("description") if mapping.get("description") is not None else (mapping.get("name") or ""))
         )
 
+        # Limit: attr limit > mapping limit > empty
         limit_val = (
             attr_data.get("limit") if attr_data.get("limit") is not None and str(attr_data.get("limit")).strip() != ""
-            else (mapping.get("limit") or "")
+            else (mapping.get("limit") if mapping.get("limit") is not None else "")
         )
 
+        # Results: attr results > mapping results > empty
         results_val = (
             attr_data.get("results") if attr_data.get("results") is not None and str(attr_data.get("results")).strip() != ""
-            else (mapping.get("results") or ("Normal" if attr_data.get("quality", "Good") == "Good" else "Check"))
+            else (mapping.get("results") if mapping.get("results") is not None else "")
         )
 
-        uom_val = mapping.get("uom") or attr_data.get("uom") or ""
+        uom_val = (
+            attr_data.get("uom") if attr_data.get("uom") is not None and str(attr_data.get("uom")).strip() != ""
+            else (mapping.get("uom") if mapping.get("uom") is not None else "")
+        )
         ts_val = format_j5_timestamp(attr_data.get("timestamp") or now_iso)
         quality_val = attr_data.get("quality") or "Good"
 

@@ -468,12 +468,13 @@ def preview_erp_payload():
                 "value": sample_val,
                 "timestamp": now_iso,
                 "quality": "Good",
-                "tag": m.get("tag") or m.get("meter_tag") or "purchaseorder",
-                "description": m.get("description") or m.get("name") or attr_name,
-                "limit": m.get("limit") or "100.0",
-                "results": m.get("results") or "Normal"
+                "tag": m.get("tag") or m.get("meter_tag") or "",
+                "description": m.get("description") or m.get("name") or "",
+                "limit": m.get("limit") or "",
+                "results": m.get("results") or ""
             }
             j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m)
+            tenant_id = j5_cfg.get("tenant_id") or "JZNOT1742577235_TST"
             previews.append({
                 "target_type": "J5 (Hexagon Smart Cloud)",
                 "target_endpoint": target_url,
@@ -482,7 +483,8 @@ def preview_erp_payload():
                 "headers": {
                     "Content-Type": "application/json",
                     "Accept": "application/json",
-                    "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]"
+                    "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]",
+                    "X-Tenant-Id": tenant_id
                 },
                 "body": j5_payload
             })
@@ -492,11 +494,11 @@ def preview_erp_payload():
                 res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
                 target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
 
-            tag_val = m.get("tag") or m.get("meter_tag") or "TAG2"
-            desc_val = m.get("description") or m.get("name") or attr_name
-            limit_val = m.get("limit") if m.get("limit") is not None else "LIMIT2"
-            results_val = m.get("results") or "RESULTS2"
-            uom_val = m.get("uom") or m.get("unit") or "mg/L"
+            tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
+            desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
+            limit_val = m.get("limit") if m.get("limit") is not None else ""
+            results_val = m.get("results") if m.get("results") is not None else ""
+            uom_val = m.get("uom") if m.get("uom") is not None else (m.get("unit") or "")
 
             ords_payload = {
                 "timestamp": now_iso,

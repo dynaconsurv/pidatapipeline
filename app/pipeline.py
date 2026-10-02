@@ -263,10 +263,10 @@ class DataPipelineEngine:
                 if res.get("status") != "SUCCESS":
                     all_succeeded = False
             else:
-                tag_val = m.get("tag") or m.get("meter_tag") or attr_name
-                desc_val = m.get("description") or m.get("name") or attr_name
+                tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
+                desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
                 limit_val = m.get("limit") if m.get("limit") is not None else ""
-                results_val = m.get("results") or ("Normal" if item.get("quality", "Good") == "Good" else "Check")
+                results_val = m.get("results") if m.get("results") is not None else ""
                 uom_val = item.get("uom") or item.get("UOM") or item.get("unit") or m.get("uom") or m.get("unit") or ""
 
                 ords_payload = {

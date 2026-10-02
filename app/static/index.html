@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.2.1">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.2.2">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.1</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.2</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -1391,6 +1391,12 @@
               <button type="button" id="btn-toggle-j5-password" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Show</button>
             </div>
           </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="setting-j5-tenant-id">J5 Tenant ID (X-Tenant-Id header)</label>
+            <input type="text" id="setting-j5-tenant-id" class="form-control form-control-mono" value="JZNOT1742577235_TST">
+            <div class="form-help">Sent as <code>X-Tenant-Id: &lt;Tenant-ID&gt;</code> in all J5 HTTP request headers.</div>
+          </div>
         </div>
 
         <div id="j5-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
@@ -1654,23 +1660,23 @@
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div class="form-group">
-                <label class="form-label" id="modal-label-tag" for="modal-target-tag">Oracle Tag (tag) *</label>
-                <input type="text" id="modal-target-tag" class="form-control form-control-mono" required placeholder="TAG2">
+                <label class="form-label" id="modal-label-tag" for="modal-target-tag">Oracle Tag (tag)</label>
+                <input type="text" id="modal-target-tag" class="form-control form-control-mono" placeholder="Empty by default">
               </div>
 
               <div class="form-group">
-                <label class="form-label" id="modal-label-desc" for="modal-description">Oracle Description (description) *</label>
-                <input type="text" id="modal-description" class="form-control" required placeholder="DESCRIPTION2">
+                <label class="form-label" id="modal-label-desc" for="modal-description">Oracle Description (description)</label>
+                <input type="text" id="modal-description" class="form-control" placeholder="Empty by default">
               </div>
 
               <div class="form-group">
                 <label class="form-label" id="modal-label-limit" for="modal-limit">Limit (limit)</label>
-                <input type="text" id="modal-limit" class="form-control form-control-mono" placeholder="LIMIT2 or 9.0">
+                <input type="text" id="modal-limit" class="form-control form-control-mono" placeholder="Empty by default">
               </div>
 
               <div class="form-group">
                 <label class="form-label" id="modal-label-results" for="modal-results">Results (results)</label>
-                <input type="text" id="modal-results" class="form-control" placeholder="RESULTS2 or Normal">
+                <input type="text" id="modal-results" class="form-control" placeholder="Empty by default">
               </div>
             </div>
           </div>
@@ -1704,7 +1710,7 @@
 
           <div class="form-group">
             <label class="form-label" for="modal-uom">Unit of Measure (UOM)</label>
-            <input type="text" id="modal-uom" class="form-control" placeholder="pH, bar, m3/h">
+            <input type="text" id="modal-uom" class="form-control" placeholder="Empty by default">
           </div>
 
           <div class="form-group">
@@ -1893,6 +1899,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.0.5"></script>
+  <script src="/static/js/app.js?v=2.2.2"></script>
 </body>
 </html>

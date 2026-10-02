@@ -55,6 +55,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
         "username": "HIRUJR_JZNOT1742577235_TST",
         "password": "kah4YAH!bvm-vkt_jzd",
+        "tenant_id": "JZNOT1742577235_TST",
         "timeout_seconds": 15
     },
     "pipeline": {

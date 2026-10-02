@@ -679,10 +679,10 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 scaled_val = raw_val
 
             timestamp_val = format_ords_timestamp(attr.get("timestamp") or now_iso)
-            tag_val = attr.get("tag") or m.get("tag") or m.get("meter_tag") or attr_name
-            desc_val = attr.get("description") or m.get("description") or m.get("name") or attr_name
+            tag_val = attr.get("tag") or m.get("tag") or m.get("meter_tag") or ""
+            desc_val = attr.get("description") or m.get("description") or m.get("name") or ""
 
-            # Limit: prioritize direct attribute from PI Notification
+            # Limit: prioritize direct attribute from PI Notification, then mapping, else empty
             if attr.get("limit") is not None and str(attr.get("limit")).strip() != "":
                 limit_val = attr.get("limit")
             elif m.get("limit") is not None and str(m.get("limit")).strip() != "":
@@ -690,15 +690,15 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             else:
                 limit_val = ""
 
-            # Results: prioritize direct attribute from PI Notification
+            # Results: prioritize direct attribute from PI Notification, then mapping, else empty
             if attr.get("results") is not None and str(attr.get("results")).strip() != "":
                 results_val = attr.get("results")
             elif attr.get("result") is not None and str(attr.get("result")).strip() != "":
                 results_val = attr.get("result")
-            elif m.get("results"):
+            elif m.get("results") is not None and str(m.get("results")).strip() != "":
                 results_val = m.get("results")
             else:
-                results_val = "Normal" if attr.get("quality", "Good") == "Good" else "Check"
+                results_val = ""
 
             # UOM: prioritize direct attribute from PI Notification, then mapping
             if attr.get("uom") is not None and str(attr.get("uom")).strip() != "":
