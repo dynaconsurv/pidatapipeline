@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.2.2">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.2.3">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.2</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.3</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -496,19 +496,70 @@
             <div class="form-help">Audit log of all push deliveries received at /api/v1/delivery, paginated at 10 records per table</div>
           </div>
           <div class="btn-group" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <select id="history-filter-status" class="form-control" style="width: auto; height: 32px; font-size: 11px; padding: 2px 8px;">
-              <option value="ALL">All Statuses</option>
-              <option value="DISPATCHED">Dispatched Only</option>
-              <option value="PENDING_ORACLE">Staged in JSON Only</option>
-              <option value="PENDING_SETUP">Pending Setup Only</option>
-              <option value="FAILED">Failed Only</option>
-            </select>
             <button id="btn-simulate-history" class="btn btn-primary btn-sm">+ Simulate Delivery</button>
             <button id="btn-purge-history" class="btn btn-danger btn-sm" title="Purge accumulated deliveries from data/received_deliveries.json">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
               Purge Staged Data
             </button>
             <button id="btn-refresh-history" class="btn btn-secondary btn-sm">Refresh Table</button>
+          </div>
+        </div>
+
+        <!-- History Search & Filtering Toolbar -->
+        <div id="history-filter-toolbar" style="background: var(--bg-surface); padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;">
+          <!-- Top Row: Cross-Column Searchbar -->
+          <div style="display: flex; gap: 10px; align-items: center; width: 100%;">
+            <div style="position: relative; flex: 1;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ink-tertiary); pointer-events: none;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" id="history-search-input" class="form-control" placeholder="Search across all columns (delivery ID, notification, element path, tag, attribute, value, UOM, status...)" style="padding-left: 32px; padding-right: 30px; height: 34px; font-size: 12px;">
+              <button type="button" id="btn-clear-history-search" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 16px; line-height: 1; color: var(--ink-tertiary); cursor: pointer; padding: 2px 6px; display: none;" title="Clear search query">&times;</button>
+            </div>
+            <button type="button" id="btn-reset-history-filters" class="btn btn-secondary btn-sm" style="white-space: nowrap; height: 34px; font-size: 11px; padding: 0 12px; display: inline-flex; align-items: center; gap: 4px;" title="Reset all search queries and dropdown filters">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+              Reset Filters
+            </button>
+          </div>
+
+          <!-- Bottom Row: Filter Controls -->
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <!-- Endpoint Filter (Oracle / J5) -->
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label for="history-filter-endpoint" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Endpoint:</label>
+              <select id="history-filter-endpoint" class="form-control" style="width: auto; height: 30px; font-size: 11px; padding: 2px 24px 2px 8px;">
+                <option value="ALL">All Endpoints</option>
+                <option value="ORACLE">Oracle ORDS</option>
+                <option value="J5">Hexagon J5</option>
+              </select>
+            </div>
+
+            <!-- Attribute Name Filter -->
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label for="history-filter-attribute" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Attribute:</label>
+              <select id="history-filter-attribute" class="form-control" style="width: auto; height: 30px; font-size: 11px; padding: 2px 24px 2px 8px; max-width: 220px;">
+                <option value="ALL">All Attributes</option>
+              </select>
+            </div>
+
+            <!-- Value Filter Input -->
+            <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 180px; max-width: 260px;">
+              <label for="history-filter-value" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Value:</label>
+              <input type="text" id="history-filter-value" class="form-control" placeholder="e.g. 23.4, >10, Normal..." style="height: 30px; font-size: 11px; padding: 0 8px;">
+            </div>
+
+            <!-- Status Filter -->
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label for="history-filter-status" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Status:</label>
+              <select id="history-filter-status" class="form-control" style="width: auto; height: 30px; font-size: 11px; padding: 2px 24px 2px 8px;">
+                <option value="ALL">All Statuses</option>
+                <option value="DISPATCHED">Dispatched Only</option>
+                <option value="PENDING_ORACLE">Staged in JSON Only</option>
+                <option value="PENDING_SETUP">Pending Setup Only</option>
+                <option value="FAILED">Failed Only</option>
+              </select>
+            </div>
+
+            <!-- Filter Status Indicator Badge -->
+            <div id="history-filter-badge" style="font-size: 11px; color: var(--ink-tertiary); margin-left: auto; white-space: nowrap;"></div>
           </div>
         </div>
 
@@ -1899,6 +1950,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.2.2"></script>
+  <script src="/static/js/app.js?v=2.2.3"></script>
 </body>
 </html>

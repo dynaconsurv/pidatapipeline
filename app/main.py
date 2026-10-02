@@ -192,9 +192,21 @@ async def receive_pi_delivery(request: Request):
 
 
 @app.get("/api/deliveries")
-def get_deliveries_list(limit: int = 0, status: str = None):
+def get_deliveries_list(
+    limit: int = 0,
+    status: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    attribute: Optional[str] = None,
+    search: Optional[str] = None
+):
     """Retrieve staged deliveries received from PI System Explorer."""
-    return get_received_deliveries(limit=limit, status=status)
+    return get_received_deliveries(
+        limit=limit,
+        status=status,
+        endpoint=endpoint,
+        attribute=attribute,
+        search=search
+    )
 
 
 @app.get("/api/deliveries/{delivery_id}")

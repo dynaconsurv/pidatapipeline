@@ -176,7 +176,13 @@ def get_logs(limit: int = 100, category: str = None) -> List[Dict[str, Any]]:
 # -------------------------------------------------------------
 # PI Delivery / Webhook Ingestion Management
 # -------------------------------------------------------------
-def get_received_deliveries(limit: int = 50, status: str = None) -> List[Dict[str, Any]]:
+def get_received_deliveries(
+    limit: int = 50,
+    status: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    attribute: Optional[str] = None,
+    search: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """Retrieve list of received deliveries from PI System Explorer / Notifications."""
     ensure_data_dir()
     with _storage_lock:
@@ -187,8 +193,76 @@ def get_received_deliveries(limit: int = 50, status: str = None) -> List[Dict[st
                 data = json.load(f)
                 if not isinstance(data, list):
                     return []
+
+                # Filter by status
                 if status and status.upper() != "ALL":
-                    data = [d for d in data if d.get("oracle_status") == status.upper()]
+                    data = [d for d in data if (d.get("oracle_status") or "").upper() == status.upper()]
+
+                # Filter by destination endpoint (e.g. 'J5' or 'ORACLE')
+                if endpoint and endpoint.upper() != "ALL":
+                    ep_target = endpoint.upper()
+                    filtered_by_ep = []
+                    for d in data:
+                        target_types = [str(t).upper() for t in (d.get("oracle_dispatch") or {}).get("target_types", [])]
+                        ep_url = str((d.get("oracle_dispatch") or {}).get("target_endpoint") or (d.get("oracle_dispatch") or {}).get("endpoint_url") or "").lower()
+                        is_j5 = "J5" in target_types or "hxgnsmartcloud" in ep_url or "purchaseorder" in ep_url
+                        is_oracle = "ORACLE" in target_types or "oraclecloudapps" in ep_url or "/ords/" in ep_url or (not is_j5)
+                        if ep_target == "J5" and is_j5:
+                            filtered_by_ep.append(d)
+                        elif ep_target == "ORACLE" and is_oracle:
+                            filtered_by_ep.append(d)
+                    data = filtered_by_ep
+
+                # Filter by attribute name or tag
+                if attribute and attribute.upper() != "ALL":
+                    attr_query = attribute.strip().lower()
+                    filtered_by_attr = []
+                    for d in data:
+                        attrs = d.get("attributes_summary") or []
+                        if any(
+                            attr_query == str(a.get("name") or "").strip().lower() or
+                            attr_query == str(a.get("tag") or "").strip().lower()
+                            for a in attrs
+                        ):
+                            filtered_by_attr.append(d)
+                    data = filtered_by_attr
+
+                # Filter by cross-column search query
+                if search and search.strip():
+                    terms = search.strip().lower().split()
+                    filtered_by_search = []
+                    for d in data:
+                        parts = [
+                            str(d.get("delivery_id") or ""),
+                            str(d.get("client_ip") or ""),
+                            str(d.get("notification_name") or ""),
+                            str(d.get("event_type") or ""),
+                            str(d.get("target_path") or ""),
+                            str(d.get("oracle_status") or ""),
+                            str(d.get("received_at") or "")
+                        ]
+                        for a in (d.get("attributes_summary") or []):
+                            parts.extend([
+                                str(a.get("name") or ""),
+                                str(a.get("tag") or ""),
+                                str(a.get("description") or ""),
+                                str(a.get("value") or ""),
+                                str(a.get("uom") or ""),
+                                str(a.get("limit") or ""),
+                                str(a.get("results") or "")
+                            ])
+                        disp = d.get("oracle_dispatch") or {}
+                        parts.extend([
+                            str(disp.get("target_endpoint") or ""),
+                            str(disp.get("message") or ""),
+                            str(disp.get("error") or "")
+                        ])
+                        parts.extend([str(t) for t in disp.get("target_types", [])])
+                        search_blob = " ".join(parts).lower()
+                        if all(term in search_blob for term in terms):
+                            filtered_by_search.append(d)
+                    data = filtered_by_search
+
                 if limit is not None and limit > 0:
                     return data[:limit]
                 return data

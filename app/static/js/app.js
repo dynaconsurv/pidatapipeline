@@ -163,10 +163,57 @@ function initHistory() {
   });
   document.getElementById("btn-purge-history")?.addEventListener("click", openPurgeDeliveriesModal);
   document.getElementById("btn-refresh-history")?.addEventListener("click", () => loadHistoryDeliveries(false));
-  document.getElementById("history-filter-status")?.addEventListener("change", () => {
+
+  // Search input & clear button
+  const searchInput = document.getElementById("history-search-input");
+  const clearSearchBtn = document.getElementById("btn-clear-history-search");
+  searchInput?.addEventListener("input", () => {
+    historySearchQuery = searchInput.value.trim();
+    if (clearSearchBtn) clearSearchBtn.style.display = searchInput.value ? "block" : "none";
     historyCurrentPage = 1;
     applyHistoryFilterAndRender();
   });
+  clearSearchBtn?.addEventListener("click", () => {
+    if (searchInput) searchInput.value = "";
+    historySearchQuery = "";
+    if (clearSearchBtn) clearSearchBtn.style.display = "none";
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+    searchInput?.focus();
+  });
+
+  // Endpoint filter (Oracle / J5)
+  document.getElementById("history-filter-endpoint")?.addEventListener("change", (e) => {
+    historyEndpointFilter = e.target.value;
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+  });
+
+  // Attribute filter
+  document.getElementById("history-filter-attribute")?.addEventListener("change", (e) => {
+    historyAttributeFilter = e.target.value;
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+  });
+
+  // Value filter
+  document.getElementById("history-filter-value")?.addEventListener("input", (e) => {
+    historyValueFilter = e.target.value.trim();
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+  });
+
+  // Status filter
+  document.getElementById("history-filter-status")?.addEventListener("change", (e) => {
+    historyStatusFilter = e.target.value;
+    historyCurrentPage = 1;
+    applyHistoryFilterAndRender();
+  });
+
+  // Reset filters
+  document.getElementById("btn-reset-history-filters")?.addEventListener("click", resetHistoryFilters);
+
+  // Pagination controls
   document.getElementById("history-btn-prev")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage - 1));
   document.getElementById("history-btn-next")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage + 1));
 }
@@ -542,6 +589,63 @@ function renderLastPullsTable(triggers) {
 // ============================================================
 let currentInspectedDelivery = null;
 
+function getDeliveryEndpoints(deliv) {
+  if (!deliv) return ["ORACLE"];
+  const eps = new Set();
+
+  // 1. Direct target_types from oracle_dispatch
+  if (deliv.oracle_dispatch?.target_types && Array.isArray(deliv.oracle_dispatch.target_types)) {
+    for (const t of deliv.oracle_dispatch.target_types) {
+      const u = String(t).toUpperCase();
+      if (u.includes("J5")) eps.add("J5");
+      if (u.includes("ORACLE")) eps.add("ORACLE");
+    }
+  }
+
+  // 2. Dispatches array
+  if (deliv.oracle_dispatch?.dispatches && Array.isArray(deliv.oracle_dispatch.dispatches)) {
+    for (const d of deliv.oracle_dispatch.dispatches) {
+      const tt = String(d.target_type || "").toUpperCase();
+      const ep = String(d.target_endpoint || "").toLowerCase();
+      if (tt === "J5" || ep.includes("hxgnsmartcloud") || ep.includes("purchaseorder")) eps.add("J5");
+      if (tt === "ORACLE" || ep.includes("oracle") || ep.includes("/ords/")) eps.add("ORACLE");
+    }
+  }
+
+  // 3. Fallback to target_endpoint URL
+  const epUrl = String(deliv.oracle_dispatch?.target_endpoint || deliv.oracle_dispatch?.endpoint_url || "").toLowerCase();
+  if (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder")) eps.add("J5");
+  if (epUrl.includes("oracle") || epUrl.includes("/ords/")) eps.add("ORACLE");
+
+  // 4. Attributes / Mappings
+  if (Array.isArray(deliv.attributes_summary)) {
+    for (const a of deliv.attributes_summary) {
+      const aUrl = String(a.target_endpoint_url || "").toLowerCase();
+      if (aUrl.includes("hxgnsmartcloud") || aUrl.includes("purchaseorder")) eps.add("J5");
+      if (aUrl.includes("oracle") || aUrl.includes("/ords/")) eps.add("ORACLE");
+
+      if (Array.isArray(currentMappings) && currentMappings.length > 0) {
+        const m = currentMappings.find(cm =>
+          (cm.attribute_name && a.name && cm.attribute_name.toLowerCase() === a.name.toLowerCase()) ||
+          (cm.tag && a.tag && cm.tag.toLowerCase() === a.tag.toLowerCase())
+        );
+        if (m) {
+          const mType = String(m.target_type || "").toUpperCase();
+          const mUrl = String(m.target_endpoint_url || "").toLowerCase();
+          if (mType === "J5" || mUrl.includes("hxgnsmartcloud") || mUrl.includes("purchaseorder")) eps.add("J5");
+          else eps.add("ORACLE");
+        }
+      }
+    }
+  }
+
+  if (eps.size === 0) {
+    eps.add("ORACLE");
+  }
+
+  return Array.from(eps);
+}
+
 function renderDeliveryRowHtml(deliv) {
   // 1. Received At
   const timeFormatted = formatTimestamp(deliv.received_at);
@@ -552,6 +656,14 @@ function renderDeliveryRowHtml(deliv) {
   const notifName = escapeHtml(deliv.notification_name || "PI Notification");
   const eventType = escapeHtml(deliv.event_type || "Update");
   const targetPath = escapeHtml(deliv.target_path || "--");
+  const eps = getDeliveryEndpoints(deliv);
+  const endpointBadges = eps.map(ep => {
+    if (ep === "J5") {
+      return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`;
+    } else {
+      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
+    }
+  }).join(" ");
 
   // 3. Attributes & Values
   const attrs = deliv.attributes_summary || [];
@@ -645,9 +757,10 @@ function renderDeliveryRowHtml(deliv) {
         </div>
       </td>
       <td style="vertical-align: top; padding-top: 12px;">
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <strong style="font-size: 12px; color: var(--ink-primary);">${notifName}</strong>
           <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${eventType}</span>
+          ${endpointBadges}
         </div>
         <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-top: 4px; word-break: break-all;">
           ${targetPath}
@@ -729,12 +842,17 @@ function renderRecentDeliveriesTable(deliveries) {
 
 // ============================================================
 // HISTORICAL DATA TABLE WITH PAGINATION (10 rows per page)
+// & MULTI-CRITERIA FILTERING (Search, Endpoint, Attribute, Value, Status)
 // ============================================================
 let historyAllDeliveries = [];
 let historyFilteredDeliveries = [];
 let historyCurrentPage = 1;
 const HISTORY_PAGE_SIZE = 10;
 let historyStatusFilter = "ALL";
+let historyEndpointFilter = "ALL";
+let historyAttributeFilter = "ALL";
+let historyValueFilter = "";
+let historySearchQuery = "";
 
 async function loadHistoryDeliveries(resetPage = false) {
   const tbody = document.getElementById("history-deliveries-tbody");
@@ -744,11 +862,22 @@ async function loadHistoryDeliveries(resetPage = false) {
     historyCurrentPage = 1;
   }
 
+  // Ensure attribute mappings are loaded for accurate endpoint resolution
+  if (!currentMappings || currentMappings.length === 0) {
+    try {
+      const mapRes = await fetch("/api/mappings");
+      if (mapRes.ok) {
+        currentMappings = await mapRes.json();
+      }
+    } catch (e) {}
+  }
+
   try {
     const res = await fetch("/api/deliveries?limit=0");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     historyAllDeliveries = Array.isArray(data) ? data : [];
+    populateHistoryAttributeOptions();
     applyHistoryFilterAndRender();
   } catch (err) {
     tbody.innerHTML = `
@@ -761,15 +890,252 @@ async function loadHistoryDeliveries(resetPage = false) {
   }
 }
 
-function applyHistoryFilterAndRender() {
-  const filterSelect = document.getElementById("history-filter-status");
-  historyStatusFilter = filterSelect ? filterSelect.value : "ALL";
+function populateHistoryAttributeOptions() {
+  const select = document.getElementById("history-filter-attribute");
+  if (!select) return;
+  const currentVal = select.value || "ALL";
 
-  if (historyStatusFilter === "ALL") {
-    historyFilteredDeliveries = [...historyAllDeliveries];
-  } else {
-    historyFilteredDeliveries = historyAllDeliveries.filter(d => (d.oracle_status || "").toUpperCase() === historyStatusFilter.toUpperCase());
+  const attrSet = new Set();
+  for (const deliv of historyAllDeliveries) {
+    if (Array.isArray(deliv.attributes_summary)) {
+      for (const a of deliv.attributes_summary) {
+        if (a.name && typeof a.name === "string") attrSet.add(a.name.trim());
+        else if (a.tag && typeof a.tag === "string") attrSet.add(a.tag.trim());
+      }
+    }
   }
+
+  const sorted = Array.from(attrSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  select.innerHTML = `<option value="ALL">All Attributes (${sorted.length})</option>` +
+    sorted.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+
+  if (sorted.includes(currentVal)) {
+    select.value = currentVal;
+    historyAttributeFilter = currentVal;
+  } else {
+    select.value = "ALL";
+    historyAttributeFilter = "ALL";
+  }
+}
+
+function matchValue(actualVal, filterVal) {
+  if (filterVal === undefined || filterVal === null || filterVal.trim() === "") return true;
+  if (actualVal === undefined || actualVal === null) return false;
+
+  const filterStr = filterVal.trim();
+  const actualStr = String(actualVal).trim();
+
+  // Numeric comparison operator: >, >=, <, <=, =, ==
+  const compMatch = filterStr.match(/^([><]=?|==?)\s*(-?\d+(?:\.\d+)?)$/);
+  if (compMatch) {
+    const op = compMatch[1];
+    const targetNum = parseFloat(compMatch[2]);
+    const actualNum = parseFloat(actualStr);
+    if (!isNaN(actualNum) && !isNaN(targetNum)) {
+      if (op === ">") return actualNum > targetNum;
+      if (op === ">=") return actualNum >= targetNum;
+      if (op === "<") return actualNum < targetNum;
+      if (op === "<=") return actualNum <= targetNum;
+      if (op === "=" || op === "==") return Math.abs(actualNum - targetNum) < 1e-6;
+    }
+  }
+
+  return actualStr.toLowerCase().includes(filterStr.toLowerCase());
+}
+
+function matchAttributeValue(attr, filterVal) {
+  if (!attr) return false;
+  if (matchValue(attr.value, filterVal)) return true;
+  if (attr.limit !== undefined && attr.limit !== null && matchValue(attr.limit, filterVal)) return true;
+  if (attr.results !== undefined && attr.results !== null && matchValue(attr.results, filterVal)) return true;
+  if (attr.uom !== undefined && attr.uom !== null && matchValue(attr.uom, filterVal)) return true;
+  return false;
+}
+
+function getDeliverySearchText(deliv) {
+  const parts = [];
+
+  // Column 1: Received At & Metadata
+  parts.push(deliv.delivery_id || "");
+  parts.push(deliv.client_ip || "");
+  parts.push(deliv.received_at || "");
+  parts.push(formatTimestamp(deliv.received_at));
+
+  // Column 2: Notification & Target Path
+  parts.push(deliv.notification_name || "");
+  parts.push(deliv.event_type || "");
+  parts.push(deliv.target_path || "");
+
+  // Column 4 & Endpoints: Status & Destination Endpoints
+  parts.push(deliv.oracle_status || "");
+  const eps = getDeliveryEndpoints(deliv);
+  parts.push(...eps);
+  if (eps.includes("ORACLE")) parts.push("oracle ords erp");
+  if (eps.includes("J5")) parts.push("j5 hexagon smart cloud purchaseorder");
+
+  if (deliv.oracle_dispatch) {
+    parts.push(deliv.oracle_dispatch.target_endpoint || "");
+    parts.push(deliv.oracle_dispatch.endpoint_url || "");
+    parts.push(deliv.oracle_dispatch.message || "");
+    parts.push(deliv.oracle_dispatch.error || "");
+    if (Array.isArray(deliv.oracle_dispatch.target_types)) {
+      parts.push(...deliv.oracle_dispatch.target_types);
+    }
+  }
+
+  // Column 3: Attributes & Values
+  if (Array.isArray(deliv.attributes_summary)) {
+    for (const a of deliv.attributes_summary) {
+      parts.push(a.name || "");
+      parts.push(a.tag || "");
+      parts.push(a.description || "");
+      parts.push(String(a.value ?? ""));
+      parts.push(a.uom || "");
+      parts.push(String(a.limit ?? ""));
+      parts.push(String(a.results ?? ""));
+      parts.push(a.quality || "");
+      if (a.target_endpoint_url) parts.push(a.target_endpoint_url);
+    }
+  }
+
+  if (deliv.raw_payload && typeof deliv.raw_payload === "object") {
+    try {
+      parts.push(JSON.stringify(deliv.raw_payload));
+    } catch (e) {}
+  }
+
+  return parts.join(" ").toLowerCase();
+}
+
+function updateHistoryFilterBadge() {
+  const badgeEl = document.getElementById("history-filter-badge");
+  if (!badgeEl) return;
+
+  const isFiltering = (
+    historyStatusFilter !== "ALL" ||
+    historyEndpointFilter !== "ALL" ||
+    historyAttributeFilter !== "ALL" ||
+    Boolean(historyValueFilter) ||
+    Boolean(historySearchQuery)
+  );
+
+  if (isFiltering) {
+    badgeEl.innerHTML = `
+      <span class="badge" style="font-size: 11px; padding: 2px 8px; background: rgba(59, 130, 246, 0.12); color: var(--primary); border: 1px solid rgba(59, 130, 246, 0.3);">
+        <span class="badge-dot"></span> Filtered: ${historyFilteredDeliveries.length} of ${historyAllDeliveries.length}
+      </span>
+    `;
+  } else {
+    badgeEl.innerHTML = `<span style="color: var(--ink-tertiary); font-size: 11px;">Total: ${historyAllDeliveries.length} deliveries</span>`;
+  }
+}
+
+function resetHistoryFilters() {
+  historySearchQuery = "";
+  historyEndpointFilter = "ALL";
+  historyAttributeFilter = "ALL";
+  historyValueFilter = "";
+  historyStatusFilter = "ALL";
+
+  const searchInput = document.getElementById("history-search-input");
+  if (searchInput) searchInput.value = "";
+  const clearBtn = document.getElementById("btn-clear-history-search");
+  if (clearBtn) clearBtn.style.display = "none";
+
+  const endpointSelect = document.getElementById("history-filter-endpoint");
+  if (endpointSelect) endpointSelect.value = "ALL";
+
+  const attrSelect = document.getElementById("history-filter-attribute");
+  if (attrSelect) attrSelect.value = "ALL";
+
+  const valInput = document.getElementById("history-filter-value");
+  if (valInput) valInput.value = "";
+
+  const statusSelect = document.getElementById("history-filter-status");
+  if (statusSelect) statusSelect.value = "ALL";
+
+  historyCurrentPage = 1;
+  applyHistoryFilterAndRender();
+}
+window.resetHistoryFilters = resetHistoryFilters;
+
+function applyHistoryFilterAndRender() {
+  const statusSelect = document.getElementById("history-filter-status");
+  historyStatusFilter = statusSelect ? statusSelect.value : "ALL";
+
+  const endpointSelect = document.getElementById("history-filter-endpoint");
+  historyEndpointFilter = endpointSelect ? endpointSelect.value : "ALL";
+
+  const attrSelect = document.getElementById("history-filter-attribute");
+  historyAttributeFilter = attrSelect ? attrSelect.value : "ALL";
+
+  const valInput = document.getElementById("history-filter-value");
+  historyValueFilter = valInput ? valInput.value.trim() : "";
+
+  const searchInput = document.getElementById("history-search-input");
+  historySearchQuery = searchInput ? searchInput.value.trim() : "";
+
+  const clearBtn = document.getElementById("btn-clear-history-search");
+  if (clearBtn) clearBtn.style.display = historySearchQuery ? "block" : "none";
+
+  const searchTerms = historySearchQuery ? historySearchQuery.toLowerCase().split(/\s+/).filter(Boolean) : [];
+
+  historyFilteredDeliveries = historyAllDeliveries.filter(deliv => {
+    // 1. Status Filter
+    if (historyStatusFilter !== "ALL") {
+      const delivStatus = (deliv.oracle_status || "").toUpperCase();
+      if (delivStatus !== historyStatusFilter.toUpperCase()) {
+        return false;
+      }
+    }
+
+    // 2. Endpoint Filter (Oracle / J5)
+    if (historyEndpointFilter !== "ALL") {
+      const endpoints = getDeliveryEndpoints(deliv);
+      if (!endpoints.includes(historyEndpointFilter.toUpperCase())) {
+        return false;
+      }
+    }
+
+    // 3. Attribute & Value Filter
+    const attrs = deliv.attributes_summary || [];
+    if (historyAttributeFilter !== "ALL") {
+      const targetAttr = historyAttributeFilter.trim().toLowerCase();
+      const matchingAttrs = attrs.filter(a => {
+        const aName = (a.name || "").trim().toLowerCase();
+        const aTag = (a.tag || "").trim().toLowerCase();
+        return aName === targetAttr || aTag === targetAttr;
+      });
+
+      if (matchingAttrs.length === 0) {
+        return false;
+      }
+
+      if (historyValueFilter) {
+        const valueMatches = matchingAttrs.some(a => matchAttributeValue(a, historyValueFilter));
+        if (!valueMatches) return false;
+      }
+    } else if (historyValueFilter) {
+      let anyMatch = false;
+      if (attrs.length > 0) {
+        anyMatch = attrs.some(a => matchAttributeValue(a, historyValueFilter));
+      } else if (deliv.raw_payload) {
+        anyMatch = matchValue(JSON.stringify(deliv.raw_payload), historyValueFilter);
+      }
+      if (!anyMatch) return false;
+    }
+
+    // 4. Cross-column Search
+    if (searchTerms.length > 0) {
+      const textBlob = getDeliverySearchText(deliv);
+      const matchesAll = searchTerms.every(term => textBlob.includes(term));
+      if (!matchesAll) return false;
+    }
+
+    return true;
+  });
+
+  updateHistoryFilterBadge();
 
   const totalPages = Math.ceil(historyFilteredDeliveries.length / HISTORY_PAGE_SIZE) || 1;
   if (historyCurrentPage > totalPages) {
@@ -788,18 +1154,35 @@ function renderHistoryTable() {
   if (!tbody) return;
 
   if (historyFilteredDeliveries.length === 0) {
+    const isFiltering = (
+      historyStatusFilter !== "ALL" ||
+      historyEndpointFilter !== "ALL" ||
+      historyAttributeFilter !== "ALL" ||
+      Boolean(historyValueFilter) ||
+      Boolean(historySearchQuery)
+    );
+
     tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align: center; color: var(--ink-secondary); padding: 2.5rem 1rem;">
           <div style="font-weight: 500; font-size: 13px; color: var(--ink-primary); margin-bottom: 6px;">
-            No historical delivery records found
+            ${isFiltering ? "No delivery records match the current filters" : "No historical delivery records found"}
           </div>
-          <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 12px;">
-            ${historyStatusFilter !== "ALL" ? `No records found with status <strong>${escapeHtml(historyStatusFilter)}</strong>.` : "No deliveries have been received at <code>/api/v1/delivery</code> yet."}
+          <div style="font-size: 12px; color: var(--ink-secondary); margin-bottom: 14px;">
+            ${isFiltering 
+              ? "Try adjusting or clearing your search query, endpoint, attribute, or status filter." 
+              : "No deliveries have been received at <code>/api/v1/delivery</code> yet."}
           </div>
-          <button type="button" class="btn btn-primary btn-sm" onclick="triggerSimulateDelivery()">
-            + Simulate Sample Push
-          </button>
+          <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+            ${isFiltering ? `
+              <button type="button" class="btn btn-secondary btn-sm" onclick="resetHistoryFilters()">
+                Reset All Filters
+              </button>
+            ` : ""}
+            <button type="button" class="btn btn-primary btn-sm" onclick="triggerSimulateDelivery()">
+              + Simulate Sample Push
+            </button>
+          </div>
         </td>
       </tr>
     `;
