@@ -3,10 +3,11 @@ FastAPI application for the AVEVA PI to Oracle ERP Cloud Data Pipeline.
 Serves REST endpoints for configuration, live monitoring, AF tree exploration,
 and single-page web UI.
 """
+from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse

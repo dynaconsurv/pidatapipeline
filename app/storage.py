@@ -5,6 +5,7 @@ JSON file-backed storage for pipeline operational data:
 - Audit & error logs
 Strictly file-based; no database engine used.
 """
+from __future__ import annotations
 import json
 import os
 import threading
