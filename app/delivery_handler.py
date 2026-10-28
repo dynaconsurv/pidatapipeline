@@ -18,9 +18,48 @@ from app.storage import (
     record_publish_event,
     add_log
 )
-from app.config import load_settings, load_mappings
+from app.config import load_settings, load_mappings, save_mappings
 from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
 from app.j5_client import J5Client, DEFAULT_J5_URL, format_j5_timestamp
+
+
+def is_j5_param_enabled(val: Any) -> bool:
+    """
+    Determines whether an incoming 'J5' parameter value indicates J5 dispatch/auto-mapping should be enabled.
+    When the 'J5' parameter key is provided by PI AF, any non-false value (including empty string '', 'true',
+    '1', 'yes', 'J5', or a custom URL/tag) enables J5.
+    """
+    if val is None or val is False:
+        return False
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("false", "0", "no", "off", "disabled", "none", "null", "n"):
+            return False
+        return True
+    return bool(val)
+
+
+def extract_j5_flag_and_url(source_dict: Optional[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
+    """
+    Checks a dictionary (case-insensitive) for a 'J5' parameter.
+    Returns (is_j5_enabled, custom_j5_url_if_any).
+    """
+    if not isinstance(source_dict, dict):
+        return False, None
+    for k, v in source_dict.items():
+        if k is not None and str(k).strip().lower() == "j5":
+            enabled = is_j5_param_enabled(v)
+            custom_url = None
+            if enabled and isinstance(v, str):
+                v_clean = v.strip().strip('"').strip("'")
+                if v_clean.lower().startswith(("http://", "https://")):
+                    custom_url = v_clean
+            return enabled, custom_url
+    return False, None
 
 
 def validate_delivery_security(
@@ -106,19 +145,21 @@ def extract_direct_telemetry_record(
     # Identify if direct variables exist
     has_tagname = any(k in lower_map for k in ("tagname", "tag_name", "meter_tag"))
     has_tag = has_tagname or ("tag" in lower_map and "notification" not in str(lower_map.get("tag", "")).lower())
+    has_attr_key = any(k in lower_map for k in ("attribute", "attribute_name", "attributename", "name"))
     has_val = any(k in lower_map for k in ("value", "val", "readingvalue", "reading_value"))
     has_desc = any(k in lower_map for k in ("description", "desc"))
     has_limit = any(k in lower_map for k in ("limit", "limits"))
     has_result = any(k in lower_map for k in ("result", "results"))
+    j5_enabled, j5_custom_url = extract_j5_flag_and_url(item_dict)
 
     # Direct telemetry record condition:
     # 1. Has Tagname/Tag and Value
-    # 2. Or has Value and (Description or Limit or Result)
-    # 3. Or has Tagname and (Description or Limit or Result)
+    # 2. Or has Value and (Description or Limit or Result or J5 or Attribute/Name)
+    # 3. Or has Tagname/Attribute and (Description or Limit or Result or J5)
     is_direct = (
         (has_tag and has_val) or
-        (has_val and (has_desc or has_limit or has_result)) or
-        (has_tag and (has_desc or has_limit or has_result))
+        (has_val and (has_desc or has_limit or has_result or j5_enabled or has_attr_key)) or
+        ((has_tag or has_attr_key) and (has_desc or has_limit or has_result or j5_enabled))
     )
 
     if not is_direct:
@@ -132,7 +173,16 @@ def extract_direct_telemetry_record(
         lower_map.get("meter_tag") or
         lower_map.get("name") or
         lower_map.get("attribute") or
+        lower_map.get("attribute_name") or
+        lower_map.get("attributename") or
         ""
+    )
+
+    explicit_attr_name = (
+        lower_map.get("attribute") or
+        lower_map.get("attribute_name") or
+        lower_map.get("attributename") or
+        None
     )
 
     # Description extraction
@@ -198,9 +248,9 @@ def extract_direct_telemetry_record(
         ("Normal" if str(result_val).lower() in ("normal", "ok", "good") else "Good")
     )
 
-    attr_name = str(tag_val).strip() or str(desc_val).strip() or "PI_Telemetry"
+    attr_name = str(explicit_attr_name or tag_val).strip() or str(desc_val).strip() or "PI_Telemetry"
 
-    return {
+    res_record = {
         "name": attr_name,
         "tag": str(tag_val).strip() if tag_val is not None else "",
         "description": str(desc_val).strip() if desc_val is not None else "",
@@ -212,6 +262,11 @@ def extract_direct_telemetry_record(
         "quality": quality_val,
         "target_endpoint_url": str(target_endpoint).strip().strip('"').strip("'") if target_endpoint else None
     }
+    if j5_enabled:
+        res_record["j5"] = True
+        if j5_custom_url:
+            res_record["target_endpoint_url_j5"] = j5_custom_url
+    return res_record
 
 
 def parse_pi_notification_payload(
@@ -250,7 +305,25 @@ def parse_pi_notification_payload(
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # Check if 'J5' extra parameter was passed via query params, headers, or top-level JSON body
+    top_j5_enabled = False
+    top_j5_url = None
+    if "j5" in query_params:
+        top_j5_enabled = is_j5_param_enabled(query_params.get("j5"))
+        q_val = str(query_params.get("j5") or "").strip().strip('"').strip("'")
+        if top_j5_enabled and q_val.lower().startswith(("http://", "https://")):
+            top_j5_url = q_val
+    elif "x-j5" in headers or "j5" in headers:
+        h_val = headers.get("x-j5") if "x-j5" in headers else headers.get("j5")
+        top_j5_enabled = is_j5_param_enabled(h_val)
+
     if isinstance(raw_data, dict):
+        body_j5_enabled, body_j5_url = extract_j5_flag_and_url(raw_data)
+        if body_j5_enabled:
+            top_j5_enabled = True
+            if body_j5_url:
+                top_j5_url = body_j5_url
+
         # Priority 3: Body attributes
         body_name = (
             raw_data.get("NotificationRule") or
@@ -376,7 +449,7 @@ def parse_pi_notification_payload(
             meta_keys = {
                 "notification", "notificationname", "notificationrule", "event", "eventtype",
                 "target", "element", "path", "starttime", "endtime", "id",
-                "items", "attributes", "values", "data", "content"
+                "items", "attributes", "values", "data", "content", "j5"
             }
             for k, v in raw_data.items():
                 if k.lower() not in meta_keys:
@@ -445,14 +518,20 @@ def parse_pi_notification_payload(
                     uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
                     ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
                     quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
+                    item_j5, item_j5_url = extract_j5_flag_and_url(item)
 
-                    attributes.append({
+                    attr_entry = {
                         "name": name,
                         "value": val,
                         "uom": uom,
                         "timestamp": ts,
                         "quality": quality
-                    })
+                    }
+                    if item_j5:
+                        attr_entry["j5"] = True
+                        if item_j5_url:
+                            attr_entry["target_endpoint_url_j5"] = item_j5_url
+                    attributes.append(attr_entry)
             else:
                 attributes.append({
                     "name": f"Value_{len(attributes)+1}",
@@ -462,8 +541,139 @@ def parse_pi_notification_payload(
                     "quality": "Good"
                 })
 
+    # Propagate top-level J5 parameter flag to all extracted attributes in this push delivery
+    if top_j5_enabled:
+        for attr in attributes:
+            attr["j5"] = True
+            if top_j5_url and not attr.get("target_endpoint_url_j5"):
+                attr["target_endpoint_url_j5"] = top_j5_url
+
     notification_name = query_name or header_name or body_name or ("PI_Notification_Ping" if not raw_data and not attributes else "PI_Notification")
     return notification_name, event_type, target_path, attributes
+
+
+def ensure_j5_mapping_for_attribute(
+    attr: Dict[str, Any],
+    target_path: str = "",
+    settings: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    When PI AF sends a push with the extra parameter 'J5', automatically creates a new attribute
+    mapping in config/mappings.json if one does not already exist for that attribute, or ensures
+    the existing mapping has 'j5' enabled in its target_types so data is dispatched to J5 as well.
+    """
+    if not attr or not attr.get("j5"):
+        return None
+
+    settings = settings or load_settings()
+    if not settings.get("pipeline", {}).get("auto_create_j5_mapping", True):
+        return None
+
+    attr_name = str(attr.get("name") or attr.get("tag") or "").strip()
+    attr_tag = str(attr.get("tag") or "").strip()
+    if not attr_name and not attr_tag:
+        return None
+    if not attr_name:
+        attr_name = attr_tag
+
+    erp_cfg = settings.get("oracle_erp", {})
+    oracledev_cfg = settings.get("oracledev", {})
+    j5_cfg = settings.get("j5_endpoint", {})
+
+    base_url = (erp_cfg.get("base_url") or "").rstrip("/")
+    res_ep = (erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/").lstrip("/")
+    default_oracle_url = f"{base_url}/{res_ep}" if base_url else ""
+
+    dev_base_url = (oracledev_cfg.get("base_url") or "").rstrip("/")
+    dev_res_ep = (oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/").lstrip("/")
+    default_dev_url = f"{dev_base_url}/{dev_res_ep}" if dev_base_url else ""
+
+    default_j5_url = str(attr.get("target_endpoint_url_j5") or j5_cfg.get("url") or DEFAULT_J5_URL).strip()
+
+    mappings = load_mappings()
+    a_name_l = attr_name.lower()
+    a_tag_l = attr_tag.lower()
+
+    matching = []
+    for m in mappings:
+        m_attr = str(m.get("attribute_name") or "").strip().lower()
+        m_tag = str(m.get("tag") or m.get("meter_tag") or "").strip().lower()
+        if (
+            (m_attr and (m_attr == a_name_l or (a_tag_l and m_attr == a_tag_l)))
+            or (m_tag and ((a_tag_l and m_tag == a_tag_l) or m_tag == a_name_l))
+        ):
+            matching.append(m)
+
+    if matching:
+        # Mapping already exists: ensure it is enabled and includes 'j5' in target_types if needed
+        updated = False
+        for m in matching:
+            if not m.get("enabled", True):
+                m["enabled"] = True
+                updated = True
+            t_types = list(m.get("target_types") or ([m.get("target_type")] if m.get("target_type") else ["oracle"]))
+            if "j5" not in [str(t).strip().lower() for t in t_types]:
+                t_types.append("j5")
+                m["target_types"] = t_types
+                updated = True
+            if not m.get("target_endpoint_url_j5"):
+                m["target_endpoint_url_j5"] = default_j5_url
+                updated = True
+        if updated:
+            save_mappings(mappings)
+            add_log(
+                "INFO",
+                "PIPELINE",
+                f"Updated existing mapping for [{attr_name}] to include J5 destination (triggered by 'J5' push parameter)."
+            )
+        return matching[0]
+
+    # Mapping does not exist: automatically create a new mapping with J5 destination enabled as well
+    target_types = []
+    if erp_cfg.get("enabled", True):
+        target_types.append("oracle")
+    if oracledev_cfg.get("enabled", False):
+        target_types.append("oracledev")
+    if "j5" not in target_types:
+        target_types.append("j5")
+
+    new_mapping = {
+        "id": f"map-j5-{int(time.time())}-{uuid.uuid4().hex[:4]}",
+        "name": str(attr.get("description") or attr_name).strip(),
+        "attribute_name": attr_name,
+        "af_server": "",
+        "af_database": "",
+        "element_path": target_path or "",
+        "full_path": target_path or "",
+        "target_type": target_types[0],
+        "target_types": target_types,
+        "target_endpoint_url": default_oracle_url or default_j5_url,
+        "target_endpoint_url_oracle": default_oracle_url,
+        "target_endpoint_url_dev": default_dev_url,
+        "target_endpoint_url_j5": default_j5_url,
+        "tag": attr_tag,
+        "meter_tag": attr_tag,
+        "description": str(attr.get("description") or "").strip(),
+        "limit": str(attr.get("limit") or "").strip(),
+        "results": str(attr.get("results") or "").strip(),
+        "target_field": "value",
+        "target_tag_field": "tag",
+        "data_type": "number",
+        "transformation": "direct",
+        "scale_factor": 1.0,
+        "round_decimals": 2,
+        "uom": str(attr.get("uom") or "").strip(),
+        "enabled": True
+    }
+    mappings.append(new_mapping)
+    save_mappings(mappings)
+    add_log(
+        "INFO",
+        "PIPELINE",
+        f"Auto-created new attribute mapping for [{attr_name}] with J5 destination (triggered by 'J5' push parameter).",
+        {"mapping_id": new_mapping["id"], "attribute_name": attr_name, "target_types": target_types}
+    )
+    return new_mapping
 
 
 def process_incoming_delivery(
@@ -484,6 +694,13 @@ def process_incoming_delivery(
         query_params=query_params,
         headers=headers
     )
+
+    settings = load_settings()
+
+    # Auto-create/update attribute mapping if PI AF sent push with extra parameter "J5"
+    for attr in attributes:
+        if attr.get("j5"):
+            ensure_j5_mapping_for_attribute(attr, target_path=target_path, settings=settings)
 
     delivery_record = {
         "delivery_id": delivery_id,
@@ -508,12 +725,13 @@ def process_incoming_delivery(
     )
 
     # Step 2: Immediate Auto-Dispatch to Oracle ERP Cloud or J5 upon receipt
-    settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    oracledev_cfg = settings.get("oracledev", {})
     j5_cfg = settings.get("j5_endpoint", {})
     auto_dispatch_enabled = settings.get("pipeline", {}).get("auto_dispatch", True) and settings.get("pipeline", {}).get("auto_dispatch_deliveries", True)
 
-    any_endpoint_enabled = erp_cfg.get("enabled", False) or j5_cfg.get("enabled", False)
+    has_j5_attr = any(a.get("j5") for a in attributes)
+    any_endpoint_enabled = erp_cfg.get("enabled", False) or oracledev_cfg.get("enabled", False) or j5_cfg.get("enabled", False) or has_j5_attr
 
     if any_endpoint_enabled and auto_dispatch_enabled:
         try:
@@ -574,14 +792,11 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
 
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    oracledev_cfg = settings.get("oracledev", {})
     j5_cfg = settings.get("j5_endpoint", {})
     erp_client = OracleERPCloudClient(erp_cfg)
+    oracledev_client = OracleERPCloudClient(oracledev_cfg)
     j5_client = J5Client(j5_cfg)
-
-    # Build destination payload based on attributes & mappings
-    mappings = load_mappings()
-    enabled_mappings = [m for m in mappings if m.get("enabled", True)]
-    mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
 
     now_iso = datetime.now(timezone.utc).isoformat()
     raw_attrs = delivery.get("attributes_summary", [])
@@ -593,6 +808,15 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             "quality": "Good"
         }]
 
+    # Ensure any attribute with 'j5' flag has a mapping created/updated before loading mappings
+    for attr in raw_attrs:
+        if attr.get("j5"):
+            ensure_j5_mapping_for_attribute(attr, target_path=delivery.get("target_path", ""), settings=settings)
+
+    # Build destination payload based on attributes & mappings
+    mappings = load_mappings()
+    enabled_mappings = [m for m in mappings if m.get("enabled", True)]
+
     item_results = []
     all_succeeded = True
     any_succeeded = False
@@ -600,75 +824,63 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
 
     for attr in raw_attrs:
         attr_name = attr.get("name", "")
-        # Check mappings if configured by attribute name or tag
-        m = mapping_by_name.get(attr_name.strip().lower(), {})
-        if not m and attr.get("tag"):
-            m = mapping_by_name.get(str(attr.get("tag")).strip().lower(), {})
+        attr_tag = str(attr.get("tag", "")).strip().lower()
+        attr_name_l = attr_name.strip().lower()
 
-        raw_target = str(attr.get("target_endpoint_url") or m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
-        target_type = str(m.get("target_type") or "").strip().lower()
-        if not target_type:
-            if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
-                target_type = "j5"
+        # Check mappings: find all matching mappings (supports 1-to-many multicast)
+        matching_mappings = [
+            m for m in enabled_mappings
+            if (
+                (m.get("attribute_name") and m.get("attribute_name").strip().lower() in (attr_name_l, attr_tag) and (attr_name_l or attr_tag))
+                or (attr_tag and m.get("tag") and str(m.get("tag")).strip().lower() == attr_tag)
+                or (attr_tag and m.get("meter_tag") and str(m.get("meter_tag")).strip().lower() == attr_tag)
+                or (attr_name_l and m.get("tag") and str(m.get("tag")).strip().lower() == attr_name_l)
+            )
+        ]
+
+        # If no specific mapping matched, create fallback default mapping for direct PI delivery
+        if not matching_mappings:
+            raw_target = str(attr.get("target_endpoint_url") or "").strip().strip('"').strip("'")
+            targets = []
+            if raw_target:
+                if "hxgnsmartcloud" in raw_target.lower():
+                    targets.append("j5")
+                elif "dev" in raw_target.lower():
+                    targets.append("oracledev")
+                else:
+                    targets.append("oracle")
             else:
-                target_type = "oracle"
+                if erp_cfg.get("enabled", False):
+                    targets.append("oracle")
+                if oracledev_cfg.get("enabled", False):
+                    targets.append("oracledev")
+                if attr.get("j5") and "j5" not in targets:
+                    targets.append("j5")
+                if not targets:
+                    targets = ["j5"] if attr.get("j5") else ["oracle"]
+            matching_mappings = [{
+                "target_types": targets,
+                "target_endpoint_url": raw_target or None,
+                "target_endpoint_url_j5": attr.get("target_endpoint_url_j5") or None
+            }]
 
-        if target_type == "j5":
-            if not j5_cfg.get("enabled", True):
-                item_results.append({
-                    "target_type": "j5",
-                    "attribute_name": attr_name,
-                    "target_endpoint": raw_target or j5_cfg.get("url") or DEFAULT_J5_URL,
-                    "status": "PENDING_SETUP",
-                    "http_code": None,
-                    "payload": {},
-                    "response": None,
-                    "error": "J5 endpoint integration is disabled in settings.",
-                    "message": "J5 integration is disabled in settings."
-                })
-                is_pending_setup = True
-                all_succeeded = False
-                continue
+        for m in matching_mappings:
+            raw_target = str(attr.get("target_endpoint_url") or m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
+            target_types = list(m.get("target_types") or [])
+            if not target_types:
+                if m.get("target_type"):
+                    target_types = [m.get("target_type")]
+                else:
+                    if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                        target_types = ["j5"]
+                    elif "dev" in raw_target.lower():
+                        target_types = ["oracledev"]
+                    else:
+                        target_types = ["oracle"]
+            if attr.get("j5") and "j5" not in [str(t).strip().lower() for t in target_types]:
+                target_types.append("j5")
 
-            j5_payload = J5Client.build_j5_payload(attr, mapping=m)
-            target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
-            pub_res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
-
-            item_results.append({
-                "target_type": "j5",
-                "attribute_name": attr_name,
-                "target_endpoint": pub_res.get("target_endpoint"),
-                "status": pub_res.get("status"),
-                "http_code": pub_res.get("http_code"),
-                "payload": j5_payload,
-                "response": pub_res.get("response_body"),
-                "error": pub_res.get("error_detail"),
-                "message": pub_res.get("message")
-            })
-
-            if pub_res.get("status") == "SUCCESS":
-                any_succeeded = True
-            else:
-                all_succeeded = False
-
-        else:
-            # Oracle ORDS / ERP Cloud
-            if not erp_cfg.get("enabled", False):
-                item_results.append({
-                    "target_type": "oracle",
-                    "attribute_name": attr_name,
-                    "target_endpoint": raw_target or erp_cfg.get("base_url"),
-                    "status": "PENDING_SETUP",
-                    "http_code": None,
-                    "payload": {},
-                    "response": None,
-                    "error": "Oracle ERP integration is disabled in settings.",
-                    "message": "Oracle ERP integration is disabled in settings."
-                })
-                is_pending_setup = True
-                all_succeeded = False
-                continue
-
+            # Compute transformed telemetry values
             scale = float(m.get("scale_factor", 1.0))
             raw_val = attr.get("value")
             scaled_val = raw_val
@@ -714,7 +926,6 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
             else:
                 uom_val = ""
 
-            # Exact JSON body schema required by Oracle Autonomous Database ORDS
             ords_payload = {
                 "timestamp": timestamp_val,
                 "tag": str(tag_val),
@@ -725,28 +936,127 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 "uom": str(uom_val)
             }
 
-            target_url = raw_target or None
-            pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
+            for t_type in target_types:
+                t_lower = str(t_type).strip().lower()
 
-            item_results.append({
-                "target_type": "oracle",
-                "attribute_name": attr_name,
-                "target_endpoint": pub_res.get("target_endpoint"),
-                "status": pub_res.get("status"),
-                "http_code": pub_res.get("http_code"),
-                "payload": ords_payload,
-                "response": pub_res.get("response_body"),
-                "error": pub_res.get("error_detail"),
-                "message": pub_res.get("message")
-            })
+                if t_lower == "j5":
+                    if not j5_cfg.get("enabled", True) and not attr.get("j5"):
+                        item_results.append({
+                            "target_type": "j5",
+                            "attribute_name": attr_name,
+                            "target_endpoint": m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL,
+                            "status": "PENDING_SETUP",
+                            "http_code": None,
+                            "payload": {},
+                            "response": None,
+                            "error": "J5 endpoint integration is disabled in settings.",
+                            "message": "J5 integration is disabled in settings."
+                        })
+                        is_pending_setup = True
+                        all_succeeded = False
+                        continue
 
-            if pub_res.get("status") == "SUCCESS":
-                any_succeeded = True
-            elif pub_res.get("status") == "PENDING_SETUP":
-                is_pending_setup = True
-                all_succeeded = False
-            else:
-                all_succeeded = False
+                    j5_payload = J5Client.build_j5_payload(attr, mapping=m)
+                    target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                    pub_res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
+
+                    item_results.append({
+                        "target_type": "j5",
+                        "attribute_name": attr_name,
+                        "target_endpoint": pub_res.get("target_endpoint"),
+                        "status": pub_res.get("status"),
+                        "http_code": pub_res.get("http_code"),
+                        "payload": j5_payload,
+                        "response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "message": pub_res.get("message")
+                    })
+
+                    if pub_res.get("status") == "SUCCESS":
+                        any_succeeded = True
+                    else:
+                        all_succeeded = False
+
+                elif t_lower in ("oracledev", "oracle_dev"):
+                    if not oracledev_cfg.get("enabled", False):
+                        item_results.append({
+                            "target_type": "oracledev",
+                            "attribute_name": attr_name,
+                            "target_endpoint": m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or oracledev_cfg.get("base_url"),
+                            "status": "PENDING_SETUP",
+                            "http_code": None,
+                            "payload": {},
+                            "response": None,
+                            "error": "Oracle Dev integration is disabled in settings.",
+                            "message": "Oracle Dev integration is disabled in settings."
+                        })
+                        is_pending_setup = True
+                        all_succeeded = False
+                        continue
+
+                    target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or (raw_target if "dev" in raw_target.lower() else None) or None
+                    pub_res = oracledev_client.publish_data(ords_payload, target_endpoint=target_url)
+
+                    item_results.append({
+                        "target_type": "oracledev",
+                        "attribute_name": attr_name,
+                        "target_endpoint": pub_res.get("target_endpoint"),
+                        "status": pub_res.get("status"),
+                        "http_code": pub_res.get("http_code"),
+                        "payload": ords_payload,
+                        "response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "message": pub_res.get("message")
+                    })
+
+                    if pub_res.get("status") == "SUCCESS":
+                        any_succeeded = True
+                    elif pub_res.get("status") == "PENDING_SETUP":
+                        is_pending_setup = True
+                        all_succeeded = False
+                    else:
+                        all_succeeded = False
+
+                else:
+                    # Oracle ORDS / ERP Cloud Production
+                    if not erp_cfg.get("enabled", False):
+                        item_results.append({
+                            "target_type": "oracle",
+                            "attribute_name": attr_name,
+                            "target_endpoint": m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None) or erp_cfg.get("base_url"),
+                            "status": "PENDING_SETUP",
+                            "http_code": None,
+                            "payload": {},
+                            "response": None,
+                            "error": "Oracle ERP integration is disabled in settings.",
+                            "message": "Oracle ERP integration is disabled in settings."
+                        })
+                        is_pending_setup = True
+                        all_succeeded = False
+                        continue
+
+                    target_url = m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None) or None
+                    pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
+
+                    item_results.append({
+                        "target_type": "oracle",
+                        "attribute_name": attr_name,
+                        "target_endpoint": pub_res.get("target_endpoint"),
+                        "status": pub_res.get("status"),
+                        "http_code": pub_res.get("http_code"),
+                        "payload": ords_payload,
+                        "response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "message": pub_res.get("message")
+                    })
+
+                    if pub_res.get("status") == "SUCCESS":
+                        any_succeeded = True
+                    elif pub_res.get("status") == "PENDING_SETUP":
+                        is_pending_setup = True
+                        all_succeeded = False
+                    else:
+                        all_succeeded = False
 
     if all_succeeded and item_results:
         status = "SUCCESS"

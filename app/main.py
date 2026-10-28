@@ -378,6 +378,17 @@ def test_oracle_erp_connection(config: Dict[str, Any] = None):
     return result
 
 
+@app.post("/api/settings/test-oracledev")
+def test_oracledev_connection(config: Dict[str, Any] = None):
+    """Test connection to Oracle Dev API and token handshake."""
+    if not config:
+        stored = load_settings()
+        config = stored.get("oracledev", {})
+    client = OracleERPCloudClient(config)
+    result = client.test_connection()
+    return result
+
+
 @app.post("/api/settings/test-j5")
 def test_j5_connection(config: Dict[str, Any] = None):
     """Test connection to J5 Inbound Message API endpoint using HTTP Basic Authentication."""
@@ -415,7 +426,7 @@ def browse_af(path: str = ""):
 
 @app.post("/api/mappings/test-endpoint")
 def test_mapping_endpoint(data: Dict[str, Any]):
-    """Test connectivity to a specific destination endpoint URL (Oracle ORDS or J5)."""
+    """Test connectivity to a specific destination endpoint URL (Oracle, Oracle Dev, or J5)."""
     endpoint_url = (data.get("endpoint_url") or "").strip()
     if not endpoint_url:
         raise HTTPException(status_code=400, detail="Missing endpoint_url parameter.")
@@ -424,6 +435,8 @@ def test_mapping_endpoint(data: Dict[str, Any]):
     if not target_type:
         if "hxgnsmartcloud" in endpoint_url.lower() or "tag=purchaseorder" in endpoint_url.lower():
             target_type = "j5"
+        elif "dev" in endpoint_url.lower():
+            target_type = "oracledev"
         else:
             target_type = "oracle"
 
@@ -437,9 +450,16 @@ def test_mapping_endpoint(data: Dict[str, Any]):
         client = J5Client(j5_config)
         result = client.test_connection(test_url=endpoint_url)
         return result
+    elif target_type in ("oracledev", "oracle_dev"):
+        config = dict(stored.get("oracledev", {}))
+        if not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
+            config["auth_type"] = "none"
+            config["enabled"] = True
+        client = OracleERPCloudClient(config)
+        result = client.test_connection(test_url=endpoint_url)
+        return result
     else:
         config = dict(stored.get("oracle_erp", {}))
-        # If the user has not configured OAuth credentials or set auth_type to none, test directly without requiring OAuth 2.0
         if not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
             config["auth_type"] = "none"
             config["enabled"] = True
@@ -450,14 +470,16 @@ def test_mapping_endpoint(data: Dict[str, Any]):
 
 @app.get("/api/mappings/preview")
 def preview_erp_payload():
-    """Generate a preview of destination payloads (Oracle ORDS and J5) based on currently configured mappings."""
+    """Generate a preview of destination payloads (Oracle, Oracle Dev, and J5) based on currently configured mappings."""
     mappings = load_mappings()
     enabled = [m for m in mappings if m.get("enabled", True)]
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
+    oracledev_cfg = settings.get("oracledev", {})
     j5_cfg = settings.get("j5_endpoint", {})
     now_iso = datetime.now(timezone.utc).isoformat()
     base_url = (erp_cfg.get("base_url") or "").rstrip("/")
+    dev_base_url = (oracledev_cfg.get("base_url") or "").rstrip("/")
 
     previews = []
     for m in enabled:
@@ -467,75 +489,98 @@ def preview_erp_payload():
         sample_val = round(12.3 * scale, dec)
         raw_target = str(m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
 
-        target_type = str(m.get("target_type") or "").strip().lower()
-        if not target_type:
-            if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
-                target_type = "j5"
+        target_types = m.get("target_types")
+        if not target_types:
+            if m.get("target_type"):
+                target_types = [m.get("target_type")]
             else:
-                target_type = "oracle"
+                if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                    target_types = ["j5"]
+                elif "dev" in raw_target.lower():
+                    target_types = ["oracledev"]
+                else:
+                    target_types = ["oracle"]
 
-        if target_type == "j5":
-            target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
-            sample_attr = {
-                "name": attr_name,
-                "value": sample_val,
-                "timestamp": now_iso,
-                "quality": "Good",
-                "tag": m.get("tag") or m.get("meter_tag") or "",
-                "description": m.get("description") or m.get("name") or "",
-                "limit": m.get("limit") or "",
-                "results": m.get("results") or ""
-            }
-            j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m)
-            tenant_id = j5_cfg.get("tenant_id") or "JZNOT1742577235_TST"
-            previews.append({
-                "target_type": "J5 (Hexagon Smart Cloud)",
-                "target_endpoint": target_url,
-                "http_method": "POST",
-                "auth_type": "HTTP Basic Auth",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]",
-                    "X-Tenant-Id": tenant_id
-                },
-                "body": j5_payload
-            })
-        else:
-            target_url = raw_target
-            if not target_url:
-                res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
-                target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
+        tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
+        desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
+        limit_val = m.get("limit") if m.get("limit") is not None else ""
+        results_val = m.get("results") if m.get("results") is not None else ""
+        uom_val = m.get("uom") if m.get("uom") is not None else (m.get("unit") or "")
 
-            tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
-            desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
-            limit_val = m.get("limit") if m.get("limit") is not None else ""
-            results_val = m.get("results") if m.get("results") is not None else ""
-            uom_val = m.get("uom") if m.get("uom") is not None else (m.get("unit") or "")
+        ords_payload = {
+            "timestamp": now_iso,
+            "tag": str(tag_val),
+            "description": str(desc_val),
+            "value": str(sample_val),
+            "limit": str(limit_val),
+            "results": str(results_val),
+            "uom": str(uom_val)
+        }
 
-            ords_payload = {
-                "timestamp": now_iso,
-                "tag": str(tag_val),
-                "description": str(desc_val),
-                "value": str(sample_val),
-                "limit": str(limit_val),
-                "results": str(results_val),
-                "uom": str(uom_val)
-            }
-            previews.append({
-                "target_type": "Oracle ORDS",
-                "target_endpoint": target_url,
-                "http_method": "POST",
-                "auth_type": "ORDS Direct / None",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                "body": ords_payload
-            })
+        for t_type in target_types:
+            t_lower = str(t_type).strip().lower()
+            if t_lower == "j5":
+                target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                sample_attr = {
+                    "name": attr_name,
+                    "value": sample_val,
+                    "timestamp": now_iso,
+                    "quality": "Good",
+                    "tag": tag_val,
+                    "description": desc_val,
+                    "limit": limit_val,
+                    "results": results_val
+                }
+                j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m)
+                tenant_id = j5_cfg.get("tenant_id") or "JZNOT1742577235_TST"
+                previews.append({
+                    "target_type": "J5 (Hexagon Smart Cloud)",
+                    "target_endpoint": target_url,
+                    "http_method": "POST",
+                    "auth_type": "HTTP Basic Auth",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]",
+                        "X-Tenant-Id": tenant_id
+                    },
+                    "body": j5_payload
+                })
+            elif t_lower in ("oracledev", "oracle_dev"):
+                target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or (raw_target if "dev" in raw_target.lower() else None)
+                if not target_url:
+                    res_path = m.get("resource_endpoint") or oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+                    target_url = f"{dev_base_url}/{res_path.lstrip('/')}" if dev_base_url else res_path
+                previews.append({
+                    "target_type": "Oracle Dev (ORDS)",
+                    "target_endpoint": target_url,
+                    "http_method": oracledev_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Dev ({oracledev_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": ords_payload
+                })
+            else:
+                target_url = m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None)
+                if not target_url:
+                    res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+                    target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
+                previews.append({
+                    "target_type": "Oracle Production (ORDS)",
+                    "target_endpoint": target_url,
+                    "http_method": erp_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle ({erp_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": ords_payload
+                })
 
     return {
-        "mode": "Destination Endpoints (Oracle ORDS & J5 Inbound Message)",
+        "mode": "Destination Endpoints (Multicast Dispatch: Oracle, Oracle Dev, J5)",
         "mapped_items_count": len(previews),
         "dispatches": previews
     }

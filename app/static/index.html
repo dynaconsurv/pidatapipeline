@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.2.4">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.2.5">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.4</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.5</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -691,6 +691,17 @@
           </div>
         </div>
 
+        <!-- Auto-Create J5 Mapping on Push Option -->
+        <div style="background: var(--bg-subtle); padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <label class="form-check" style="margin: 0; font-size: 12px; font-weight: 500; cursor: pointer;">
+            <input type="checkbox" id="mapping-auto-create-j5-checkbox" checked>
+            <span>Auto-create new mapping &amp; send to J5 when PI AF Push includes extra parameter <code>"J5"</code></span>
+          </label>
+          <span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);">
+            <span class="badge-dot" style="background:#6366f1;"></span> J5 Push Auto-Mapping
+          </span>
+        </div>
+
         <div class="table-responsive">
           <table class="data-table">
             <thead>
@@ -1005,10 +1016,15 @@
                       <td><code>timestamp</code></td>
                       <td>Trigger timestamp (e.g. <code>%StartTime%</code>); automatically formatted to Oracle UTC Zulu (<code>YYYY-MM-DDTHH:MM:SSZ</code>)</td>
                     </tr>
+                    <tr>
+                      <td><code style="font-family: var(--font-mono); font-weight: 600; color: #4f46e5;">J5</code> <em>(Optional)</em></td>
+                      <td><code>J5 Auto-Mapping</code></td>
+                      <td>When included (e.g. <code>"J5": "true"</code>), automatically creates a mapping for that attribute (if it doesn't exist) and dispatches the data to Hexagon J5 as well</td>
+                    </tr>
                   </tbody>
                 </table>
                 <div style="font-size: 11px; color: var(--ink-secondary); line-height: 1.4;">
-                  <strong>Note:</strong> When these 5 variable names are provided by PI AF Notifications, you <strong>do not need to configure anything in the Attribute Mapping page</strong>. The pipeline automatically constructs the Oracle ORDS body and dispatches directly.
+                  <strong>Note:</strong> When these variable names are provided by PI AF Notifications, you <strong>do not need to configure anything in the Attribute Mapping page</strong>. Including <code>"J5"</code> automatically registers the attribute mapping and forwards to J5 as well.
                 </div>
               </div>
 
@@ -1025,7 +1041,8 @@
   "Value": "%Value%",
   "Limit": "LIMIT2",
   "Result": "RESULTS2",
-  "Timestamp": "%StartTime%"
+  "Timestamp": "%StartTime%",
+  "J5": "true"
 }</pre>
               </div>
             </div>
@@ -1389,6 +1406,119 @@
         <div id="erp-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
+      <!-- Oracle ERP Dev Settings -->
+      <div class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Oracle ERP Cloud (Dev) Configuration
+            </div>
+            <div class="form-help">Development pod endpoint, OAuth 2.0 credentials, and REST resource for oracledev</div>
+          </div>
+          <button type="button" id="btn-test-oracledev-settings" class="btn btn-secondary btn-sm">Test Dev Handshake / Token</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-check" style="font-weight: 500;">
+              <input type="checkbox" id="setting-oracledev-enabled">
+              <span>Enable Oracle ERP Dev Transmission</span>
+            </label>
+            <span class="form-help" style="margin-left: 24px;">When unchecked, telemetry will not be dispatched to Oracle Dev endpoint.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-auth-type">Authentication Method</label>
+            <select id="setting-oracledev-auth-type" class="form-control">
+              <option value="none">None / Direct (No Security / Tokens - ORDS Standard)</option>
+              <option value="oauth2">OAuth 2.0 (Oracle IDCS Client Credentials)</option>
+              <option value="basic">Basic Authentication (Username / Password)</option>
+              <option value="bearer">Static Bearer Token</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-base-url">Oracle Dev Base URL / ORDS Root</label>
+            <input type="url" id="setting-oracledev-base-url" class="form-control" placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int">
+          </div>
+
+          <!-- ORDS None Auth Info Banner -->
+          <div class="form-group full-width oracledev-none-field" style="display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius); padding: 12px;">
+            <div style="font-weight: 600; font-size: 12px; color: #166534; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Oracle Autonomous Database REST Data Services (ORDS) Direct Mode Active (Dev)
+            </div>
+            <div style="font-size: 11px; color: #15803d; margin-top: 4px;">
+              No tokens or credentials needed. Individual dev table endpoints are configured per attribute in <strong>Attribute Mapping</strong>.
+            </div>
+          </div>
+
+          <!-- OAuth Fields -->
+          <div class="form-group full-width oracledev-oauth-field">
+            <label class="form-label" for="setting-oracledev-token-url">OAuth 2.0 Token Endpoint (IDCS / Identity Domain)</label>
+            <input type="url" id="setting-oracledev-token-url" class="form-control form-control-mono" placeholder="https://idcs-xxxx.identity.oraclecloud.com/oauth2/v1/token">
+          </div>
+
+          <div class="form-group oracledev-oauth-field">
+            <label class="form-label" for="setting-oracledev-client-id">Client ID</label>
+            <input type="text" id="setting-oracledev-client-id" class="form-control form-control-mono" placeholder="Client ID">
+          </div>
+
+          <div class="form-group oracledev-oauth-field">
+            <label class="form-label" for="setting-oracledev-client-secret">Client Secret</label>
+            <input type="password" id="setting-oracledev-client-secret" class="form-control" placeholder="••••••••">
+          </div>
+
+          <div class="form-group oracledev-oauth-field full-width">
+            <label class="form-label" for="setting-oracledev-scope">OAuth Scope</label>
+            <input type="text" id="setting-oracledev-scope" class="form-control form-control-mono" value="urn:opc:resource:consumer::all">
+          </div>
+
+          <!-- Basic Fields -->
+          <div class="form-group oracledev-basic-field" style="display: none;">
+            <label class="form-label" for="setting-oracledev-username">Username</label>
+            <input type="text" id="setting-oracledev-username" class="form-control" placeholder="integration_user">
+          </div>
+
+          <div class="form-group oracledev-basic-field" style="display: none;">
+            <label class="form-label" for="setting-oracledev-password">Password</label>
+            <input type="password" id="setting-oracledev-password" class="form-control" placeholder="••••••••">
+          </div>
+
+          <!-- Bearer Field -->
+          <div class="form-group oracledev-bearer-field full-width" style="display: none;">
+            <label class="form-label" for="setting-oracledev-bearer-token">Bearer Token</label>
+            <input type="text" id="setting-oracledev-bearer-token" class="form-control form-control-mono" placeholder="Bearer eyJ...">
+          </div>
+
+          <!-- Resource Endpoint -->
+          <div class="form-group full-width">
+            <label class="form-label" for="setting-oracledev-resource-endpoint">Resource Path</label>
+            <input type="text" id="setting-oracledev-resource-endpoint" class="form-control form-control-mono" value="/Final_Discharge_Effluent/">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-http-method">HTTP Method</label>
+            <select id="setting-oracledev-http-method" class="form-control">
+              <option value="POST">POST</option>
+              <option value="PATCH">PATCH</option>
+              <option value="PUT">PUT</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Dry Run Simulation</label>
+            <label class="form-check" style="margin-top: 6px;">
+              <input type="checkbox" id="setting-oracledev-dry-run">
+              <span>Simulate HTTP 201 Created Response</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="oracledev-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
+      </div>
+
       <!-- J5 Inbound Message Configuration (Hexagon Smart Cloud) -->
       <div class="form-section">
         <div class="section-title-bar">
@@ -1485,6 +1615,16 @@
             </label>
             <span class="form-help" style="margin-left: 24px; font-size: 11px;">
               When checked, incoming PI Notifications are dispatched immediately to Oracle ERP upon receipt, with automatic scheduled retries whenever a transmission fails. When unchecked, incoming records remain staged in <code>data/received_deliveries.json</code> for manual dispatch.
+            </span>
+          </div>
+
+          <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-check" style="font-weight: 500;">
+              <input type="checkbox" id="setting-auto-create-j5-mapping" checked>
+              <span>Auto-Create Attribute Mapping &amp; Send to J5 when PI AF Push includes <code>"J5"</code> Parameter</span>
+            </label>
+            <span class="form-help" style="margin-left: 24px; font-size: 11px;">
+              When checked, if PI AF sends a push delivery with an extra parameter called <code>"J5"</code>, the pipeline automatically creates a new attribute mapping (if it does not exist yet) and dispatches the telemetry data to Hexagon J5 as well.
             </span>
           </div>
 
@@ -1680,52 +1820,82 @@
             <div style="font-weight: 600; font-size: 12px; color: var(--ink-primary); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
               <div style="display: flex; align-items: center; gap: 6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                <span id="modal-destination-heading">Oracle Destination Endpoint (ORDS REST POST)</span>
+                <span id="modal-destination-heading">Destination Endpoints (Multicast Dispatch)</span>
               </div>
-              <div style="display: flex; gap: 12px; align-items: center; background: var(--bg-subtle); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
-                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px; margin: 0;">
-                  <input type="radio" name="modal-target-type" value="oracle" id="target-type-oracle" checked onchange="handleModalTargetTypeChange()">
-                  Oracle Endpoint
+              <div style="display: flex; gap: 14px; align-items: center; background: var(--bg-subtle); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); flex-wrap: wrap;">
+                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  <input type="checkbox" id="modal-target-oracle" checked onchange="handleModalTargetEndpointsChange()">
+                  <span>Oracle Production</span>
                 </label>
-                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px; margin: 0;">
-                  <input type="radio" name="modal-target-type" value="j5" id="target-type-j5" onchange="handleModalTargetTypeChange()">
-                  J5 Endpoint (Hexagon)
+                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  <input type="checkbox" id="modal-target-oracledev" onchange="handleModalTargetEndpointsChange()">
+                  <span>Oracle Dev</span>
+                </label>
+                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  <input type="checkbox" id="modal-target-j5" onchange="handleModalTargetEndpointsChange()">
+                  <span>J5 (Hexagon)</span>
                 </label>
               </div>
             </div>
 
-            <div class="form-group full-width" style="margin-bottom: 8px;">
-              <label class="form-label" id="modal-label-endpoint-url" for="modal-target-endpoint-url">Target POST URL *</label>
+            <!-- Oracle Production URL Row -->
+            <div id="row-url-oracle" class="form-group full-width" style="margin-bottom: 8px;">
+              <label class="form-label" for="modal-target-endpoint-url">Oracle Production POST URL *</label>
               <div style="display: flex; gap: 8px;">
-                <input type="url" id="modal-target-endpoint-url" class="form-control form-control-mono" required placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/">
+                <input type="url" id="modal-target-endpoint-url" class="form-control form-control-mono" placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/">
                 <button type="button" id="btn-modal-test-endpoint" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                  Test Endpoint
+                  Test Oracle
                 </button>
               </div>
-              <div id="modal-endpoint-url-help" class="form-help" style="margin-top: 4px; font-size: 11px;">
-                Individual ORDS table/resource POST URL configured by Oracle team for this specific telemetry item.
-              </div>
-              <div id="modal-endpoint-test-box" class="error-console" style="display: none; margin-top: 8px; font-size: 11px;"></div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Production ORDS table/resource POST URL for this item.</div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-              <div class="form-group">
-                <label class="form-label" id="modal-label-tag" for="modal-target-tag">Oracle Tag (tag)</label>
+            <!-- Oracle Dev URL Row -->
+            <div id="row-url-oracledev" class="form-group full-width" style="display: none; margin-bottom: 8px;">
+              <label class="form-label" for="modal-target-endpoint-url-dev">Oracle Dev POST URL *</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="url" id="modal-target-endpoint-url-dev" class="form-control form-control-mono" placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/">
+                <button type="button" id="btn-modal-test-endpoint-dev" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Test Oracle Dev
+                </button>
+              </div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Development ORDS table/resource POST URL for this item.</div>
+            </div>
+
+            <!-- J5 URL Row -->
+            <div id="row-url-j5" class="form-group full-width" style="display: none; margin-bottom: 8px;">
+              <label class="form-label" for="modal-target-endpoint-url-j5">J5 Inbound Message URL *</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="url" id="modal-target-endpoint-url-j5" class="form-control form-control-mono" placeholder="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder">
+                <button type="button" id="btn-modal-test-endpoint-j5" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Test J5
+                </button>
+              </div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Hexagon J5 Inbound Message API endpoint receiving JSON telemetry via Basic Auth.</div>
+            </div>
+
+            <div id="modal-endpoint-test-box" class="error-console" style="display: none; margin-top: 8px; font-size: 11px; margin-bottom: 8px;"></div>
+
+            <div id="modal-pull-only-payload-fields" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="form-group" id="group-modal-target-tag">
+                <label class="form-label" id="modal-label-tag" for="modal-target-tag">Tag / Code (tag)</label>
                 <input type="text" id="modal-target-tag" class="form-control form-control-mono" placeholder="Empty by default">
               </div>
 
-              <div class="form-group">
-                <label class="form-label" id="modal-label-desc" for="modal-description">Oracle Description (description)</label>
+              <div class="form-group" id="group-modal-description">
+                <label class="form-label" id="modal-label-desc" for="modal-description">Description (description)</label>
                 <input type="text" id="modal-description" class="form-control" placeholder="Empty by default">
               </div>
 
-              <div class="form-group">
+              <div class="form-group" id="group-modal-limit">
                 <label class="form-label" id="modal-label-limit" for="modal-limit">Limit (limit)</label>
                 <input type="text" id="modal-limit" class="form-control form-control-mono" placeholder="Empty by default">
               </div>
 
-              <div class="form-group">
+              <div class="form-group" id="group-modal-results">
                 <label class="form-label" id="modal-label-results" for="modal-results">Results (results)</label>
                 <input type="text" id="modal-results" class="form-control" placeholder="Empty by default">
               </div>
@@ -1736,27 +1906,27 @@
           <div class="form-group full-width">
             <label class="form-label" for="modal-attr-name">PI Attribute Name *</label>
             <input type="text" id="modal-attr-name" class="form-control" required placeholder="e.g. 30 Min Average">
-            <div class="form-help" style="font-size: 11px; margin-top: 3px;">Matches the attribute name sent in PI AF Notification delivery or PI Web API.</div>
+            <div class="form-help" id="help-modal-attr-name" style="font-size: 11px; margin-top: 3px;">Matches the attribute name sent in PI AF Notification delivery or PI Web API.</div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="group-modal-af-server" style="display: none;">
             <label class="form-label" for="modal-af-server">PI AF Server</label>
             <input type="text" id="modal-af-server" class="form-control" value="PISRV01">
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="group-modal-af-database" style="display: none;">
             <label class="form-label" for="modal-af-database">PI AF Database</label>
             <input type="text" id="modal-af-database" class="form-control" value="Plant_Operations">
           </div>
 
-          <div class="form-group full-width">
+          <div class="form-group full-width" id="group-modal-element-path" style="display: none;">
             <label class="form-label" for="modal-element-path">AF Element Path</label>
             <input type="text" id="modal-element-path" class="form-control form-control-mono" placeholder="Effluent\Discharge">
           </div>
 
-          <div class="form-group full-width">
+          <div class="form-group full-width" id="group-modal-full-path" style="display: none;">
             <label class="form-label" for="modal-full-path">Full AF Path *</label>
-            <input type="text" id="modal-full-path" class="form-control form-control-mono" required placeholder="\\PISRV01\Plant_Operations\Effluent\Discharge|30 Min Average">
+            <input type="text" id="modal-full-path" class="form-control form-control-mono" placeholder="\\PISRV01\Plant_Operations\Effluent\Discharge|30 Min Average">
           </div>
 
           <div class="form-group">
@@ -1950,6 +2120,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.2.4"></script>
+  <script src="/static/js/app.js?v=2.2.5"></script>
 </body>
 </html>

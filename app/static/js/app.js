@@ -1662,13 +1662,16 @@ async function showOracleResponseModal(deliveryId) {
             `;
           }
 
+          const isDev = (it.target_type === 'oracledev' || it.target_type === 'oracle_dev');
+          const badgeHtml = isDev
+            ? `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev</span>`
+            : `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle ORDS</span>`;
+
           return `
             <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;">
-                    <span class="badge-dot"></span> Oracle ORDS
-                  </span>
+                  ${badgeHtml}
                   <strong style="font-size: 12px; color: var(--ink-primary);">${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}</strong>
                 </div>
                 <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono);">
@@ -1949,12 +1952,87 @@ function initMappings() {
   document.getElementById("btn-save-all-mappings")?.addEventListener("click", saveMappingsToServer);
   document.getElementById("btn-load-sample-templates")?.addEventListener("click", loadSamplePresets);
   document.getElementById("btn-refresh-payload-preview")?.addEventListener("click", refreshPayloadPreview);
-  document.getElementById("btn-modal-test-endpoint")?.addEventListener("click", handleModalTestEndpoint);
+  document.getElementById("btn-modal-test-endpoint")?.addEventListener("click", () => handleModalTestEndpoint('oracle'));
+  document.getElementById("btn-modal-test-endpoint-dev")?.addEventListener("click", () => handleModalTestEndpoint('oracledev'));
+  document.getElementById("btn-modal-test-endpoint-j5")?.addEventListener("click", () => handleModalTestEndpoint('j5'));
 
   // Auto-compose full path when AF Server, Database, Element, or Attribute change in modal
   ["modal-af-server", "modal-af-database", "modal-element-path", "modal-attr-name"].forEach(id => {
     document.getElementById(id)?.addEventListener("input", autoComposeFullPath);
   });
+
+  // Sync J5 Push Auto-Mapping checkbox on Mappings page with Settings
+  document.getElementById("mapping-auto-create-j5-checkbox")?.addEventListener("change", async (e) => {
+    const isChecked = e.target.checked;
+    const settingsChk = document.getElementById("setting-auto-create-j5-mapping");
+    if (settingsChk) settingsChk.checked = isChecked;
+    if (currentSettings) {
+      if (!currentSettings.pipeline) currentSettings.pipeline = {};
+      currentSettings.pipeline.auto_create_j5_mapping = isChecked;
+      try {
+        await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(currentSettings)
+        });
+        showToast(
+          isChecked
+            ? 'Enabled auto-creation of J5 attribute mappings on PI AF Push with "J5" parameter.'
+            : 'Disabled auto-creation of J5 attribute mappings on PI AF Push.',
+          "info"
+        );
+      } catch (err) {
+        console.error("Failed to save J5 auto-mapping setting:", err);
+      }
+    }
+  });
+}
+
+function getActiveIngestionMode() {
+  const checkedRadio = document.querySelector('input[name="setting-ingestion-mode"]:checked');
+  if (checkedRadio && checkedRadio.value) {
+    return checkedRadio.value;
+  }
+  if (currentSettings && currentSettings.pipeline && currentSettings.pipeline.ingestion_mode) {
+    return currentSettings.pipeline.ingestion_mode;
+  }
+  return "endpoint";
+}
+
+function updateMappingModalModeUI() {
+  const mode = getActiveIngestionMode();
+  const isPush = (mode !== "pull");
+
+  const pullPayloadFields = document.getElementById("modal-pull-only-payload-fields");
+  const groupTag = document.getElementById("group-modal-target-tag");
+  const groupDesc = document.getElementById("group-modal-description");
+  const groupLimit = document.getElementById("group-modal-limit");
+  const groupResults = document.getElementById("group-modal-results");
+
+  const groupAfServer = document.getElementById("group-modal-af-server");
+  const groupAfDb = document.getElementById("group-modal-af-database");
+  const groupElemPath = document.getElementById("group-modal-element-path");
+  const groupFullPath = document.getElementById("group-modal-full-path");
+  const fullPathInput = document.getElementById("modal-full-path");
+
+  if (pullPayloadFields) pullPayloadFields.style.display = isPush ? "none" : "grid";
+  if (groupTag) groupTag.style.display = isPush ? "none" : "";
+  if (groupDesc) groupDesc.style.display = isPush ? "none" : "";
+  if (groupLimit) groupLimit.style.display = isPush ? "none" : "";
+  if (groupResults) groupResults.style.display = isPush ? "none" : "";
+
+  if (groupAfServer) groupAfServer.style.display = isPush ? "none" : "";
+  if (groupAfDb) groupAfDb.style.display = isPush ? "none" : "";
+  if (groupElemPath) groupElemPath.style.display = isPush ? "none" : "";
+  if (groupFullPath) groupFullPath.style.display = isPush ? "none" : "";
+
+  if (fullPathInput) {
+    if (isPush) {
+      fullPathInput.removeAttribute("required");
+    } else {
+      fullPathInput.setAttribute("required", "required");
+    }
+  }
 }
 
 async function loadMappings() {
@@ -1985,20 +2063,60 @@ function renderMappingsTable() {
     return;
   }
 
+  const defaultOracleUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
+    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
+    : '--';
+  const defaultDevUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
+    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
+    : '--';
+  const defaultJ5Url = currentSettings?.j5_endpoint?.url || '--';
+
   tbody.innerHTML = currentMappings.map((m, idx) => {
     const scaleRound = `×${m.scale_factor || 1.0}, ${m.round_decimals ?? 2} dec`;
-    const isJ5 = (m.target_type === 'j5' || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
-    const defaultUrl = isJ5
-      ? (currentSettings?.j5_endpoint?.url || 'https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder')
-      : (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : '--');
-    const targetUrl = m.target_endpoint_url || defaultUrl;
+    
+    // Resolve target types
+    let targetTypes = m.target_types || [];
+    if (!targetTypes || targetTypes.length === 0) {
+      if (m.target_type) {
+        targetTypes = [m.target_type];
+      } else {
+        const isJ5 = (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud'));
+        targetTypes = isJ5 ? ['j5'] : ['oracle'];
+      }
+    }
+
+    // Render target badges
+    const targetBadges = targetTypes.map(tt => {
+      const ttLower = tt.toLowerCase();
+      if (ttLower === 'j5') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`;
+      } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev</span>`;
+      } else {
+        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
+      }
+    }).join(" ");
+
+    // Build URL display lines
+    const urlLines = [];
+    if (targetTypes.includes('oracle')) {
+      const u = m.target_endpoint_url_oracle || (targetTypes[0] === 'oracle' ? m.target_endpoint_url : null) || defaultOracleUrl;
+      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: var(--ink-secondary);">ORACLE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
+    }
+    if (targetTypes.includes('oracledev')) {
+      const u = m.target_endpoint_url_dev || defaultDevUrl;
+      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #d97706;">DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
+    }
+    if (targetTypes.includes('j5')) {
+      const u = m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !targetTypes.includes('oracle') ? m.target_endpoint_url : null) || defaultJ5Url;
+      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #4f46e5;">J5:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
+    }
+    const urlsDisplay = urlLines.length > 0 ? urlLines.join("") : `<span class="path-code" style="font-size: 10px;">${escapeHtml(m.target_endpoint_url || '--')}</span>`;
+
     const tagDisplay = m.tag || m.meter_tag || '--';
     const descDisplay = m.description || m.name || '--';
     const limitDisplay = (m.limit !== undefined && m.limit !== null && m.limit !== "") ? m.limit : '--';
     const resultsDisplay = (m.results !== undefined && m.results !== null && m.results !== "") ? m.results : '--';
-    const targetBadge = isJ5
-      ? `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`
-      : `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
 
     return `
       <tr>
@@ -2008,7 +2126,7 @@ function renderMappingsTable() {
         <td style="vertical-align: top;">
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(m.attribute_name || '')}</strong>
-            ${targetBadge}
+            ${targetBadges}
           </div>
           <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;" title="${escapeHtml(m.full_path || '')}">
             ${escapeHtml(m.element_path || m.full_path || '')}
@@ -2022,10 +2140,8 @@ function renderMappingsTable() {
             ${escapeHtml(descDisplay)}
           </div>
         </td>
-        <td style="vertical-align: top; max-width: 250px;">
-          <span class="path-code" style="font-size: 10px; word-break: break-all; display: block;" title="${escapeHtml(targetUrl)}">
-            ${escapeHtml(targetUrl)}
-          </span>
+        <td style="vertical-align: top; max-width: 280px;">
+          ${urlsDisplay}
         </td>
         <td style="vertical-align: top; font-size: 11px; white-space: nowrap;">
           <div><span style="color: var(--ink-secondary);">Limit:</span> <code>${escapeHtml(String(limitDisplay))}</code></div>
@@ -2037,7 +2153,7 @@ function renderMappingsTable() {
         </td>
         <td style="text-align: right; vertical-align: top; white-space: nowrap;">
           <button class="btn btn-secondary btn-sm" onclick="editMapping(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;">Edit</button>
-          <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to this destination endpoint">Test</button>
+          <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to destination endpoint(s)">Test</button>
           <button class="btn btn-danger btn-sm" onclick="deleteMapping(${idx})" style="padding: 0.2rem 0.45rem;">Delete</button>
         </td>
       </tr>
@@ -2067,52 +2183,45 @@ function deleteMapping(idx) {
   }
 }
 
-function handleModalTargetTypeChange() {
-  const isJ5 = document.getElementById("target-type-j5")?.checked;
-  const heading = document.getElementById("modal-destination-heading");
-  const labelUrl = document.getElementById("modal-label-endpoint-url");
-  const inputUrl = document.getElementById("modal-target-endpoint-url");
-  const helpUrl = document.getElementById("modal-endpoint-url-help");
-  const labelTag = document.getElementById("modal-label-tag");
-  const labelDesc = document.getElementById("modal-label-desc");
-  const labelLimit = document.getElementById("modal-label-limit");
-  const labelResults = document.getElementById("modal-label-results");
+function handleModalTargetEndpointsChange() {
+  const chkOracle = document.getElementById("modal-target-oracle")?.checked;
+  const chkDev = document.getElementById("modal-target-oracledev")?.checked;
+  const chkJ5 = document.getElementById("modal-target-j5")?.checked;
+
+  const rowOracle = document.getElementById("row-url-oracle");
+  const rowDev = document.getElementById("row-url-oracledev");
+  const rowJ5 = document.getElementById("row-url-j5");
+
+  if (rowOracle) rowOracle.style.display = chkOracle ? "block" : "none";
+  if (rowDev) rowDev.style.display = chkDev ? "block" : "none";
+  if (rowJ5) rowJ5.style.display = chkJ5 ? "block" : "none";
+
+  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
+    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
+    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+
+  const defaultDevOrdsUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
+    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
+    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+
+  const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
+
+  const inputOracle = document.getElementById("modal-target-endpoint-url");
+  const inputDev = document.getElementById("modal-target-endpoint-url-dev");
+  const inputJ5 = document.getElementById("modal-target-endpoint-url-j5");
+
+  if (chkOracle && inputOracle && !inputOracle.value) inputOracle.value = defaultOrdsUrl;
+  if (chkDev && inputDev && !inputDev.value) inputDev.value = defaultDevOrdsUrl;
+  if (chkJ5 && inputJ5 && !inputJ5.value) inputJ5.value = defaultJ5Url;
+
   const testBox = document.getElementById("modal-endpoint-test-box");
   if (testBox) {
     testBox.style.display = "none";
     testBox.innerHTML = "";
   }
-
-  const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
-  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
-    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
-    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
-
-  if (isJ5) {
-    if (heading) heading.textContent = "J5 Destination Endpoint (Hexagon Smart Cloud)";
-    if (labelUrl) labelUrl.textContent = "J5 Inbound Message URL *";
-    if (helpUrl) helpUrl.textContent = "Hexagon J5 Inbound Message API endpoint receiving JSON telemetry via HTTP Basic Auth.";
-    if (labelTag) labelTag.textContent = "J5 Message Tag / Key";
-    if (labelDesc) labelDesc.textContent = "J5 Description";
-    if (labelLimit) labelLimit.textContent = "Operating Limit (Optional)";
-    if (labelResults) labelResults.textContent = "Result / Status (Optional)";
-    if (inputUrl && (!inputUrl.value || inputUrl.value.includes("oraclecloudapps.com"))) {
-      inputUrl.value = defaultJ5Url;
-    }
-  } else {
-    if (heading) heading.textContent = "Oracle Destination Endpoint (ORDS REST POST)";
-    if (labelUrl) labelUrl.textContent = "Target POST URL *";
-    if (helpUrl) helpUrl.textContent = "Individual ORDS table/resource POST URL configured by Oracle team for this specific telemetry item.";
-    if (labelTag) labelTag.textContent = "Oracle Tag (tag)";
-    if (labelDesc) labelDesc.textContent = "Oracle Description (description)";
-    if (labelLimit) labelLimit.textContent = "Limit (limit)";
-    if (labelResults) labelResults.textContent = "Results (results)";
-    if (inputUrl && (!inputUrl.value || inputUrl.value.includes("hxgnsmartcloud.com"))) {
-      inputUrl.value = defaultOrdsUrl;
-    }
-  }
 }
-window.handleModalTargetTypeChange = handleModalTargetTypeChange;
+window.handleModalTargetEndpointsChange = handleModalTargetEndpointsChange;
+window.handleModalTargetTypeChange = handleModalTargetEndpointsChange;
 
 function openMappingModal(mapping = null, index = -1) {
   const modal = document.getElementById("mapping-modal");
@@ -2122,35 +2231,55 @@ function openMappingModal(mapping = null, index = -1) {
     testBox.style.display = "none";
     testBox.innerHTML = "";
   }
+  updateMappingModalModeUI();
+  const isPush = (getActiveIngestionMode() !== "pull");
   modal.classList.add("active");
 
   const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
     ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
     : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+
+  const defaultDevOrdsUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
+    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
+    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
 
   if (mapping) {
     title.textContent = "Edit Attribute Mapping";
     document.getElementById("modal-mapping-id").value = index;
 
-    const isJ5 = (mapping.target_type === 'j5' || (mapping.target_endpoint_url && mapping.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
-    const radOracle = document.getElementById("target-type-oracle");
-    const radJ5 = document.getElementById("target-type-j5");
-    if (isJ5) {
-      if (radJ5) radJ5.checked = true;
-    } else {
-      if (radOracle) radOracle.checked = true;
+    let targetTypes = mapping.target_types || [];
+    if (!targetTypes || targetTypes.length === 0) {
+      if (mapping.target_type) {
+        targetTypes = [mapping.target_type];
+      } else {
+        const isJ5 = (mapping.target_endpoint_url && mapping.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud'));
+        targetTypes = isJ5 ? ['j5'] : ['oracle'];
+      }
     }
-    handleModalTargetTypeChange();
 
-    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url || (isJ5 ? defaultJ5Url : defaultOrdsUrl);
+    const chkOracle = document.getElementById("modal-target-oracle");
+    const chkDev = document.getElementById("modal-target-oracledev");
+    const chkJ5 = document.getElementById("modal-target-j5");
+
+    if (chkOracle) chkOracle.checked = targetTypes.includes("oracle");
+    if (chkDev) chkDev.checked = targetTypes.includes("oracledev");
+    if (chkJ5) chkJ5.checked = targetTypes.includes("j5");
+
+    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultOrdsUrl) : defaultOrdsUrl);
+    document.getElementById("modal-target-endpoint-url-dev").value = mapping.target_endpoint_url_dev || defaultDevOrdsUrl;
+    document.getElementById("modal-target-endpoint-url-j5").value = mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultJ5Url) : defaultJ5Url);
+
+    handleModalTargetEndpointsChange();
+
     document.getElementById("modal-target-tag").value = mapping.tag || mapping.meter_tag || "";
     document.getElementById("modal-description").value = mapping.description || mapping.name || "";
     document.getElementById("modal-limit").value = (mapping.limit !== undefined && mapping.limit !== null) ? mapping.limit : "";
     document.getElementById("modal-results").value = (mapping.results !== undefined && mapping.results !== null) ? mapping.results : "";
     document.getElementById("modal-attr-name").value = mapping.attribute_name || "";
-    document.getElementById("modal-af-server").value = mapping.af_server || "PISRV01";
-    document.getElementById("modal-af-database").value = mapping.af_database || "Plant_Operations";
+    document.getElementById("modal-af-server").value = mapping.af_server !== undefined ? mapping.af_server : (isPush ? "" : "PISRV01");
+    document.getElementById("modal-af-database").value = mapping.af_database !== undefined ? mapping.af_database : (isPush ? "" : "Plant_Operations");
     document.getElementById("modal-element-path").value = mapping.element_path || "";
     document.getElementById("modal-full-path").value = mapping.full_path || "";
     document.getElementById("modal-uom").value = mapping.uom || "";
@@ -2161,19 +2290,29 @@ function openMappingModal(mapping = null, index = -1) {
     title.textContent = "Add Attribute Mapping";
     document.getElementById("modal-mapping-id").value = "-1";
     document.getElementById("mapping-form").reset();
-    const radOracle = document.getElementById("target-type-oracle");
-    if (radOracle) radOracle.checked = true;
-    handleModalTargetTypeChange();
+
+    const chkOracle = document.getElementById("modal-target-oracle");
+    const chkDev = document.getElementById("modal-target-oracledev");
+    const chkJ5 = document.getElementById("modal-target-j5");
+
+    if (chkOracle) chkOracle.checked = true;
+    if (chkDev) chkDev.checked = false;
+    if (chkJ5) chkJ5.checked = false;
 
     document.getElementById("modal-target-endpoint-url").value = defaultOrdsUrl;
+    document.getElementById("modal-target-endpoint-url-dev").value = defaultDevOrdsUrl;
+    document.getElementById("modal-target-endpoint-url-j5").value = defaultJ5Url;
+
+    handleModalTargetEndpointsChange();
+
     document.getElementById("modal-target-tag").value = "";
     document.getElementById("modal-description").value = "";
     document.getElementById("modal-limit").value = "";
     document.getElementById("modal-results").value = "";
     document.getElementById("modal-uom").value = "";
     document.getElementById("modal-attr-name").value = "";
-    document.getElementById("modal-af-server").value = currentSettings?.pi_web_api?.af_server || "PISRV01";
-    document.getElementById("modal-af-database").value = currentSettings?.pi_web_api?.af_database || "Plant_Operations";
+    document.getElementById("modal-af-server").value = isPush ? "" : (currentSettings?.pi_web_api?.af_server || "PISRV01");
+    document.getElementById("modal-af-database").value = isPush ? "" : (currentSettings?.pi_web_api?.af_database || "Plant_Operations");
     document.getElementById("modal-element-path").value = "";
     document.getElementById("modal-full-path").value = "";
     document.getElementById("modal-scale").value = "1.0";
@@ -2187,6 +2326,7 @@ function closeMappingModal() {
 }
 
 function autoComposeFullPath() {
+  if (getActiveIngestionMode() !== "pull") return;
   const srv = document.getElementById("modal-af-server").value.trim();
   const db = document.getElementById("modal-af-database").value.trim();
   const elem = document.getElementById("modal-element-path").value.trim();
@@ -2200,21 +2340,29 @@ function autoComposeFullPath() {
   }
 }
 
-async function handleModalTestEndpoint() {
-  const urlInput = document.getElementById("modal-target-endpoint-url");
+async function handleModalTestEndpoint(targetType = 'oracle') {
+  let url = "";
+  let epName = "Oracle Production";
+  if (targetType === "oracledev") {
+    url = document.getElementById("modal-target-endpoint-url-dev")?.value?.trim();
+    epName = "Oracle Dev";
+  } else if (targetType === "j5") {
+    url = document.getElementById("modal-target-endpoint-url-j5")?.value?.trim();
+    epName = "Hexagon J5";
+  } else {
+    url = document.getElementById("modal-target-endpoint-url")?.value?.trim();
+    epName = "Oracle Production";
+  }
+
   const box = document.getElementById("modal-endpoint-test-box");
-  const isJ5 = document.getElementById("target-type-j5")?.checked;
-  const targetType = isJ5 ? "j5" : "oracle";
-  const epName = isJ5 ? "Hexagon J5" : "Oracle ORDS";
-  const url = urlInput?.value?.trim();
   if (!url) {
-    showToast("Please enter a Target POST URL to test.", "warning");
+    showToast(`Please enter a Target URL for ${epName} to test.`, "warning");
     return;
   }
   if (box) {
     box.style.display = "block";
     box.className = "error-console";
-    box.innerHTML = `Testing connection to ${epName} endpoint...`;
+    box.innerHTML = `Testing connection to ${epName}...`;
   }
   try {
     const res = await fetch("/api/mappings/test-endpoint", {
@@ -2226,7 +2374,7 @@ async function handleModalTestEndpoint() {
     if (result.success) {
       if (box) {
         box.className = "error-console";
-        box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\nEndpoint: ${escapeHtml(url)}`;
+        box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code || 200}\nEndpoint: ${escapeHtml(url)}`;
       }
       showToast(`${epName} endpoint connected successfully!`, "success");
     } else {
@@ -2248,32 +2396,43 @@ window.handleModalTestEndpoint = handleModalTestEndpoint;
 async function testTableEndpoint(idx) {
   const m = currentMappings[idx];
   if (!m) return;
-  const isJ5 = (m.target_type === 'j5' || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud')));
-  const targetType = isJ5 ? 'j5' : 'oracle';
-  const defaultUrl = isJ5
-    ? (currentSettings?.j5_endpoint?.url || 'https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder')
-    : (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : currentSettings?.oracle_erp?.base_url);
-  const url = m.target_endpoint_url || defaultUrl;
-  if (!url) {
-    showToast("No target endpoint URL configured for this mapping.", "warning");
-    return;
-  }
-  const epLabel = isJ5 ? "J5" : "Oracle ORDS";
-  showToast(`Testing ${epLabel} endpoint for "${m.attribute_name}"...`, "info");
-  try {
-    const res = await fetch("/api/mappings/test-endpoint", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint_url: url, target_type: targetType })
-    });
-    const result = await res.json();
-    if (result.success) {
-      showToast(`✓ Connected (${result.latency_ms}ms): ${m.attribute_name}`, "success");
+  const targetTypes = m.target_types || (m.target_type ? [m.target_type] : ['oracle']);
+  showToast(`Testing ${targetTypes.length} endpoint(s) for "${m.attribute_name}"...`, "info");
+  for (const tt of targetTypes) {
+    const ttLower = tt.toLowerCase();
+    let url = "";
+    let label = "Oracle";
+    if (ttLower === 'j5') {
+      url = m.target_endpoint_url_j5 || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud') ? m.target_endpoint_url : null) || currentSettings?.j5_endpoint?.url;
+      label = "J5";
+    } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
+      url = m.target_endpoint_url_dev || (currentSettings?.oracledev?.base_url ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${(currentSettings.oracledev.resource_endpoint || '').replace(/^\/+/, '')}` : null);
+      label = "Oracle Dev";
     } else {
-      showToast(`✕ Test Failed (HTTP ${result.status_code || ''}): ${result.message}`, "danger");
+      url = m.target_endpoint_url_oracle || m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : null);
+      label = "Oracle";
     }
-  } catch (err) {
-    showToast("Test Request Error: " + err.message, "danger");
+
+    if (!url) {
+      showToast(`No URL configured for ${label}`, "warning");
+      continue;
+    }
+
+    try {
+      const res = await fetch("/api/mappings/test-endpoint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint_url: url, target_type: ttLower })
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast(`✓ Connected (${result.latency_ms}ms): ${m.attribute_name} [${label}]`, "success");
+      } else {
+        showToast(`✕ ${label} Test Failed (HTTP ${result.status_code || ''}): ${result.message}`, "danger");
+      }
+    } catch (err) {
+      showToast(`✕ ${label} Request Error: ${err.message}`, "danger");
+    }
   }
 }
 window.testTableEndpoint = testTableEndpoint;
@@ -2281,23 +2440,46 @@ window.testTableEndpoint = testTableEndpoint;
 function handleSaveMappingModal(e) {
   e.preventDefault();
   const editIdx = parseInt(document.getElementById("modal-mapping-id").value, 10);
-  const targetType = document.getElementById("target-type-j5")?.checked ? "j5" : "oracle";
+  
+  const targetTypes = [];
+  if (document.getElementById("modal-target-oracle")?.checked) targetTypes.push("oracle");
+  if (document.getElementById("modal-target-oracledev")?.checked) targetTypes.push("oracledev");
+  if (document.getElementById("modal-target-j5")?.checked) targetTypes.push("j5");
+
+  if (targetTypes.length === 0) {
+    showToast("Please select at least one destination endpoint (Oracle, Oracle Dev, or J5).", "warning");
+    return;
+  }
+
   const tagVal = document.getElementById("modal-target-tag").value.trim();
   const descVal = document.getElementById("modal-description").value.trim();
   const limitVal = document.getElementById("modal-limit").value.trim();
   const resultsVal = document.getElementById("modal-results").value.trim();
-  const targetEndpointUrl = document.getElementById("modal-target-endpoint-url").value.trim();
+
+  const urlOracle = document.getElementById("modal-target-endpoint-url").value.trim();
+  const urlDev = document.getElementById("modal-target-endpoint-url-dev").value.trim();
+  const urlJ5 = document.getElementById("modal-target-endpoint-url-j5").value.trim();
+
+  // Primary URL for backward compatibility
+  let primaryTargetUrl = urlOracle;
+  if (!primaryTargetUrl || !targetTypes.includes("oracle")) {
+    primaryTargetUrl = targetTypes.includes("oracledev") ? urlDev : urlJ5;
+  }
 
   const newMapping = {
     id: editIdx >= 0 ? currentMappings[editIdx].id : `map-${Date.now()}`,
-    target_type: targetType,
+    target_type: targetTypes[0],
+    target_types: targetTypes,
     attribute_name: document.getElementById("modal-attr-name").value.trim(),
     af_server: document.getElementById("modal-af-server").value.trim(),
     af_database: document.getElementById("modal-af-database").value.trim(),
     element_path: document.getElementById("modal-element-path").value.trim(),
     full_path: document.getElementById("modal-full-path").value.trim(),
     web_id: editIdx >= 0 ? currentMappings[editIdx].web_id : "",
-    target_endpoint_url: targetEndpointUrl,
+    target_endpoint_url: primaryTargetUrl,
+    target_endpoint_url_oracle: urlOracle,
+    target_endpoint_url_dev: urlDev,
+    target_endpoint_url_j5: urlJ5,
     tag: tagVal,
     description: descVal,
     limit: limitVal,
@@ -2323,7 +2505,7 @@ function handleSaveMappingModal(e) {
   renderMappingsTable();
   saveMappingsToServer();
   refreshPayloadPreview();
-  showToast("Attribute mapping updated.", "success");
+  showToast("Attribute mapping updated with multicast endpoints.", "success");
 }
 
 async function saveMappingsToServer() {
@@ -2626,11 +2808,13 @@ function initSettings() {
   document.getElementById("btn-save-settings")?.addEventListener("click", handleSaveSettings);
   document.getElementById("btn-test-pi-settings")?.addEventListener("click", handleTestPiSettings);
   document.getElementById("btn-test-erp-settings")?.addEventListener("click", handleTestErpSettings);
+  document.getElementById("btn-test-oracledev-settings")?.addEventListener("click", handleTestOracleDevSettings);
   document.getElementById("btn-test-j5-settings")?.addEventListener("click", handleTestJ5Settings);
   document.getElementById("btn-toggle-j5-password")?.addEventListener("click", toggleJ5PasswordVisibility);
 
   document.getElementById("setting-pi-auth-type")?.addEventListener("change", handlePiAuthChange);
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
+  document.getElementById("setting-oracledev-auth-type")?.addEventListener("change", handleOracleDevAuthChange);
 
   // Ingestion Mode Toggle Listeners
   document.querySelectorAll('input[name="setting-ingestion-mode"]').forEach(radio => {
@@ -2665,6 +2849,12 @@ function initSettings() {
 
 function handleIngestionModeChange() {
   const selectedMode = document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint";
+  if (currentSettings) {
+    if (!currentSettings.pipeline) currentSettings.pipeline = {};
+    currentSettings.pipeline.ingestion_mode = selectedMode;
+  }
+  updateMappingModalModeUI();
+
   const guideContainer = document.getElementById("container-pi-endpoint-guide");
   const webapiContainer = document.getElementById("container-pi-webapi-settings");
   const cardEndpoint = document.getElementById("mode-card-endpoint");
@@ -2750,6 +2940,36 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-erp-http-method").value = erp.http_method || "POST";
     document.getElementById("setting-erp-dry-run").checked = !!erp.dry_run;
 
+    // Oracle ERP Dev Settings
+    const dev = currentSettings.oracledev || {};
+    const devEnabledEl = document.getElementById("setting-oracledev-enabled");
+    const devAuthEl = document.getElementById("setting-oracledev-auth-type");
+    const devBaseEl = document.getElementById("setting-oracledev-base-url");
+    const devTokenEl = document.getElementById("setting-oracledev-token-url");
+    const devClientEl = document.getElementById("setting-oracledev-client-id");
+    const devSecretEl = document.getElementById("setting-oracledev-client-secret");
+    const devScopeEl = document.getElementById("setting-oracledev-scope");
+    const devUserEl = document.getElementById("setting-oracledev-username");
+    const devPassEl = document.getElementById("setting-oracledev-password");
+    const devBearerEl = document.getElementById("setting-oracledev-bearer-token");
+    const devResEl = document.getElementById("setting-oracledev-resource-endpoint");
+    const devMethodEl = document.getElementById("setting-oracledev-http-method");
+    const devDryEl = document.getElementById("setting-oracledev-dry-run");
+
+    if (devEnabledEl) devEnabledEl.checked = dev.enabled !== undefined ? !!dev.enabled : true;
+    if (devAuthEl) devAuthEl.value = dev.auth_type || "none";
+    if (devBaseEl) devBaseEl.value = dev.base_url || "";
+    if (devTokenEl) devTokenEl.value = dev.token_url || "";
+    if (devClientEl) devClientEl.value = dev.client_id || "";
+    if (devSecretEl) devSecretEl.value = dev.client_secret || "";
+    if (devScopeEl) devScopeEl.value = dev.scope || "urn:opc:resource:consumer::all";
+    if (devUserEl) devUserEl.value = dev.username || "";
+    if (devPassEl) devPassEl.value = dev.password || "";
+    if (devBearerEl) devBearerEl.value = dev.bearer_token || "";
+    if (devResEl) devResEl.value = dev.resource_endpoint || "/Final_Discharge_Effluent/";
+    if (devMethodEl) devMethodEl.value = dev.http_method || "POST";
+    if (devDryEl) devDryEl.checked = !!dev.dry_run;
+
     // J5 Inbound Message Settings (Hexagon Smart Cloud)
     const j5 = currentSettings.j5_endpoint || {};
     const j5EnabledEl = document.getElementById("setting-j5-enabled");
@@ -2770,6 +2990,11 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-pipeline-interval").value = pipe.interval_seconds || 30;
     const autoDispatchEl = document.getElementById("setting-pipeline-auto-dispatch");
     if (autoDispatchEl) autoDispatchEl.checked = pipe.auto_dispatch !== undefined ? pipe.auto_dispatch : true;
+    const autoJ5Map = pipe.auto_create_j5_mapping !== undefined ? !!pipe.auto_create_j5_mapping : true;
+    const autoJ5El = document.getElementById("setting-auto-create-j5-mapping");
+    if (autoJ5El) autoJ5El.checked = autoJ5Map;
+    const mapAutoJ5El = document.getElementById("mapping-auto-create-j5-checkbox");
+    if (mapAutoJ5El) mapAutoJ5El.checked = autoJ5Map;
 
     // Endpoint Security Settings
     const sec = currentSettings.endpoint_security || {};
@@ -2787,6 +3012,7 @@ async function loadSettingsIntoForm() {
 
     handlePiAuthChange();
     handleErpAuthChange();
+    handleOracleDevAuthChange();
 
     await refreshMockERPStatus();
   } catch (e) {
@@ -3225,6 +3451,15 @@ function handleErpAuthChange() {
   document.querySelectorAll(".erp-bearer-field").forEach(el => el.style.display = (type === "bearer") ? "flex" : "none");
 }
 
+function handleOracleDevAuthChange() {
+  const type = document.getElementById("setting-oracledev-auth-type")?.value || "none";
+  document.querySelectorAll(".oracledev-none-field").forEach(el => el.style.display = (type === "none") ? "block" : "none");
+  document.querySelectorAll(".oracledev-oauth-field").forEach(el => el.style.display = (type === "oauth2") ? "flex" : "none");
+  document.querySelectorAll(".oracledev-basic-field").forEach(el => el.style.display = (type === "basic") ? "flex" : "none");
+  document.querySelectorAll(".oracledev-bearer-field").forEach(el => el.style.display = (type === "bearer") ? "flex" : "none");
+}
+window.handleOracleDevAuthChange = handleOracleDevAuthChange;
+
 function collectSettingsFromForm() {
   return {
     pi_web_api: {
@@ -3263,6 +3498,26 @@ function collectSettingsFromForm() {
       },
       timeout_seconds: 15
     },
+    oracledev: {
+      enabled: document.getElementById("setting-oracledev-enabled") ? document.getElementById("setting-oracledev-enabled").checked : false,
+      auth_type: document.getElementById("setting-oracledev-auth-type") ? document.getElementById("setting-oracledev-auth-type").value : "none",
+      base_url: document.getElementById("setting-oracledev-base-url") ? document.getElementById("setting-oracledev-base-url").value.trim() : "",
+      token_url: document.getElementById("setting-oracledev-token-url") ? document.getElementById("setting-oracledev-token-url").value.trim() : "",
+      client_id: document.getElementById("setting-oracledev-client-id") ? document.getElementById("setting-oracledev-client-id").value.trim() : "",
+      client_secret: document.getElementById("setting-oracledev-client-secret") ? document.getElementById("setting-oracledev-client-secret").value : "",
+      scope: document.getElementById("setting-oracledev-scope") ? document.getElementById("setting-oracledev-scope").value.trim() : "",
+      username: document.getElementById("setting-oracledev-username") ? document.getElementById("setting-oracledev-username").value.trim() : "",
+      password: document.getElementById("setting-oracledev-password") ? document.getElementById("setting-oracledev-password").value : "",
+      bearer_token: document.getElementById("setting-oracledev-bearer-token") ? document.getElementById("setting-oracledev-bearer-token").value.trim() : "",
+      resource_endpoint: document.getElementById("setting-oracledev-resource-endpoint") ? document.getElementById("setting-oracledev-resource-endpoint").value.trim() : "/Final_Discharge_Effluent/",
+      http_method: document.getElementById("setting-oracledev-http-method") ? document.getElementById("setting-oracledev-http-method").value : "POST",
+      dry_run: document.getElementById("setting-oracledev-dry-run") ? document.getElementById("setting-oracledev-dry-run").checked : false,
+      custom_headers: {
+        "Content-Type": "application/vnd.oracle.adf.resourceitem+json",
+        "REST-Framework-Version": "4"
+      },
+      timeout_seconds: 15
+    },
     j5_endpoint: {
       enabled: document.getElementById("setting-j5-enabled") ? document.getElementById("setting-j5-enabled").checked : true,
       url: document.getElementById("setting-j5-url") ? document.getElementById("setting-j5-url").value.trim() : "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
@@ -3276,6 +3531,7 @@ function collectSettingsFromForm() {
       interval_seconds: parseInt(document.getElementById("setting-pipeline-interval").value, 10) || 30,
       ingestion_mode: document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint",
       auto_dispatch: document.getElementById("setting-pipeline-auto-dispatch") ? document.getElementById("setting-pipeline-auto-dispatch").checked : true,
+      auto_create_j5_mapping: document.getElementById("setting-auto-create-j5-mapping") ? document.getElementById("setting-auto-create-j5-mapping").checked : true,
       auto_start: currentSettings?.pipeline?.auto_start !== undefined ? currentSettings.pipeline.auto_start : true,
       max_history_items: 100
     },
@@ -3415,6 +3671,41 @@ async function handleTestErpSettings() {
     box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
   }
 }
+window.handleTestErpSettings = handleTestErpSettings;
+
+async function handleTestOracleDevSettings() {
+  const cfg = collectSettingsFromForm().oracledev;
+  const box = document.getElementById("oracledev-test-result-box");
+  if (!box) return;
+  box.style.display = "block";
+  box.innerHTML = "Validating Oracle ERP Cloud (Dev) connection & token handshake...";
+
+  try {
+    const res = await fetch("/api/settings/test-oracledev", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg)
+    });
+    const result = await res.json();
+    if (result.status === "PENDING_SETUP") {
+      box.className = "error-console";
+      box.innerHTML = `<span style="color: #f59e0b; font-weight: bold;">⚠ PENDING CONNECTION SETUP</span>\n${escapeHtml(result.message)}\n\nInstructions: Specify your Oracle Dev Base URL and credentials above, then test again.`;
+    } else if (result.success) {
+      box.className = "error-console";
+      const fullUrl = (cfg.base_url || '').replace(/\/+$/, '') + '/' + (cfg.resource_endpoint || '').replace(/^\/+/, '');
+      box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nEndpoint: ${escapeHtml(fullUrl)}\nResponse:\n${JSON.stringify(result.details, null, 2)}`;
+      showToast("Oracle Dev connected successfully!", "success");
+    } else {
+      box.className = "error-console danger";
+      box.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✕ Oracle ERP Dev Handshake Failed</span>\nMessage: ${escapeHtml(result.message)}\nError Details:\n${escapeHtml(result.error || '')}`;
+      showToast("Failed to connect to Oracle Dev", "danger");
+    }
+  } catch (e) {
+    box.className = "error-console danger";
+    box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
+  }
+}
+window.handleTestOracleDevSettings = handleTestOracleDevSettings;
 
 async function handleTestJ5Settings() {
   const cfg = collectSettingsFromForm().j5_endpoint;

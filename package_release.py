@@ -58,6 +58,16 @@ def set_version(new_version: str):
         with open(main_py, "w", encoding="utf-8") as f:
             f.write(updated)
 
+    index_html = os.path.join(ROOT_DIR, "app", "static", "index.html")
+    if os.path.exists(index_html):
+        with open(index_html, "r", encoding="utf-8") as f:
+            content = f.read()
+        content = re.sub(r'(/static/css/style\.css\?v=)[0-9.]+', rf'\g<1>{new_version}', content)
+        content = re.sub(r'(/static/js/app\.js\?v=)[0-9.]+', rf'\g<1>{new_version}', content)
+        content = re.sub(r'(<span id="app-header-version"[^>]*>)v?[0-9.]+(</span>)', rf'\g<1>v{new_version}\g<2>', content)
+        with open(index_html, "w", encoding="utf-8") as f:
+            f.write(content)
+
 
 def compute_sha256(file_path: str) -> str:
     """Compute SHA-256 hash of a file."""
@@ -88,6 +98,10 @@ def should_exclude(rel_path: str) -> bool:
     
     # Exclude test files from production release package
     if norm.startswith("test_") or "/test_" in norm:
+        return True
+
+    # Exclude local scratch/documentation/screenshot artifacts in root
+    if norm.startswith("runtime_architecture.") or norm.endswith((".pdf", ".png", ".jpeg", ".jpg")) and "/" not in norm:
         return True
 
     # EXCLUDE user-specific data and live configs (MUST preserve user privacy and prevent overwrite!)

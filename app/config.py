@@ -49,6 +49,25 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         },
         "timeout_seconds": 15
     },
+    "oracledev": {
+        "enabled": True,
+        "auth_type": "none",  # 'none', 'oauth2', 'basic', 'bearer'
+        "base_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int",
+        "token_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/oauth/token",
+        "client_id": "",
+        "client_secret": "",
+        "scope": "",
+        "username": "",
+        "password": "",
+        "bearer_token": "",
+        "resource_endpoint": "/Final_Discharge_Effluent/",
+        "http_method": "POST",
+        "custom_headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        },
+        "timeout_seconds": 15
+    },
     "j5_endpoint": {
         "enabled": True,
         "auth_type": "basic",
@@ -60,6 +79,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     },
     "pipeline": {
         "interval_seconds": 120,
+        "ingestion_mode": "endpoint",
+        "auto_dispatch": True,
+        "auto_create_j5_mapping": True,
         "auto_start": True,
         "max_history_items": 100
     },
@@ -270,7 +292,16 @@ def load_mappings() -> List[Dict[str, Any]]:
             return DEFAULT_MAPPINGS
         try:
             with open(MAPPINGS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                mappings = json.load(f)
+                for m in mappings:
+                    if not m.get("target_types"):
+                        tt = m.get("target_type")
+                        if tt:
+                            m["target_types"] = [tt]
+                        else:
+                            url = str(m.get("target_endpoint_url") or "").lower()
+                            m["target_types"] = ["j5"] if ("hxgnsmartcloud" in url or "tag=purchaseorder" in url) else ["oracle"]
+                return mappings
         except Exception as e:
             print(f"Error loading mappings.json: {e}. Returning defaults.")
             return DEFAULT_MAPPINGS

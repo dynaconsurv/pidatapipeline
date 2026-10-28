@@ -120,10 +120,12 @@ class DataPipelineEngine:
 
         pi_cfg = settings.get("pi_web_api", {})
         erp_cfg = settings.get("oracle_erp", {})
+        oracledev_cfg = settings.get("oracledev", {})
         j5_cfg = settings.get("j5_endpoint", {})
 
         pi_client = PIWebApiClient(pi_cfg)
         erp_client = OracleERPCloudClient(erp_cfg)
+        oracledev_client = OracleERPCloudClient(oracledev_cfg)
         j5_client = J5Client(j5_cfg)
 
         batch_id = f"batch-{int(time.time())}-{uuid.uuid4().hex[:6]}"
@@ -158,6 +160,7 @@ class DataPipelineEngine:
                     "full_path": m.get("full_path", ""),
                     "web_id": m.get("web_id", ""),
                     "meter_tag": m.get("meter_tag") or m.get("attribute_name"),
+                    "mapping_id": m.get("id"),
                     "success": False,
                     "value": None,
                     "uom": m.get("uom", ""),
@@ -173,6 +176,7 @@ class DataPipelineEngine:
             for m in enabled_mappings:
                 item_result = pi_client.fetch_attribute_value(m)
                 item_result["meter_tag"] = m.get("meter_tag") or m.get("attribute_name")
+                item_result["mapping_id"] = m.get("id")
                 pull_items.append(item_result)
                 if not item_result.get("success"):
                     pi_failures += 1
@@ -239,50 +243,77 @@ class DataPipelineEngine:
         }
         record_pull_batch(batch_record)
 
-        # Step 2: Dispatch to configured endpoints (Oracle ORDS or J5)
+        # Step 2: Multicast dispatch to configured endpoints (Oracle ORDS, Oracle Dev, or J5)
         all_succeeded = True
         item_results = []
+        mapping_by_id = {m.get("id"): m for m in enabled_mappings if m.get("id")}
         mapping_by_name = {m.get("attribute_name", "").strip().lower(): m for m in enabled_mappings}
 
         for item in pull_items:
             attr_name = item.get("attribute_name", "")
-            m = mapping_by_name.get(attr_name.strip().lower(), {})
+            m = mapping_by_id.get(item.get("mapping_id")) or mapping_by_name.get(attr_name.strip().lower(), {})
             raw_target = str(m.get("target_endpoint_url") or "").strip().strip('"').strip("'")
-            target_type = str(m.get("target_type") or "").strip().lower()
-            if not target_type:
-                if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
-                    target_type = "j5"
+
+            # Determine all target types for this mapping (multicast support)
+            target_types = m.get("target_types")
+            if not target_types:
+                if m.get("target_type"):
+                    target_types = [m.get("target_type")]
                 else:
-                    target_type = "oracle"
+                    if "hxgnsmartcloud" in raw_target.lower() or "tag=purchaseorder" in raw_target.lower():
+                        target_types = ["j5"]
+                    else:
+                        target_types = ["oracle"]
 
-            if target_type == "j5":
-                j5_payload = J5Client.build_j5_payload(item, mapping=m)
-                target_url = raw_target or j5_cfg.get("url") or DEFAULT_J5_URL
-                res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
-                item_results.append(res)
-                if res.get("status") != "SUCCESS":
-                    all_succeeded = False
-            else:
-                tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
-                desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
-                limit_val = m.get("limit") if m.get("limit") is not None else ""
-                results_val = m.get("results") if m.get("results") is not None else ""
-                uom_val = item.get("uom") or item.get("UOM") or item.get("unit") or m.get("uom") or m.get("unit") or ""
+            tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
+            desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
+            limit_val = m.get("limit") if m.get("limit") is not None else ""
+            results_val = m.get("results") if m.get("results") is not None else ""
+            uom_val = item.get("uom") or item.get("UOM") or item.get("unit") or m.get("uom") or m.get("unit") or ""
 
-                ords_payload = {
-                    "timestamp": format_ords_timestamp(item.get("timestamp") or now_iso),
-                    "tag": str(tag_val),
-                    "description": str(desc_val),
-                    "value": str(item.get("value", "")),
-                    "limit": str(limit_val),
-                    "results": str(results_val),
-                    "uom": str(uom_val)
-                }
-                target_url = raw_target or None
-                res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
-                item_results.append(res)
-                if res.get("status") != "SUCCESS":
-                    all_succeeded = False
+            ords_payload = {
+                "timestamp": format_ords_timestamp(item.get("timestamp") or now_iso),
+                "tag": str(tag_val),
+                "description": str(desc_val),
+                "value": str(item.get("value", "")),
+                "limit": str(limit_val),
+                "results": str(results_val),
+                "uom": str(uom_val)
+            }
+
+            for t_type in target_types:
+                t_lower = str(t_type).strip().lower()
+                if t_lower == "j5":
+                    if j5_cfg.get("enabled", True):
+                        j5_payload = J5Client.build_j5_payload(item, mapping=m)
+                        target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                        res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
+                        res["target_type"] = "j5"
+                        res["attribute_name"] = attr_name
+                        item_results.append(res)
+                        if res.get("status") != "SUCCESS":
+                            all_succeeded = False
+                elif t_lower in ("oracledev", "oracle_dev"):
+                    if oracledev_cfg.get("enabled", False):
+                        target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or None
+                        res = oracledev_client.publish_data(ords_payload, target_endpoint=target_url)
+                        res["target_type"] = "oracledev"
+                        res["attribute_name"] = attr_name
+                        item_results.append(res)
+                        if res.get("status") != "SUCCESS":
+                            all_succeeded = False
+                else:
+                    # oracle production
+                    if erp_cfg.get("enabled", False):
+                        target_url = m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or None
+                        res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
+                        res["target_type"] = "oracle"
+                        res["attribute_name"] = attr_name
+                        item_results.append(res)
+                        if res.get("status") != "SUCCESS":
+                            all_succeeded = False
+                    else:
+                        all_succeeded = False
 
         primary_code = item_results[0].get("http_code") if item_results else None
         primary_endpoint = item_results[0].get("target_endpoint") if item_results else None
