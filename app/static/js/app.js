@@ -1,3 +1,51 @@
+// ============================================================
+// URL SANITIZATION & ORACLE ENDPOINT BUILDER HELPERS
+// ============================================================
+function sanitizeEndpointUrl(url) {
+  if (!url || typeof url !== "string") return "";
+  const u = url.trim().replace(/^["']+|["']+$/g, '');
+  if (!u.startsWith("http://") && !u.startsWith("https://")) return u;
+  try {
+    const parsed = new URL(u);
+    const rawSegments = parsed.pathname.split("/").filter(Boolean);
+    const dedupedSegments = [];
+    for (const s of rawSegments) {
+      if (dedupedSegments.length > 0 && s.toLowerCase() === dedupedSegments[dedupedSegments.length - 1].toLowerCase()) {
+        continue;
+      }
+      dedupedSegments.push(s);
+    }
+    parsed.pathname = "/" + dedupedSegments.join("/") + (parsed.pathname.endsWith("/") ? "/" : "");
+    return parsed.toString();
+  } catch (e) {
+    return u;
+  }
+}
+window.sanitizeEndpointUrl = sanitizeEndpointUrl;
+
+const KNOWN_ORDS_RESOURCES = ["final_discharge_effluent", "production_utilities_consumption"];
+
+function buildOracleEndpointUrl(baseUrl, resourceEndpoint) {
+  let base = (baseUrl || "").trim().replace(/\/+$/, "");
+  const res = (resourceEndpoint || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!base) return res ? `/${res}/` : "/";
+  if (res) {
+    for (const kr of KNOWN_ORDS_RESOURCES) {
+      if (base.toLowerCase().endsWith("/" + kr)) {
+        base = base.substring(0, base.length - (kr.length + 1)).replace(/\/+$/, "");
+        break;
+      }
+    }
+    const resLower = res.toLowerCase();
+    if (base.toLowerCase().endsWith("/" + resLower)) {
+      return sanitizeEndpointUrl(`${base}/`);
+    }
+    return sanitizeEndpointUrl(`${base}/${res}/`);
+  }
+  return sanitizeEndpointUrl(`${base}/`);
+}
+window.buildOracleEndpointUrl = buildOracleEndpointUrl;
+
 /**
  * AVEVA PI to Oracle ERP Cloud Data Pipeline - Client-side Controller
  */
@@ -5,6 +53,7 @@
 // Global State
 let currentSettings = null;
 let currentMappings = [];
+let currentFieldMappings = { oracle: [], octave: [] };
 let pollTimer = null;
 let countdownTimer = null;
 let secondsLeft = 0;
@@ -17,10 +66,27 @@ document.addEventListener("DOMContentLoaded", () => {
   initHistory();
   initMappings();
   initSettings();
+  initBulkUpload();
   initAFBrowser();
   initAFExplorerToggle();
   initInfoToggles();
   fetchSystemVersion();
+
+  // Preload settings and mappings concurrently so data is ready across all views
+  Promise.all([
+    loadSettingsIntoForm(),
+    loadMappings(),
+    loadFieldMappings()
+  ]).then(() => {
+    const hashTab = (window.location.hash || '').replace('#', '').trim();
+    const storedTab = localStorage.getItem('pidata_active_tab') || 'dashboard';
+    const initialTab = ['dashboard', 'history', 'bulk-upload', 'mappings', 'settings'].includes(hashTab) ? hashTab : storedTab;
+    if (initialTab && initialTab !== 'dashboard') {
+      switchTab(initialTab, false);
+    }
+  }).catch(err => {
+    console.error("Pipeline preloading notice:", err);
+  });
 
   // Start polling dashboard status every 2 seconds
   loadDashboardData();
@@ -45,9 +111,23 @@ function initNavigation() {
   document.getElementById("btn-goto-settings")?.addEventListener("click", () => {
     switchTab("settings");
   });
+
+  window.addEventListener("hashchange", () => {
+    const hash = (window.location.hash || '').replace('#', '').trim();
+    if (hash && ["dashboard", "history", "bulk-upload", "mappings", "settings"].includes(hash)) {
+      switchTab(hash, false);
+    }
+  });
 }
 
-function switchTab(tabName) {
+function switchTab(tabName, updateHash = true) {
+  if (!tabName) tabName = "dashboard";
+  if (updateHash) {
+    try {
+      window.location.hash = tabName;
+      localStorage.setItem("pidata_active_tab", tabName);
+    } catch (e) {}
+  }
   document.querySelectorAll(".nav-tab").forEach(t => {
     t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
   });
@@ -57,6 +137,7 @@ function switchTab(tabName) {
 
   if (tabName === "mappings") {
     loadMappings();
+    loadFieldMappings();
     refreshPayloadPreview();
   } else if (tabName === "settings") {
     loadSettingsIntoForm();
@@ -66,6 +147,7 @@ function switchTab(tabName) {
     loadHistoryDeliveries();
   }
 }
+window.switchTab = switchTab;
 
 function initInfoToggles() {
   document.querySelectorAll(".btn-info-trigger").forEach(btn => {
@@ -332,7 +414,7 @@ function renderDashboard(data) {
 
   if (currentSettings && currentSettings.oracle_erp) {
     const authType = currentSettings.oracle_erp.auth_type;
-    const authDisplay = (authType === "none" || authType === "no_auth" || authType === "open") ? "ORDS Direct (No Auth)" : (authType || "OAuth 2.0").toUpperCase();
+    const authDisplay = (authType === "none" || authType === "no_auth" || authType === "open") ? "Oracle Direct (No Auth)" : (authType || "OAuth 2.0").toUpperCase();
     if (erpAuth) erpAuth.textContent = authDisplay;
     if (erpResource) {
       erpResource.textContent = currentSettings.oracle_erp.resource_endpoint || "--";
@@ -593,49 +675,94 @@ function getDeliveryEndpoints(deliv) {
   if (!deliv) return ["ORACLE"];
   const eps = new Set();
 
-  // 1. Direct target_types from oracle_dispatch
-  if (deliv.oracle_dispatch?.target_types && Array.isArray(deliv.oracle_dispatch.target_types)) {
+  // 1. Direct target_types from oracle_dispatch (GROUND TRUTH of dispatch)
+  if (deliv.oracle_dispatch?.target_types && Array.isArray(deliv.oracle_dispatch.target_types) && deliv.oracle_dispatch.target_types.length > 0) {
     for (const t of deliv.oracle_dispatch.target_types) {
       const u = String(t).toUpperCase();
-      if (u.includes("J5")) eps.add("J5");
-      if (u.includes("ORACLE")) eps.add("ORACLE");
+      if (u === "J5DEV" || u.includes("J5_DEV") || u.includes("OCTAVEDEV") || u.includes("OCTAVE DEV")) eps.add("J5DEV");
+      else if (u === "J5" || u.includes("OCTAVE")) eps.add("J5");
+      else if (u === "ORACLEDEV_UTILITY" || (u.includes("DEV") && u.includes("UTILITY"))) eps.add("ORACLEDEV_UTILITY");
+      else if (u === "ORACLE_UTILITY" || u.includes("UTILITY")) eps.add("ORACLE_UTILITY");
+      else if (u === "ORACLEDEV" || u.includes("ORACLE DEV") || u.includes("ORACLE_DEV")) eps.add("ORACLEDEV");
+      else if (u.includes("ORACLE")) eps.add("ORACLE");
     }
+    return Array.from(eps);
   }
 
-  // 2. Dispatches array
-  if (deliv.oracle_dispatch?.dispatches && Array.isArray(deliv.oracle_dispatch.dispatches)) {
+  // 2. Dispatches array from oracle_dispatch
+  if (deliv.oracle_dispatch?.dispatches && Array.isArray(deliv.oracle_dispatch.dispatches) && deliv.oracle_dispatch.dispatches.length > 0) {
     for (const d of deliv.oracle_dispatch.dispatches) {
       const tt = String(d.target_type || "").toUpperCase();
       const ep = String(d.target_endpoint || "").toLowerCase();
-      if (tt === "J5" || ep.includes("hxgnsmartcloud") || ep.includes("purchaseorder")) eps.add("J5");
-      if (tt === "ORACLE" || ep.includes("oracle") || ep.includes("/ords/")) eps.add("ORACLE");
+      if (tt === "J5DEV" || tt.includes("OCTAVEDEV")) eps.add("J5DEV");
+      else if (tt === "J5" || tt.includes("OCTAVE") || ep.includes("hxgnsmartcloud") || ep.includes("purchaseorder") || ep.includes("j5_pi_opslogbook")) eps.add("J5");
+      else if (tt === "ORACLEDEV_UTILITY" || (ep.includes("dev") && ep.includes("util"))) eps.add("ORACLEDEV_UTILITY");
+      else if (tt === "ORACLE_UTILITY" || ep.includes("util")) eps.add("ORACLE_UTILITY");
+      else if (tt === "ORACLEDEV" || ep.includes("dev")) eps.add("ORACLEDEV");
+      else if (tt === "ORACLE" || ep.includes("oracle") || ep.includes("/ords/")) eps.add("ORACLE");
     }
+    if (eps.size > 0) return Array.from(eps);
   }
 
   // 3. Fallback to target_endpoint URL
   const epUrl = String(deliv.oracle_dispatch?.target_endpoint || deliv.oracle_dispatch?.endpoint_url || "").toLowerCase();
-  if (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder")) eps.add("J5");
-  if (epUrl.includes("oracle") || epUrl.includes("/ords/")) eps.add("ORACLE");
+  if (epUrl) {
+    if (epUrl.includes("dev") && (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder") || epUrl.includes("j5_pi_opslogbook"))) eps.add("J5DEV");
+    else if (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder") || epUrl.includes("j5_pi_opslogbook")) eps.add("J5");
+    else if (epUrl.includes("dev") && epUrl.includes("util")) eps.add("ORACLEDEV_UTILITY");
+    else if (epUrl.includes("util")) eps.add("ORACLE_UTILITY");
+    else if (epUrl.includes("dev")) eps.add("ORACLEDEV");
+    else if (epUrl.includes("oracle") || epUrl.includes("/ords/")) eps.add("ORACLE");
+    if (eps.size > 0) return Array.from(eps);
+  }
 
-  // 4. Attributes / Mappings
+  // 4. Attributes / Mappings (only when not yet dispatched)
   if (Array.isArray(deliv.attributes_summary)) {
     for (const a of deliv.attributes_summary) {
-      const aUrl = String(a.target_endpoint_url || "").toLowerCase();
-      if (aUrl.includes("hxgnsmartcloud") || aUrl.includes("purchaseorder")) eps.add("J5");
-      if (aUrl.includes("oracle") || aUrl.includes("/ords/")) eps.add("ORACLE");
+      const disFlags = (a.disabled_target_flags || []).map(f => String(f).toLowerCase());
+      if (a.j5dev && !disFlags.includes("j5dev") && a.j5dev !== false) eps.add("J5DEV");
+      if (a.j5 && !disFlags.includes("j5") && a.j5 !== false) eps.add("J5");
+      if ((a.oracledev_utility || (a.oracledev && a.utility)) && !disFlags.includes("oracledev_utility") && a.oracledev_utility !== false) eps.add("ORACLEDEV_UTILITY");
+      if ((a.oracle_utility || (a.oracle && a.utility)) && !disFlags.includes("oracle_utility") && a.oracle_utility !== false) eps.add("ORACLE_UTILITY");
+      if (a.oracledev && !disFlags.includes("oracledev") && a.oracledev !== false && !a.oracledev_utility) eps.add("ORACLEDEV");
+      if (a.oracle && !disFlags.includes("oracle") && a.oracle !== false && !a.oracle_utility) eps.add("ORACLE");
 
-      if (Array.isArray(currentMappings) && currentMappings.length > 0) {
+      if (eps.size === 0 && Array.isArray(currentMappings) && currentMappings.length > 0) {
         const m = currentMappings.find(cm =>
           (cm.attribute_name && a.name && cm.attribute_name.toLowerCase() === a.name.toLowerCase()) ||
-          (cm.tag && a.tag && cm.tag.toLowerCase() === a.tag.toLowerCase())
+          (cm.tag && a.tag && cm.tag.toLowerCase() === a.tag.toLowerCase()) ||
+          (cm.name && a.name && cm.name.toLowerCase() === a.name.toLowerCase())
         );
         if (m) {
-          const mType = String(m.target_type || "").toUpperCase();
-          const mUrl = String(m.target_endpoint_url || "").toLowerCase();
-          if (mType === "J5" || mUrl.includes("hxgnsmartcloud") || mUrl.includes("purchaseorder")) eps.add("J5");
-          else eps.add("ORACLE");
+          const mTypes = Array.isArray(m.target_types) ? m.target_types : [m.target_type || "oracle"];
+          for (const mt of mTypes) {
+            const mtLower = String(mt).toLowerCase();
+            if (disFlags.includes(mtLower) || a[mtLower] === false) continue;
+            const mtU = String(mt).toUpperCase();
+            if (mtU === "J5DEV" || mtU.includes("OCTAVEDEV")) eps.add("J5DEV");
+            else if (mtU === "J5" || mtU.includes("OCTAVE")) eps.add("J5");
+            else if (mtU === "ORACLEDEV_UTILITY" || (mtU.includes("DEV") && mtU.includes("UTIL"))) eps.add("ORACLEDEV_UTILITY");
+            else if (mtU === "ORACLE_UTILITY" || mtU.includes("UTIL")) eps.add("ORACLE_UTILITY");
+            else if (mtU === "ORACLEDEV" || mtU.includes("ORACLE DEV")) eps.add("ORACLEDEV");
+            else eps.add("ORACLE");
+          }
         }
       }
+    }
+  }
+
+  // 5. Fallback to raw_payload with Endpoint & Environment
+  if (eps.size === 0 && deliv.raw_payload && typeof deliv.raw_payload === 'object') {
+    const rawEp = String(deliv.raw_payload.Endpoint || deliv.raw_payload.endpoint || deliv.raw_payload.target_endpoint || "").toLowerCase();
+    const rawEnv = String(deliv.raw_payload.Environment || deliv.raw_payload.environment || deliv.raw_payload.env || "prod").toLowerCase();
+    const isTest = (rawEnv === "test" || rawEnv === "dev" || rawEnv === "development" || rawEnv === "tst");
+    if (rawEp.includes("utility")) {
+      eps.add(isTest ? "ORACLEDEV_UTILITY" : "ORACLE_UTILITY");
+    } else if (rawEp.includes("oracle") || rawEp.includes("effluent")) {
+      eps.add(isTest ? "ORACLEDEV" : "ORACLE");
+    }
+    if (rawEp.includes("octave") || rawEp.includes("j5") || rawEp.includes("jf")) {
+      eps.add(isTest ? "J5DEV" : "J5");
     }
   }
 
@@ -646,22 +773,190 @@ function getDeliveryEndpoints(deliv) {
   return Array.from(eps);
 }
 
+function getDeliveryTagname(deliv) {
+  if (!deliv) return "";
+  if (deliv.raw_payload && typeof deliv.raw_payload === "object") {
+    const raw = deliv.raw_payload;
+    const keys = Object.keys(raw);
+    const candidateKeys = [
+      "tagname", "tag_name", "tag", "meter_tag",
+      "name",
+      "attribute", "attribute_name", "attributename", "attribute name"
+    ];
+    for (const ck of candidateKeys) {
+      const matchedKey = keys.find(k => k && k.trim().toLowerCase() === ck);
+      if (matchedKey && raw[matchedKey] !== null && raw[matchedKey] !== undefined) {
+        const valStr = String(raw[matchedKey]).trim();
+        if (valStr !== "" && valStr.toLowerCase() !== "null" && valStr.toLowerCase() !== "none") {
+          return valStr;
+        }
+      }
+    }
+  }
+  if (Array.isArray(deliv.attributes_summary) && deliv.attributes_summary.length > 0) {
+    const first = deliv.attributes_summary[0];
+    if (first.tag && String(first.tag).trim() !== "") return String(first.tag).trim();
+    if (first.name && String(first.name).trim() !== "" && first.name !== "PI_Telemetry" && !first.name.startsWith("Attribute_")) {
+      return String(first.name).trim();
+    }
+  }
+  return "";
+}
+
+function getDeliveryDisplayName(deliv) {
+  if (!deliv) return "PI Notification";
+
+  const isNonEmpty = (v) => {
+    if (v === null || v === undefined) return false;
+    const s = String(v).trim();
+    return s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "none" && s.toLowerCase() !== "na" && s.toLowerCase() !== "n/a";
+  };
+
+  // 1. Try to find Description first in raw_payload
+  if (deliv.raw_payload && typeof deliv.raw_payload === "object") {
+    const raw = deliv.raw_payload;
+    const keys = Object.keys(raw);
+    for (const dk of ["description", "desc", "attribute_description", "tag_description", "meter_description"]) {
+      const matchedKey = keys.find(k => k && k.trim().toLowerCase() === dk);
+      if (matchedKey && isNonEmpty(raw[matchedKey])) {
+        return String(raw[matchedKey]).trim();
+      }
+    }
+  }
+
+  // 2. Try to find Description in attributes_summary
+  if (Array.isArray(deliv.attributes_summary) && deliv.attributes_summary.length > 0) {
+    for (const attr of deliv.attributes_summary) {
+      if (attr && typeof attr === "object") {
+        const descVal = attr.description || attr.desc || attr.Description;
+        if (isNonEmpty(descVal)) {
+          return String(descVal).trim();
+        }
+      }
+    }
+  }
+
+  // 3. Try to find Description in active attribute mappings matching tagname
+  if (Array.isArray(currentMappings) && currentMappings.length > 0) {
+    const rawTag = getDeliveryTagname(deliv);
+    if (rawTag) {
+      const rawTagL = rawTag.toLowerCase();
+      const matchedMap = currentMappings.find(m => {
+        if (!m) return false;
+        const mTag = String(m.tag || m.meter_tag || "").toLowerCase();
+        const mAttr = String(m.attribute_name || "").toLowerCase();
+        return mTag === rawTagL || mAttr === rawTagL;
+      });
+      if (matchedMap) {
+        if (isNonEmpty(matchedMap.description)) {
+          return String(matchedMap.description).trim();
+        }
+        if (isNonEmpty(matchedMap.name) && String(matchedMap.name).trim().toLowerCase() !== rawTagL) {
+          return String(matchedMap.name).trim();
+        }
+      }
+    }
+  }
+
+  // 4. Fallback: If Description is null/empty, show Tagname
+  const tagName = getDeliveryTagname(deliv);
+  if (tagName) return tagName;
+
+  // 5. Fallback to notification_name or default
+  return deliv.notification_name || "PI Notification";
+}
+
+function extractTelemetryValue(attr, deliv) {
+  if (attr && attr.value !== null && attr.value !== undefined) {
+    const s = (typeof attr.value === "object") ? JSON.stringify(attr.value) : String(attr.value).trim();
+    if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+      return s;
+    }
+  }
+
+  // 1. Check any property on the attribute itself containing 'value' (e.g. UtilityValue, EffluentValue)
+  if (attr && typeof attr === "object") {
+    for (const [k, v] of Object.entries(attr)) {
+      if (k && k.toLowerCase().includes("value") && v !== null && v !== undefined) {
+        const s = (typeof v === "object") ? JSON.stringify(v) : String(v).trim();
+        if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+          return s;
+        }
+      }
+    }
+    // Check extra_fields
+    if (attr.extra_fields && typeof attr.extra_fields === "object") {
+      for (const [k, v] of Object.entries(attr.extra_fields)) {
+        if (k && k.toLowerCase().includes("value") && v !== null && v !== undefined) {
+          const s = (typeof v === "object") ? JSON.stringify(v) : String(v).trim();
+          if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+            return s;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Check raw_payload for any parameter containing the word 'value'
+  if (deliv && deliv.raw_payload && typeof deliv.raw_payload === "object") {
+    const raw = deliv.raw_payload;
+    // Check exact 'value' first
+    for (const [k, v] of Object.entries(raw)) {
+      if (k && k.toLowerCase() === "value" && v !== null && v !== undefined) {
+        const s = (typeof v === "object") ? JSON.stringify(v) : String(v).trim();
+        if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+          return s;
+        }
+      }
+    }
+    // Check any parameter containing 'value' (e.g. UtilityValue, EffluentValue, ReadingValue, etc.)
+    for (const [k, v] of Object.entries(raw)) {
+      if (k && k.toLowerCase().includes("value") && v !== null && v !== undefined) {
+        const s = (typeof v === "object") ? JSON.stringify(v) : String(v).trim();
+        if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+          return s;
+        }
+      }
+    }
+    // Check 'val'
+    for (const [k, v] of Object.entries(raw)) {
+      if (k && (k.toLowerCase() === "val" || k.toLowerCase().endsWith("_val")) && v !== null && v !== undefined) {
+        const s = (typeof v === "object") ? JSON.stringify(v) : String(v).trim();
+        if (s !== "" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") {
+          return s;
+        }
+      }
+    }
+  }
+
+  return "N/A";
+}
+
 function renderDeliveryRowHtml(deliv) {
   // 1. Received At
   const timeFormatted = formatTimestamp(deliv.received_at);
   const clientIp = deliv.client_ip || "Unknown";
   const shortId = deliv.delivery_id || "";
 
-  // 2. Notification / Target
-  const notifName = escapeHtml(deliv.notification_name || "PI Notification");
+  // 2. Notification / Target (Displays Description, falls back to Tagname)
+  const notifName = escapeHtml(getDeliveryDisplayName(deliv));
+  const tagName = escapeHtml(getDeliveryTagname(deliv));
   const eventType = escapeHtml(deliv.event_type || "Update");
   const targetPath = escapeHtml(deliv.target_path || "--");
   const eps = getDeliveryEndpoints(deliv);
   const endpointBadges = eps.map(ep => {
     if (ep === "J5") {
-      return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`;
+      return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> Octave</span>`;
+    } else if (ep === "J5DEV") {
+      return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(147, 51, 234, 0.12); color: #7e22ce; border: 1px solid rgba(147, 51, 234, 0.3);"><span class="badge-dot" style="background:#9333ea;"></span> Octave Dev</span>`;
+    } else if (ep === "ORACLEDEV_UTILITY") {
+      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev (Utility)</span>`;
+    } else if (ep === "ORACLEDEV") {
+      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev</span>`;
+    } else if (ep === "ORACLE_UTILITY") {
+      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
     } else {
-      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
+      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod</span>`;
     }
   }).join(" ");
 
@@ -694,22 +989,24 @@ function renderDeliveryRowHtml(deliv) {
         }).join("");
       }
 
-      let valStr = "N/A";
-      if (a.value !== null && a.value !== undefined) {
-        if (typeof a.value === "object") {
-          try {
-            valStr = JSON.stringify(a.value);
-          } catch (e) {
-            valStr = String(a.value);
+      let valStr = extractTelemetryValue(a, deliv);
+      let labelName = a.name;
+      if (!labelName || labelName === "PI_Telemetry" || labelName.startsWith("Attribute_")) {
+        let foundValKey = null;
+        if (deliv && deliv.raw_payload && typeof deliv.raw_payload === "object") {
+          for (const k of Object.keys(deliv.raw_payload)) {
+            if (k.toLowerCase().includes("value")) {
+              foundValKey = k;
+              break;
+            }
           }
-        } else {
-          valStr = String(a.value);
         }
+        labelName = foundValKey || a.tag || a.meter_tag || "Value";
       }
       const uom = a.uom ? ` ${escapeHtml(a.uom)}` : "";
       return `
         <div style="margin: 3px 0; font-size: 12px; display: flex; align-items: baseline; gap: 6px;">
-          <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(a.name)}:</span>
+          <span style="font-weight: 500; color: var(--ink-secondary); min-width: 120px;">${escapeHtml(labelName)}:</span>
           <strong style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(valStr)}</strong>
           <span style="font-size: 11px; color: var(--ink-tertiary);">${uom}</span>
         </div>
@@ -762,6 +1059,11 @@ function renderDeliveryRowHtml(deliv) {
           <span class="badge badge-info" style="font-size: 10px; padding: 1px 5px;">${eventType}</span>
           ${endpointBadges}
         </div>
+        ${(tagName && tagName !== notifName) ? `
+          <div style="font-size: 11px; color: var(--ink-secondary); margin-top: 3px;">
+            <code style="font-size: 10px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border);" title="PI Meter Tag">${tagName}</code>
+          </div>
+        ` : ''}
         <div style="font-size: 11px; color: var(--ink-secondary); font-family: var(--font-mono); margin-top: 4px; word-break: break-all;">
           ${targetPath}
         </div>
@@ -970,7 +1272,7 @@ function getDeliverySearchText(deliv) {
   parts.push(deliv.oracle_status || "");
   const eps = getDeliveryEndpoints(deliv);
   parts.push(...eps);
-  if (eps.includes("ORACLE")) parts.push("oracle ords erp");
+  if (eps.includes("ORACLE")) parts.push("oracle prod erp");
   if (eps.includes("J5")) parts.push("j5 hexagon smart cloud purchaseorder");
 
   if (deliv.oracle_dispatch) {
@@ -1413,7 +1715,7 @@ async function dispatchSingleDelivery(deliveryId) {
 }
 
 // ------------------------------------------------------------
-// Oracle ORDS Response Inspection Modal
+// Oracle Prod Response Inspection Modal
 // ------------------------------------------------------------
 let currentOracleModalDelivery = null;
 
@@ -1515,7 +1817,7 @@ async function showOracleResponseModal(deliveryId) {
         `;
       } else {
         containerEl.innerHTML = itemsToRender.map((it, idx) => {
-          const isJ5 = (it.target_type === 'j5' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
+          const isJ5 = (it.target_type === 'j5' || it.target_type === 'j5dev' || (it.target_endpoint && (it.target_endpoint.toLowerCase().includes('hxgnsmartcloud') || it.target_endpoint.toLowerCase().includes('message?tag='))));
           const payload = it.payload || {};
           const response = it.response || {};
 
@@ -1524,6 +1826,11 @@ async function showOracleResponseModal(deliveryId) {
             const isItemSuccess = it.status === "SUCCESS";
             const itemBadgeClass = isItemSuccess ? "badge-success" : "badge-danger";
             const statusText = isItemSuccess ? `HTTP ${it.http_code || 200} Accepted` : `HTTP ${it.http_code || 500} Failed`;
+            const isJ5Dev = it.target_type === 'j5dev';
+            const targetBadgeName = isJ5Dev ? "Octave Dev" : "Octave";
+            const targetBadgeBg = isJ5Dev ? "rgba(8, 145, 178, 0.12)" : "rgba(99, 102, 241, 0.12)";
+            const targetBadgeColor = isJ5Dev ? "#0891b2" : "#4f46e5";
+            const targetBadgeDot = isJ5Dev ? "#0891b2" : "#6366f1";
 
             const payloadEntries = [
               { label: "Tag / Key", val: payload.tag || payload.messageTag || "--" },
@@ -1534,6 +1841,13 @@ async function showOracleResponseModal(deliveryId) {
               { label: "Limit", val: (payload.limit !== undefined && payload.limit !== null && payload.limit !== "") ? payload.limit : "--" },
               { label: "Results", val: payload.results || "--" }
             ];
+
+            const standardJ5Keys = new Set(['tag', 'messageTag', 'value', 'readingValue', 'timestamp', 'description', 'uom', 'limit', 'results']);
+            Object.keys(payload).forEach(k => {
+              if (!standardJ5Keys.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
+                payloadEntries.push({ label: k, val: payload[k] });
+              }
+            });
 
             const payloadRowsHtml = payloadEntries.map(e => `
               <tr>
@@ -1557,8 +1871,8 @@ async function showOracleResponseModal(deliveryId) {
               <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);">
-                      <span class="badge-dot" style="background:#6366f1;"></span> J5 Hexagon Smart Cloud
+                    <span class="badge" style="font-size: 10px; padding: 2px 7px; background: ${targetBadgeBg}; color: ${targetBadgeColor}; border: 1px solid ${targetBadgeColor}44;">
+                      <span class="badge-dot" style="background:${targetBadgeDot};"></span> ${targetBadgeName}
                     </span>
                     <strong style="font-size: 12px; color: var(--ink-primary);">${escapeHtml(it.attribute_name || `Attribute #${idx+1}`)}</strong>
                   </div>
@@ -1579,7 +1893,7 @@ async function showOracleResponseModal(deliveryId) {
                     </table>
                   </div>
                   <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 8px;">
-                    <div style="font-size: 11px; font-weight: 600; color: var(--ink-secondary); margin-bottom: 6px;">J5 Server Response:</div>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--ink-secondary); margin-bottom: 6px;">${targetBadgeName} Server Response:</div>
                     ${responseBodyHtml}
                   </div>
                 </div>
@@ -1587,21 +1901,90 @@ async function showOracleResponseModal(deliveryId) {
             `;
           }
 
-          // --- Oracle ORDS Comparison Layout ---
+          // --- Oracle Prod / Dev Comparison Layout ---
           const links = response.links || [];
+
+          function findResponseValue(respObj, key) {
+            if (!respObj || typeof respObj !== "object") return null;
+            if (respObj[key] !== undefined && respObj[key] !== null) {
+              return respObj[key];
+            }
+            const cleanKey = String(key || "").trim();
+            const lowerKey = cleanKey.toLowerCase();
+            const normKey = lowerKey.replace(/[^a-z0-9]/g, "");
+
+            // 1. Case-insensitive exact match (e.g. HILIMIT -> hilimit)
+            for (const [k, v] of Object.entries(respObj)) {
+              if (k.toLowerCase() === lowerKey && v !== undefined && v !== null) {
+                return v;
+              }
+            }
+
+            // 2. Normalized match (ignores spaces, underscores, hyphens, e.g. "Hi Limit" or "HI_LIMIT" -> "hilimit")
+            if (normKey) {
+              for (const [k, v] of Object.entries(respObj)) {
+                const kNorm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (kNorm === normKey && v !== undefined && v !== null) {
+                  return v;
+                }
+              }
+            }
+
+            // 3. Semantic field aliases for common PI/Oracle telemetry mappings
+            const aliasMap = {
+              "limit": ["hilimit", "highlimit", "operatinglimit"],
+              "hilimit": ["highlimit", "limit", "upperlimit"],
+              "highlimit": ["hilimit", "limit"],
+              "lolimit": ["lowlimit", "lowerlimit"],
+              "lowlimit": ["lolimit", "lowerlimit"],
+              "value": ["readingvalue", "reading_value", "val"],
+              "tag": ["tagname", "tag_name", "meter_tag", "metercode"]
+            };
+
+            const aliases = aliasMap[normKey] || [];
+            for (const alias of aliases) {
+              for (const [k, v] of Object.entries(respObj)) {
+                const kNorm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (kNorm === alias && v !== undefined && v !== null) {
+                  return v;
+                }
+              }
+            }
+
+            return null;
+          }
+
+          const hasSpecificLimitInPayload = Object.keys(payload).some(k => {
+            const kn = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+            return kn === "hilimit" || kn === "highlimit" || kn === "lolimit" || kn === "lowlimit";
+          });
+
           const fields = [
             { key: "tag", label: "Tag / Meter ID" },
             { key: "description", label: "Description" },
             { key: "value", label: "Reading Value" },
-            { key: "uom", label: "Unit of Measure (UOM)" },
-            { key: "limit", label: "Operating Limit" },
+            { key: "uom", label: "Unit of Measure (UOM)" }
+          ];
+
+          if ((payload.limit !== undefined && payload.limit !== null && String(payload.limit).trim() !== "") || !hasSpecificLimitInPayload) {
+            fields.push({ key: "limit", label: "Operating Limit" });
+          }
+
+          fields.push(
             { key: "results", label: "Analysis Results" },
             { key: "timestamp", label: "Timestamp (UTC Zulu)" }
-          ];
+          );
+
+          const standardOracleKeys = new Set(["tag", "description", "value", "uom", "limit", "results", "timestamp"]);
+          Object.keys(payload).forEach(k => {
+            if (!standardOracleKeys.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
+              fields.push({ key: k, label: k });
+            }
+          });
 
           const rowsHtml = fields.map(f => {
             const pVal = payload[f.key] !== undefined && payload[f.key] !== null ? String(payload[f.key]) : "";
-            const rVal = response[f.key] !== undefined ? response[f.key] : null;
+            const rVal = findResponseValue(response, f.key);
             const rValStr = rVal !== null && rVal !== undefined ? String(rVal) : null;
 
             let statusBadge = "";
@@ -1609,7 +1992,8 @@ async function showOracleResponseModal(deliveryId) {
 
             if (rValStr !== null) {
               rValDisplay = `<code style="font-family: var(--font-mono); font-weight: 600; color: var(--ink-primary);">${escapeHtml(rValStr)}</code>`;
-              if (pVal !== "" && pVal === rValStr) {
+              const isMatch = (pVal !== "" && (pVal === rValStr || (!isNaN(Number(pVal)) && !isNaN(Number(rValStr)) && Number(pVal) === Number(rValStr))));
+              if (isMatch) {
                 statusBadge = `<span class="badge badge-success" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Saved &amp; Verified</span>`;
               } else {
                 statusBadge = `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Recorded</span>`;
@@ -1662,10 +2046,15 @@ async function showOracleResponseModal(deliveryId) {
             `;
           }
 
-          const isDev = (it.target_type === 'oracledev' || it.target_type === 'oracle_dev');
-          const badgeHtml = isDev
-            ? `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev</span>`
-            : `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle ORDS</span>`;
+          let badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod</span>`;
+          const ttLow = String(it.target_type || '').toLowerCase();
+          if (ttLow.includes('oracledev_utility') || (ttLow.includes('dev') && ttLow.includes('util'))) {
+            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Utility)</span>`;
+          } else if (ttLow.includes('oracle_utility') || ttLow.includes('util')) {
+            badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
+          } else if (ttLow.includes('oracledev') || ttLow.includes('dev')) {
+            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev</span>`;
+          }
 
           return `
             <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;">
@@ -1684,7 +2073,7 @@ async function showOracleResponseModal(deliveryId) {
                     <tr>
                       <th style="width: 140px;">Property</th>
                       <th>Sent Payload (PI &rarr; Pipeline)</th>
-                      <th>Echoed by Oracle ORDS</th>
+                      <th>Echoed by Oracle Prod</th>
                       <th style="width: 130px; text-align: right;">Status</th>
                     </tr>
                   </thead>
@@ -1710,8 +2099,8 @@ async function showOracleResponseModal(deliveryId) {
     if (metaEl) {
       const hasJ5 = itemsToRender.some(it => it.target_type === 'j5' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
       const hasOracle = itemsToRender.some(it => it.target_type !== 'j5' && (!it.target_endpoint || !it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
-      let sysLabel = "Oracle ORDS REST API";
-      if (hasJ5 && hasOracle) sysLabel = "Oracle ORDS & Hexagon J5 Cloud";
+      let sysLabel = "Oracle Prod REST API";
+      if (hasJ5 && hasOracle) sysLabel = "Oracle Prod & Octave Cloud";
       else if (hasJ5) sysLabel = "Hexagon J5 Cloud Inbound API (Basic Auth)";
       metaEl.innerHTML = `Dispatched via <strong>${escapeHtml(sysLabel)}</strong> · HTTP Code: <strong>${httpCode}</strong>`;
     }
@@ -1952,9 +2341,15 @@ function initMappings() {
   document.getElementById("btn-save-all-mappings")?.addEventListener("click", saveMappingsToServer);
   document.getElementById("btn-load-sample-templates")?.addEventListener("click", loadSamplePresets);
   document.getElementById("btn-refresh-payload-preview")?.addEventListener("click", refreshPayloadPreview);
+  document.getElementById("btn-save-field-mappings")?.addEventListener("click", () => saveFieldMappingsToServer(true));
+  document.getElementById("btn-add-oracle-field-map")?.addEventListener("click", addOracleFieldMapping);
+  document.getElementById("btn-reset-oracle-field-maps")?.addEventListener("click", () => resetFieldMappings('oracle'));
+  document.getElementById("btn-add-octave-field-map")?.addEventListener("click", addOctaveFieldMapping);
+  document.getElementById("btn-reset-octave-field-maps")?.addEventListener("click", () => resetFieldMappings('octave'));
   document.getElementById("btn-modal-test-endpoint")?.addEventListener("click", () => handleModalTestEndpoint('oracle'));
   document.getElementById("btn-modal-test-endpoint-dev")?.addEventListener("click", () => handleModalTestEndpoint('oracledev'));
   document.getElementById("btn-modal-test-endpoint-j5")?.addEventListener("click", () => handleModalTestEndpoint('j5'));
+  document.getElementById("btn-modal-test-endpoint-j5dev")?.addEventListener("click", () => handleModalTestEndpoint('j5dev'));
 
   // Auto-compose full path when AF Server, Database, Element, or Attribute change in modal
   ["modal-af-server", "modal-af-database", "modal-element-path", "modal-attr-name"].forEach(id => {
@@ -2033,6 +2428,15 @@ function updateMappingModalModeUI() {
       fullPathInput.setAttribute("required", "required");
     }
   }
+
+  const attrNameInput = document.getElementById("modal-attr-name");
+  if (attrNameInput) {
+    if (isPush) {
+      attrNameInput.removeAttribute("required");
+    } else {
+      attrNameInput.setAttribute("required", "required");
+    }
+  }
 }
 
 async function loadMappings() {
@@ -2045,33 +2449,99 @@ async function loadMappings() {
   }
 }
 
+let activeMappingsFilter = 'all';
+
+function filterMappingsByEnv(filter) {
+  activeMappingsFilter = filter;
+  ['all', 'oracle', 'oracledev', 'octave', 'octavedev'].forEach(f => {
+    const btn = document.getElementById(`btn-filter-mappings-${f}`);
+    if (btn) {
+      btn.className = (f === filter) ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+    }
+  });
+  renderMappingsTable();
+}
+window.filterMappingsByEnv = filterMappingsByEnv;
+
 function renderMappingsTable() {
   const tbody = document.getElementById("mappings-table-tbody");
   const countBadge = document.getElementById("mappings-count-badge");
   if (!tbody) return;
 
-  countBadge.textContent = currentMappings.length;
+  const totalCount = currentMappings.length;
+  if (countBadge) countBadge.textContent = totalCount;
 
-  if (currentMappings.length === 0) {
+  // Compute counts for environment filter buttons
+  let cntOracle = 0, cntOracleDev = 0, cntOctave = 0, cntOctaveDev = 0;
+  currentMappings.forEach(m => {
+    const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : (m.target_type ? [m.target_type] : ['oracle']);
+    const ttLower = tt.map(t => String(t).toLowerCase());
+    if (ttLower.includes('oracle')) cntOracle++;
+    if (ttLower.includes('oracledev') || ttLower.includes('oracle_dev')) cntOracleDev++;
+    if (ttLower.includes('j5') || ttLower.includes('octave')) cntOctave++;
+    if (ttLower.includes('j5dev') || ttLower.includes('octavedev') || ttLower.includes('j5_dev')) cntOctaveDev++;
+  });
+
+  const elAll = document.getElementById("filter-count-all");
+  const elOra = document.getElementById("filter-count-oracle");
+  const elDev = document.getElementById("filter-count-oracledev");
+  const elOct = document.getElementById("filter-count-octave");
+  const elOctDev = document.getElementById("filter-count-octavedev");
+  if (elAll) elAll.textContent = totalCount;
+  if (elOra) elOra.textContent = cntOracle;
+  if (elDev) elDev.textContent = cntOracleDev;
+  if (elOct) elOct.textContent = cntOctave;
+  if (elOctDev) elOctDev.textContent = cntOctaveDev;
+
+  let filtered = currentMappings;
+  if (activeMappingsFilter === 'oracle') {
+    filtered = currentMappings.filter(m => {
+      const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
+      return tt.map(t => String(t).toLowerCase()).includes('oracle');
+    });
+  } else if (activeMappingsFilter === 'oracledev') {
+    filtered = currentMappings.filter(m => {
+      const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
+      const ttLower = tt.map(t => String(t).toLowerCase());
+      return ttLower.includes('oracledev') || ttLower.includes('oracle_dev');
+    });
+  } else if (activeMappingsFilter === 'octave') {
+    filtered = currentMappings.filter(m => {
+      const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
+      const ttLower = tt.map(t => String(t).toLowerCase());
+      return ttLower.includes('j5') || ttLower.includes('octave');
+    });
+  } else if (activeMappingsFilter === 'octavedev') {
+    filtered = currentMappings.filter(m => {
+      const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
+      const ttLower = tt.map(t => String(t).toLowerCase());
+      return ttLower.includes('j5dev') || ttLower.includes('octavedev') || ttLower.includes('j5_dev');
+    });
+  }
+
+  if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-          No attribute mappings defined yet. Click <strong>"Add Attribute"</strong> or <strong>"Load Preset Assets"</strong> to get started.
+          No attribute mappings found for current filter <strong>"${activeMappingsFilter.toUpperCase()}"</strong>. Click <strong>"Add Attribute Mapping"</strong> or switch filter above.
         </td>
       </tr>
     `;
     return;
   }
 
-  const defaultOracleUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
-    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
+  const defaultOracleUrl = (currentSettings?.oracle_erp?.base_url)
+    ? buildOracleEndpointUrl(currentSettings.oracle_erp.base_url, currentSettings?.oracle_erp?.resource_endpoint)
     : '--';
-  const defaultDevUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
-    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
+  const defaultDevUrl = (currentSettings?.oracledev?.base_url)
+    ? buildOracleEndpointUrl(currentSettings.oracledev.base_url, currentSettings?.oracledev?.resource_endpoint)
     : '--';
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || '--';
+  const defaultJ5DevUrl = currentSettings?.j5dev_endpoint?.url || '--';
 
-  tbody.innerHTML = currentMappings.map((m, idx) => {
+  tbody.innerHTML = filtered.map((m, fIdx) => {
+    const realIdx = currentMappings.findIndex(item => item && item.id === m.id);
+    const idx = realIdx >= 0 ? realIdx : fIdx;
     const scaleRound = `×${m.scale_factor || 1.0}, ${m.round_decimals ?? 2} dec`;
     
     // Resolve target types
@@ -2088,8 +2558,10 @@ function renderMappingsTable() {
     // Render target badges
     const targetBadges = targetTypes.map(tt => {
       const ttLower = tt.toLowerCase();
-      if (ttLower === 'j5') {
-        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> J5</span>`;
+      if (ttLower === 'j5' || ttLower === 'octave') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> Octave</span>`;
+      } else if (ttLower === 'j5dev' || ttLower === 'octavedev' || ttLower === 'j5_dev') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(147, 51, 234, 0.12); color: #7e22ce; border: 1px solid rgba(147, 51, 234, 0.3);"><span class="badge-dot" style="background:#9333ea;"></span> Octave Dev</span>`;
       } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
         return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev</span>`;
       } else {
@@ -2107,14 +2579,19 @@ function renderMappingsTable() {
       const u = m.target_endpoint_url_dev || defaultDevUrl;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #d97706;">DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
-    if (targetTypes.includes('j5')) {
+    if (targetTypes.includes('j5') || targetTypes.includes('octave')) {
       const u = m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !targetTypes.includes('oracle') ? m.target_endpoint_url : null) || defaultJ5Url;
-      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #4f46e5;">J5:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
+      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #4f46e5;">OCTAVE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
+    }
+    if (targetTypes.includes('j5dev') || targetTypes.includes('octavedev')) {
+      const u = m.target_endpoint_url_j5dev || defaultJ5DevUrl;
+      urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #7e22ce;">OCTAVE DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     const urlsDisplay = urlLines.length > 0 ? urlLines.join("") : `<span class="path-code" style="font-size: 10px;">${escapeHtml(m.target_endpoint_url || '--')}</span>`;
 
     const tagDisplay = m.tag || m.meter_tag || '--';
     const descDisplay = m.description || m.name || '--';
+    const attrDisplay = m.attribute_name || m.name || m.tag || m.meter_tag || '--';
     const limitDisplay = (m.limit !== undefined && m.limit !== null && m.limit !== "") ? m.limit : '--';
     const resultsDisplay = (m.results !== undefined && m.results !== null && m.results !== "") ? m.results : '--';
 
@@ -2125,7 +2602,7 @@ function renderMappingsTable() {
         </td>
         <td style="vertical-align: top;">
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(m.attribute_name || '')}</strong>
+            <strong style="color: var(--ink-primary); font-size: 13px;">${escapeHtml(attrDisplay)}</strong>
             ${targetBadges}
           </div>
           <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;" title="${escapeHtml(m.full_path || '')}">
@@ -2152,7 +2629,7 @@ function renderMappingsTable() {
           <div style="font-size: 10px; color: var(--ink-tertiary);">${escapeHtml(m.uom || '')}</div>
         </td>
         <td style="text-align: right; vertical-align: top; white-space: nowrap;">
-          <button class="btn btn-secondary btn-sm" onclick="editMapping(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;">Edit</button>
+          <button class="btn btn-secondary btn-sm" onclick="editMapping('${escapeHtml(m.id || String(idx))}')" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;">Edit</button>
           <button class="btn btn-outline btn-sm" onclick="testTableEndpoint(${idx})" style="padding: 0.2rem 0.45rem; margin-right: 0.2rem;" title="Test connectivity to destination endpoint(s)">Test</button>
           <button class="btn btn-danger btn-sm" onclick="deleteMapping(${idx})" style="padding: 0.2rem 0.45rem;">Delete</button>
         </td>
@@ -2168,8 +2645,21 @@ function toggleMappingActive(idx, isChecked) {
   }
 }
 
-function editMapping(idx) {
-  const m = currentMappings[idx];
+function editMapping(idOrIdx) {
+  let m = null;
+  let idx = -1;
+  if (typeof idOrIdx === "number") {
+    idx = idOrIdx;
+    m = currentMappings[idx];
+  } else {
+    idx = currentMappings.findIndex(x => x && x.id === idOrIdx);
+    if (idx >= 0) {
+      m = currentMappings[idx];
+    } else if (!isNaN(parseInt(idOrIdx, 10))) {
+      idx = parseInt(idOrIdx, 10);
+      m = currentMappings[idx];
+    }
+  }
   if (!m) return;
   openMappingModal(m, idx);
 }
@@ -2187,32 +2677,36 @@ function handleModalTargetEndpointsChange() {
   const chkOracle = document.getElementById("modal-target-oracle")?.checked;
   const chkDev = document.getElementById("modal-target-oracledev")?.checked;
   const chkJ5 = document.getElementById("modal-target-j5")?.checked;
+  const chkJ5Dev = document.getElementById("modal-target-j5dev")?.checked;
 
   const rowOracle = document.getElementById("row-url-oracle");
   const rowDev = document.getElementById("row-url-oracledev");
   const rowJ5 = document.getElementById("row-url-j5");
+  const rowJ5Dev = document.getElementById("row-url-j5dev");
 
   if (rowOracle) rowOracle.style.display = chkOracle ? "block" : "none";
   if (rowDev) rowDev.style.display = chkDev ? "block" : "none";
   if (rowJ5) rowJ5.style.display = chkJ5 ? "block" : "none";
+  if (rowJ5Dev) rowJ5Dev.style.display = chkJ5Dev ? "block" : "none";
 
-  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
-    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
-    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+  const defaultOrdsUrl = buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, currentSettings?.oracle_erp?.resource_endpoint)
+    || "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
-  const defaultDevOrdsUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
-    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
-    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+  const defaultDevOrdsUrl = buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint)
+    || "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
+  const defaultJ5DevUrl = currentSettings?.j5dev_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
 
   const inputOracle = document.getElementById("modal-target-endpoint-url");
   const inputDev = document.getElementById("modal-target-endpoint-url-dev");
   const inputJ5 = document.getElementById("modal-target-endpoint-url-j5");
+  const inputJ5Dev = document.getElementById("modal-target-endpoint-url-j5dev");
 
   if (chkOracle && inputOracle && !inputOracle.value) inputOracle.value = defaultOrdsUrl;
   if (chkDev && inputDev && !inputDev.value) inputDev.value = defaultDevOrdsUrl;
   if (chkJ5 && inputJ5 && !inputJ5.value) inputJ5.value = defaultJ5Url;
+  if (chkJ5Dev && inputJ5Dev && !inputJ5Dev.value) inputJ5Dev.value = defaultJ5DevUrl;
 
   const testBox = document.getElementById("modal-endpoint-test-box");
   if (testBox) {
@@ -2235,19 +2729,18 @@ function openMappingModal(mapping = null, index = -1) {
   const isPush = (getActiveIngestionMode() !== "pull");
   modal.classList.add("active");
 
-  const defaultOrdsUrl = (currentSettings?.oracle_erp?.base_url && currentSettings?.oracle_erp?.resource_endpoint)
-    ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${currentSettings.oracle_erp.resource_endpoint.replace(/^\/+/, '')}`
-    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+  const defaultOrdsUrl = buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, currentSettings?.oracle_erp?.resource_endpoint)
+    || "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
-  const defaultDevOrdsUrl = (currentSettings?.oracledev?.base_url && currentSettings?.oracledev?.resource_endpoint)
-    ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${currentSettings.oracledev.resource_endpoint.replace(/^\/+/, '')}`
-    : "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
+  const defaultDevOrdsUrl = buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint)
+    || "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
 
   if (mapping) {
     title.textContent = "Edit Attribute Mapping";
-    document.getElementById("modal-mapping-id").value = index;
+    document.getElementById("mapping-form").reset();
+    document.getElementById("modal-mapping-id").value = mapping.id || (index >= 0 ? currentMappings[index]?.id : "");
 
     let targetTypes = mapping.target_types || [];
     if (!targetTypes || targetTypes.length === 0) {
@@ -2262,14 +2755,17 @@ function openMappingModal(mapping = null, index = -1) {
     const chkOracle = document.getElementById("modal-target-oracle");
     const chkDev = document.getElementById("modal-target-oracledev");
     const chkJ5 = document.getElementById("modal-target-j5");
+    const chkJ5Dev = document.getElementById("modal-target-j5dev");
 
     if (chkOracle) chkOracle.checked = targetTypes.includes("oracle");
     if (chkDev) chkDev.checked = targetTypes.includes("oracledev");
-    if (chkJ5) chkJ5.checked = targetTypes.includes("j5");
+    if (chkJ5) chkJ5.checked = targetTypes.includes("j5") || targetTypes.includes("octave");
+    if (chkJ5Dev) chkJ5Dev.checked = targetTypes.includes("j5dev") || targetTypes.includes("octavedev") || targetTypes.includes("j5_dev");
 
-    document.getElementById("modal-target-endpoint-url").value = mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultOrdsUrl) : defaultOrdsUrl);
-    document.getElementById("modal-target-endpoint-url-dev").value = mapping.target_endpoint_url_dev || defaultDevOrdsUrl;
-    document.getElementById("modal-target-endpoint-url-j5").value = mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultJ5Url) : defaultJ5Url);
+    document.getElementById("modal-target-endpoint-url").value = sanitizeEndpointUrl(mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultOrdsUrl) : defaultOrdsUrl));
+    document.getElementById("modal-target-endpoint-url-dev").value = sanitizeEndpointUrl(mapping.target_endpoint_url_dev || defaultDevOrdsUrl);
+    document.getElementById("modal-target-endpoint-url-j5").value = sanitizeEndpointUrl(mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultJ5Url) : defaultJ5Url));
+    document.getElementById("modal-target-endpoint-url-j5dev").value = sanitizeEndpointUrl(mapping.target_endpoint_url_j5dev || defaultJ5DevUrl);
 
     handleModalTargetEndpointsChange();
 
@@ -2277,7 +2773,11 @@ function openMappingModal(mapping = null, index = -1) {
     document.getElementById("modal-description").value = mapping.description || mapping.name || "";
     document.getElementById("modal-limit").value = (mapping.limit !== undefined && mapping.limit !== null) ? mapping.limit : "";
     document.getElementById("modal-results").value = (mapping.results !== undefined && mapping.results !== null) ? mapping.results : "";
-    document.getElementById("modal-attr-name").value = mapping.attribute_name || "";
+    
+    // Resolve attribute name properly so it never falls blank or leaks previous edits
+    const initialAttrName = mapping.attribute_name || mapping.name || mapping.tag || mapping.meter_tag || "";
+    document.getElementById("modal-attr-name").value = initialAttrName;
+
     document.getElementById("modal-af-server").value = mapping.af_server !== undefined ? mapping.af_server : (isPush ? "" : "PISRV01");
     document.getElementById("modal-af-database").value = mapping.af_database !== undefined ? mapping.af_database : (isPush ? "" : "Plant_Operations");
     document.getElementById("modal-element-path").value = mapping.element_path || "";
@@ -2288,20 +2788,23 @@ function openMappingModal(mapping = null, index = -1) {
     document.getElementById("modal-enabled").checked = mapping.enabled ?? true;
   } else {
     title.textContent = "Add Attribute Mapping";
-    document.getElementById("modal-mapping-id").value = "-1";
+    document.getElementById("modal-mapping-id").value = "";
     document.getElementById("mapping-form").reset();
 
     const chkOracle = document.getElementById("modal-target-oracle");
     const chkDev = document.getElementById("modal-target-oracledev");
     const chkJ5 = document.getElementById("modal-target-j5");
+    const chkJ5Dev = document.getElementById("modal-target-j5dev");
 
     if (chkOracle) chkOracle.checked = true;
     if (chkDev) chkDev.checked = false;
     if (chkJ5) chkJ5.checked = false;
+    if (chkJ5Dev) chkJ5Dev.checked = false;
 
     document.getElementById("modal-target-endpoint-url").value = defaultOrdsUrl;
     document.getElementById("modal-target-endpoint-url-dev").value = defaultDevOrdsUrl;
     document.getElementById("modal-target-endpoint-url-j5").value = defaultJ5Url;
+    document.getElementById("modal-target-endpoint-url-j5dev").value = defaultJ5DevUrl;
 
     handleModalTargetEndpointsChange();
 
@@ -2346,9 +2849,12 @@ async function handleModalTestEndpoint(targetType = 'oracle') {
   if (targetType === "oracledev") {
     url = document.getElementById("modal-target-endpoint-url-dev")?.value?.trim();
     epName = "Oracle Dev";
-  } else if (targetType === "j5") {
+  } else if (targetType === "j5" || targetType === "octave") {
     url = document.getElementById("modal-target-endpoint-url-j5")?.value?.trim();
-    epName = "Hexagon J5";
+    epName = "Octave";
+  } else if (targetType === "j5dev" || targetType === "octavedev") {
+    url = document.getElementById("modal-target-endpoint-url-j5dev")?.value?.trim();
+    epName = "Octave Dev";
   } else {
     url = document.getElementById("modal-target-endpoint-url")?.value?.trim();
     epName = "Oracle Production";
@@ -2402,15 +2908,18 @@ async function testTableEndpoint(idx) {
     const ttLower = tt.toLowerCase();
     let url = "";
     let label = "Oracle";
-    if (ttLower === 'j5') {
+    if (ttLower === 'j5' || ttLower === 'octave') {
       url = m.target_endpoint_url_j5 || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud') ? m.target_endpoint_url : null) || currentSettings?.j5_endpoint?.url;
-      label = "J5";
+      label = "Octave";
+    } else if (ttLower === 'j5dev' || ttLower === 'octavedev' || ttLower === 'j5_dev') {
+      url = m.target_endpoint_url_j5dev || currentSettings?.j5dev_endpoint?.url;
+      label = "Octave Dev";
     } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
-      url = m.target_endpoint_url_dev || (currentSettings?.oracledev?.base_url ? `${currentSettings.oracledev.base_url.replace(/\/+$/, '')}/${(currentSettings.oracledev.resource_endpoint || '').replace(/^\/+/, '')}` : null);
+      url = sanitizeEndpointUrl(m.target_endpoint_url_dev || buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint));
       label = "Oracle Dev";
     } else {
-      url = m.target_endpoint_url_oracle || m.target_endpoint_url || (currentSettings?.oracle_erp?.base_url ? `${currentSettings.oracle_erp.base_url.replace(/\/+$/, '')}/${(m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint || '').replace(/^\/+/, '')}` : null);
-      label = "Oracle";
+      url = sanitizeEndpointUrl(m.target_endpoint_url_oracle || m.target_endpoint_url || buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint));
+      label = "Oracle Prod";
     }
 
     if (!url) {
@@ -2439,61 +2948,101 @@ window.testTableEndpoint = testTableEndpoint;
 
 function handleSaveMappingModal(e) {
   e.preventDefault();
-  const editIdx = parseInt(document.getElementById("modal-mapping-id").value, 10);
+  const mappingId = document.getElementById("modal-mapping-id").value;
+  let editIdx = -1;
+  if (mappingId && mappingId !== "-1") {
+    editIdx = currentMappings.findIndex(m => m && m.id === mappingId);
+    if (editIdx < 0 && !isNaN(parseInt(mappingId, 10))) {
+      const numericIdx = parseInt(mappingId, 10);
+      if (numericIdx >= 0 && numericIdx < currentMappings.length) {
+        editIdx = numericIdx;
+      }
+    }
+  }
+
+  const existing = editIdx >= 0 ? (currentMappings[editIdx] || {}) : {};
+  const isPush = (getActiveIngestionMode() !== "pull");
   
   const targetTypes = [];
   if (document.getElementById("modal-target-oracle")?.checked) targetTypes.push("oracle");
   if (document.getElementById("modal-target-oracledev")?.checked) targetTypes.push("oracledev");
   if (document.getElementById("modal-target-j5")?.checked) targetTypes.push("j5");
+  if (document.getElementById("modal-target-j5dev")?.checked) targetTypes.push("j5dev");
 
   if (targetTypes.length === 0) {
-    showToast("Please select at least one destination endpoint (Oracle, Oracle Dev, or J5).", "warning");
+    showToast("Please select at least one destination endpoint (Oracle, Oracle Dev, Octave, or Octave Dev).", "warning");
     return;
   }
 
-  const tagVal = document.getElementById("modal-target-tag").value.trim();
-  const descVal = document.getElementById("modal-description").value.trim();
-  const limitVal = document.getElementById("modal-limit").value.trim();
-  const resultsVal = document.getElementById("modal-results").value.trim();
+  const enteredAttrName = document.getElementById("modal-attr-name").value.trim();
+  const finalAttrName = enteredAttrName || existing.attribute_name || existing.name || existing.tag || existing.meter_tag || "";
+  if (!finalAttrName) {
+    showToast("Please specify an Attribute Name or Tag.", "warning");
+    return;
+  }
 
-  const urlOracle = document.getElementById("modal-target-endpoint-url").value.trim();
-  const urlDev = document.getElementById("modal-target-endpoint-url-dev").value.trim();
-  const urlJ5 = document.getElementById("modal-target-endpoint-url-j5").value.trim();
+  const tagInput = document.getElementById("modal-target-tag").value.trim();
+  const descInput = document.getElementById("modal-description").value.trim();
+  const limitInput = document.getElementById("modal-limit").value.trim();
+  const resultsInput = document.getElementById("modal-results").value.trim();
+
+  // If in push mode and input is empty, NEVER overwrite existing values!
+  const tagVal = (isPush && !tagInput) ? (existing.tag || existing.meter_tag || "") : tagInput;
+  const meterTagVal = (isPush && !tagInput) ? (existing.meter_tag || existing.tag || "") : tagInput;
+  const descVal = (isPush && !descInput) ? (existing.description || existing.name || "") : descInput;
+  const limitVal = (isPush && !limitInput) ? ((existing.limit !== undefined && existing.limit !== null) ? existing.limit : "") : limitInput;
+  const resultsVal = (isPush && !resultsInput) ? ((existing.results !== undefined && existing.results !== null) ? existing.results : "") : resultsInput;
+
+  const afServerVal = isPush ? (existing.af_server || "") : document.getElementById("modal-af-server").value.trim();
+  const afDbVal = isPush ? (existing.af_database || "") : document.getElementById("modal-af-database").value.trim();
+  const elemPathVal = isPush ? (existing.element_path || "") : document.getElementById("modal-element-path").value.trim();
+  const fullPathVal = isPush ? (existing.full_path || "") : document.getElementById("modal-full-path").value.trim();
+
+  const nameVal = existing.name || descVal || finalAttrName;
+
+  const urlOracle = sanitizeEndpointUrl(document.getElementById("modal-target-endpoint-url").value.trim());
+  const urlDev = sanitizeEndpointUrl(document.getElementById("modal-target-endpoint-url-dev").value.trim());
+  const urlJ5 = sanitizeEndpointUrl(document.getElementById("modal-target-endpoint-url-j5").value.trim());
+  const urlJ5Dev = sanitizeEndpointUrl(document.getElementById("modal-target-endpoint-url-j5dev").value.trim());
 
   // Primary URL for backward compatibility
   let primaryTargetUrl = urlOracle;
   if (!primaryTargetUrl || !targetTypes.includes("oracle")) {
-    primaryTargetUrl = targetTypes.includes("oracledev") ? urlDev : urlJ5;
+    if (targetTypes.includes("oracledev")) primaryTargetUrl = urlDev;
+    else if (targetTypes.includes("j5")) primaryTargetUrl = urlJ5;
+    else primaryTargetUrl = urlJ5Dev;
   }
 
-  const newMapping = {
-    id: editIdx >= 0 ? currentMappings[editIdx].id : `map-${Date.now()}`,
+  const newMapping = Object.assign({}, existing, {
+    id: existing.id || `map-${Date.now()}`,
+    name: nameVal,
+    attribute_name: finalAttrName,
     target_type: targetTypes[0],
     target_types: targetTypes,
-    attribute_name: document.getElementById("modal-attr-name").value.trim(),
-    af_server: document.getElementById("modal-af-server").value.trim(),
-    af_database: document.getElementById("modal-af-database").value.trim(),
-    element_path: document.getElementById("modal-element-path").value.trim(),
-    full_path: document.getElementById("modal-full-path").value.trim(),
-    web_id: editIdx >= 0 ? currentMappings[editIdx].web_id : "",
+    af_server: afServerVal,
+    af_database: afDbVal,
+    element_path: elemPathVal,
+    full_path: fullPathVal,
+    web_id: existing.web_id || "",
     target_endpoint_url: primaryTargetUrl,
     target_endpoint_url_oracle: urlOracle,
     target_endpoint_url_dev: urlDev,
     target_endpoint_url_j5: urlJ5,
+    target_endpoint_url_j5dev: urlJ5Dev,
     tag: tagVal,
     description: descVal,
     limit: limitVal,
     results: resultsVal,
-    meter_tag: tagVal,
-    target_field: "value",
-    target_tag_field: "tag",
-    data_type: "number",
-    transformation: "direct",
-    scale_factor: parseFloat(document.getElementById("modal-scale").value) || 1.0,
-    round_decimals: parseInt(document.getElementById("modal-decimals").value, 10) || 2,
-    uom: document.getElementById("modal-uom").value.trim(),
+    meter_tag: meterTagVal,
+    target_field: existing.target_field || "value",
+    target_tag_field: existing.target_tag_field || "tag",
+    data_type: existing.data_type || "number",
+    transformation: existing.transformation || "direct",
+    scale_factor: parseFloat(document.getElementById("modal-scale").value) || existing.scale_factor || 1.0,
+    round_decimals: parseInt(document.getElementById("modal-decimals").value, 10) ?? existing.round_decimals ?? 2,
+    uom: document.getElementById("modal-uom").value.trim() || existing.uom || "",
     enabled: document.getElementById("modal-enabled").checked
-  };
+  });
 
   if (editIdx >= 0) {
     currentMappings[editIdx] = newMapping;
@@ -2505,7 +3054,7 @@ function handleSaveMappingModal(e) {
   renderMappingsTable();
   saveMappingsToServer();
   refreshPayloadPreview();
-  showToast("Attribute mapping updated with multicast endpoints.", "success");
+  showToast("Attribute mapping updated successfully.", "success");
 }
 
 async function saveMappingsToServer() {
@@ -2515,13 +3064,381 @@ async function saveMappingsToServer() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(currentMappings)
     });
+    await saveFieldMappingsToServer(false);
     if (res.ok) {
-      showToast("Mappings saved to config/mappings.json", "success");
+      showToast("Attribute mappings and parameter schemas saved successfully.", "success");
     }
   } catch (e) {
     showToast("Failed to save mappings: " + e.message, "danger");
   }
 }
+
+// ------------------------------------------------------------
+// Destination Parameter & Schema Mappings Management (Prod & Dev)
+// ------------------------------------------------------------
+let activeOracleEnv = localStorage.getItem("pidata_oracle_env") || 'prod';
+let activeOctaveEnv = localStorage.getItem("pidata_octave_env") || 'prod';
+
+function updateFieldMappingEnvUI(category) {
+  if (category === 'oracle') {
+    const isProd = (activeOracleEnv === 'prod');
+    const btnProd = document.getElementById("btn-oracle-env-prod");
+    const btnDev = document.getElementById("btn-oracle-env-dev");
+    const badge = document.getElementById("badge-oracle-active-env");
+    const syncBtn = document.getElementById("btn-oracle-sync-env");
+    const countProd = document.getElementById("count-oracle-prod");
+    const countDev = document.getElementById("count-oracle-dev");
+
+    const prodLen = (currentFieldMappings?.oracle_prod || []).length;
+    const devLen = (currentFieldMappings?.oracle_dev || []).length;
+    if (countProd) countProd.textContent = prodLen;
+    if (countDev) countDev.textContent = devLen;
+
+    if (btnProd && btnDev) {
+      if (isProd) {
+        btnProd.className = "btn btn-primary btn-sm";
+        btnDev.className = "btn btn-secondary btn-sm";
+        if (badge) {
+          badge.textContent = `Editing: Production (${prodLen} params)`;
+          badge.style.background = "rgba(16, 185, 129, 0.12)";
+          badge.style.color = "#059669";
+        }
+        if (syncBtn) syncBtn.textContent = "Copy to Dev";
+      } else {
+        btnProd.className = "btn btn-secondary btn-sm";
+        btnDev.className = "btn btn-primary btn-sm";
+        if (badge) {
+          badge.textContent = `Editing: Dev / Test (${devLen} params)`;
+          badge.style.background = "rgba(245, 158, 11, 0.12)";
+          badge.style.color = "#d97706";
+        }
+        if (syncBtn) syncBtn.textContent = "Copy to Prod";
+      }
+    }
+  } else {
+    const isProd = (activeOctaveEnv === 'prod');
+    const btnProd = document.getElementById("btn-octave-env-prod");
+    const btnDev = document.getElementById("btn-octave-env-dev");
+    const badge = document.getElementById("badge-octave-active-env");
+    const syncBtn = document.getElementById("btn-octave-sync-env");
+    const countProd = document.getElementById("count-octave-prod");
+    const countDev = document.getElementById("count-octave-dev");
+
+    const prodLen = (currentFieldMappings?.octave_prod || []).length;
+    const devLen = (currentFieldMappings?.octave_dev || []).length;
+    if (countProd) countProd.textContent = prodLen;
+    if (countDev) countDev.textContent = devLen;
+
+    if (btnProd && btnDev) {
+      if (isProd) {
+        btnProd.className = "btn btn-primary btn-sm";
+        btnDev.className = "btn btn-secondary btn-sm";
+        if (badge) {
+          badge.textContent = `Editing: Production (${prodLen} params)`;
+          badge.style.background = "rgba(59, 130, 246, 0.12)";
+          badge.style.color = "#2563eb";
+        }
+        if (syncBtn) syncBtn.textContent = "Copy to Dev";
+      } else {
+        btnProd.className = "btn btn-secondary btn-sm";
+        btnDev.className = "btn btn-primary btn-sm";
+        if (badge) {
+          badge.textContent = `Editing: Dev / Test (${devLen} params)`;
+          badge.style.background = "rgba(245, 158, 11, 0.12)";
+          badge.style.color = "#d97706";
+        }
+        if (syncBtn) syncBtn.textContent = "Copy to Prod";
+      }
+    }
+  }
+}
+
+function switchFieldMappingEnv(category, env) {
+  if (category === 'oracle') {
+    activeOracleEnv = env;
+    try { localStorage.setItem("pidata_oracle_env", env); } catch (e) {}
+    updateFieldMappingEnvUI('oracle');
+    renderOracleFieldMappings();
+  } else {
+    activeOctaveEnv = env;
+    try { localStorage.setItem("pidata_octave_env", env); } catch (e) {}
+    updateFieldMappingEnvUI('octave');
+    renderOctaveFieldMappings();
+  }
+}
+window.switchFieldMappingEnv = switchFieldMappingEnv;
+
+function syncFieldMappingBetweenEnvs(category) {
+  if (category === 'oracle') {
+    if (activeOracleEnv === 'prod') {
+      if (confirm("Copy all Oracle Production parameter mappings to Dev / Test?")) {
+        currentFieldMappings.oracle_dev = JSON.parse(JSON.stringify(currentFieldMappings.oracle_prod || []));
+        showToast("Copied Oracle Production parameter mappings to Dev / Test.", "success");
+      }
+    } else {
+      if (confirm("Copy all Oracle Dev / Test parameter mappings to Production?")) {
+        currentFieldMappings.oracle_prod = JSON.parse(JSON.stringify(currentFieldMappings.oracle_dev || []));
+        showToast("Copied Oracle Dev / Test parameter mappings to Production.", "success");
+      }
+    }
+    renderOracleFieldMappings();
+    saveFieldMappingsToServer(false);
+  } else {
+    if (activeOctaveEnv === 'prod') {
+      if (confirm("Copy all Octave Production parameter mappings to Dev / Test?")) {
+        currentFieldMappings.octave_dev = JSON.parse(JSON.stringify(currentFieldMappings.octave_prod || []));
+        showToast("Copied Octave Production parameter mappings to Dev / Test.", "success");
+      }
+    } else {
+      if (confirm("Copy all Octave Dev / Test parameter mappings to Production?")) {
+        currentFieldMappings.octave_prod = JSON.parse(JSON.stringify(currentFieldMappings.octave_dev || []));
+        showToast("Copied Octave Dev / Test parameter mappings to Production.", "success");
+      }
+    }
+    renderOctaveFieldMappings();
+    saveFieldMappingsToServer(false);
+  }
+}
+window.syncFieldMappingBetweenEnvs = syncFieldMappingBetweenEnvs;
+
+function renderOracleFieldMappings() {
+  updateFieldMappingEnvUI('oracle');
+  const tbody = document.getElementById("oracle-field-mappings-tbody");
+  if (!tbody) return;
+  const envKey = activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev';
+  const list = currentFieldMappings?.[envKey] || [];
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--ink-secondary); padding: 16px;">No parameter mappings configured for ${activeOracleEnv === 'prod' ? 'Production' : 'Dev / Test'}. Click "+ Add Parameter" or "Reset Defaults".</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map((m, idx) => `
+    <tr style="${m.enabled ? '' : 'opacity: 0.55;'}">
+      <td style="text-align: center;">
+        <input type="checkbox" ${m.enabled ? "checked" : ""} onchange="handleFieldMappingToggle('oracle', ${idx}, this.checked)" title="Enable / Disable this parameter mapping">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm form-control-mono" value="${escapeHtml(m.source || '')}" placeholder="e.g. AnalysisTime" oninput="handleFieldMappingChange('oracle', ${idx}, 'source', this.value)" onchange="handleFieldMappingChange('oracle', ${idx}, 'source', this.value)">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm form-control-mono" style="font-weight: 600; color: #047857;" value="${escapeHtml(m.target || '')}" placeholder="e.g. TESTTIMESTAMP" oninput="handleFieldMappingChange('oracle', ${idx}, 'target', this.value)" onchange="handleFieldMappingChange('oracle', ${idx}, 'target', this.value)">
+      </td>
+      <td>
+        <select class="form-control form-control-sm" onchange="handleFieldMappingChange('oracle', ${idx}, 'transform', this.value)">
+          <option value="timestamp_zulu" ${m.transform === 'timestamp_zulu' ? 'selected' : ''}>Timestamp Zulu (ISO)</option>
+          <option value="receipt_time" ${m.transform === 'receipt_time' ? 'selected' : ''}>Receipt Datetime (Zulu)</option>
+          <option value="numeric_scaled" ${m.transform === 'numeric_scaled' ? 'selected' : ''}>Numeric (Scaled)</option>
+          <option value="string" ${m.transform === 'string' ? 'selected' : ''}>String / Text</option>
+          <option value="direct" ${m.transform === 'direct' ? 'selected' : ''}>Direct / As-Is</option>
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm" value="${escapeHtml(m.description || '')}" placeholder="Description / notes" oninput="handleFieldMappingChange('oracle', ${idx}, 'description', this.value)" onchange="handleFieldMappingChange('oracle', ${idx}, 'description', this.value)">
+      </td>
+      <td style="text-align: right;">
+        <button type="button" class="btn btn-outline btn-sm" style="color: var(--danger, #dc2626); padding: 2px 8px;" onclick="deleteFieldMapping('oracle', ${idx})" title="Remove this parameter mapping">✕</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderOctaveFieldMappings() {
+  updateFieldMappingEnvUI('octave');
+  const tbody = document.getElementById("octave-field-mappings-tbody");
+  if (!tbody) return;
+  const envKey = activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev';
+  const list = currentFieldMappings?.[envKey] || [];
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--ink-secondary); padding: 16px;">No parameter mappings configured for ${activeOctaveEnv === 'prod' ? 'Production' : 'Dev / Test'}. Click "+ Add Parameter" or "Reset Defaults".</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map((m, idx) => `
+    <tr style="${m.enabled ? '' : 'opacity: 0.55;'}">
+      <td style="text-align: center;">
+        <input type="checkbox" ${m.enabled ? "checked" : ""} onchange="handleFieldMappingToggle('octave', ${idx}, this.checked)" title="Enable / Disable this parameter mapping">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm form-control-mono" value="${escapeHtml(m.source || '')}" placeholder="e.g. tag" oninput="handleFieldMappingChange('octave', ${idx}, 'source', this.value)" onchange="handleFieldMappingChange('octave', ${idx}, 'source', this.value)">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm form-control-mono" style="font-weight: 600; color: #1d4ed8;" value="${escapeHtml(m.target || '')}" placeholder="e.g. messageTag" oninput="handleFieldMappingChange('octave', ${idx}, 'target', this.value)" onchange="handleFieldMappingChange('octave', ${idx}, 'target', this.value)">
+      </td>
+      <td>
+        <select class="form-control form-control-sm" onchange="handleFieldMappingChange('octave', ${idx}, 'transform', this.value)">
+          <option value="string" ${m.transform === 'string' ? 'selected' : ''}>String / Text</option>
+          <option value="numeric_scaled" ${m.transform === 'numeric_scaled' ? 'selected' : ''}>Numeric (Scaled)</option>
+          <option value="receipt_time" ${m.transform === 'receipt_time' ? 'selected' : ''}>Receipt Datetime (Zulu)</option>
+          <option value="timestamp_zulu" ${m.transform === 'timestamp_zulu' ? 'selected' : ''}>Timestamp Zulu (ISO)</option>
+          <option value="direct" ${m.transform === 'direct' ? 'selected' : ''}>Direct / As-Is</option>
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm" value="${escapeHtml(m.description || '')}" placeholder="Description / notes" oninput="handleFieldMappingChange('octave', ${idx}, 'description', this.value)" onchange="handleFieldMappingChange('octave', ${idx}, 'description', this.value)">
+      </td>
+      <td style="text-align: right;">
+        <button type="button" class="btn btn-outline btn-sm" style="color: var(--danger, #dc2626); padding: 2px 8px;" onclick="deleteFieldMapping('octave', ${idx})" title="Remove this parameter mapping">✕</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function handleFieldMappingToggle(category, idx, isChecked) {
+  const envKey = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev')
+    : (activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev');
+  if (currentFieldMappings?.[envKey]?.[idx]) {
+    currentFieldMappings[envKey][idx].enabled = isChecked;
+    if (category === 'oracle') renderOracleFieldMappings();
+    else renderOctaveFieldMappings();
+    refreshPayloadPreview();
+  }
+}
+window.handleFieldMappingToggle = handleFieldMappingToggle;
+
+function handleFieldMappingChange(category, idx, field, value) {
+  const envKey = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev')
+    : (activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev');
+  if (currentFieldMappings?.[envKey]?.[idx]) {
+    currentFieldMappings[envKey][idx][field] = value.trim();
+    refreshPayloadPreview();
+  }
+}
+window.handleFieldMappingChange = handleFieldMappingChange;
+
+function deleteFieldMapping(category, idx) {
+  const envKey = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev')
+    : (activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev');
+  if (currentFieldMappings?.[envKey]?.[idx]) {
+    currentFieldMappings[envKey].splice(idx, 1);
+    if (category === 'oracle') renderOracleFieldMappings();
+    else renderOctaveFieldMappings();
+    refreshPayloadPreview();
+  }
+}
+window.deleteFieldMapping = deleteFieldMapping;
+
+function addOracleFieldMapping() {
+  const envKey = activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev';
+  if (!currentFieldMappings[envKey]) currentFieldMappings[envKey] = [];
+  currentFieldMappings[envKey].push({
+    id: 'ora-custom-' + Date.now(),
+    source: '',
+    target: '',
+    transform: 'string',
+    description: '',
+    enabled: true
+  });
+  renderOracleFieldMappings();
+  const inputs = document.querySelectorAll("#oracle-field-mappings-tbody tr:last-child input");
+  if (inputs && inputs.length > 1) inputs[1].focus();
+}
+window.addOracleFieldMapping = addOracleFieldMapping;
+
+function addOctaveFieldMapping() {
+  const envKey = activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev';
+  if (!currentFieldMappings[envKey]) currentFieldMappings[envKey] = [];
+  currentFieldMappings[envKey].push({
+    id: 'oct-custom-' + Date.now(),
+    source: '',
+    target: '',
+    transform: 'string',
+    description: '',
+    enabled: true
+  });
+  renderOctaveFieldMappings();
+  const inputs = document.querySelectorAll("#octave-field-mappings-tbody tr:last-child input");
+  if (inputs && inputs.length > 1) inputs[1].focus();
+}
+window.addOctaveFieldMapping = addOctaveFieldMapping;
+
+async function resetFieldMappings(category) {
+  const envKey = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev')
+    : (activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev');
+  const catLabel = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'Oracle Production' : 'Oracle Dev')
+    : (activeOctaveEnv === 'prod' ? 'Octave Production' : 'Octave Dev');
+  if (!confirm(`Reset parameter mappings back to factory defaults for ${catLabel}?`)) {
+    return;
+  }
+  try {
+    const res = await fetch(`/api/field-mappings/reset?target=${envKey}`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      currentFieldMappings = data.field_mappings || currentFieldMappings;
+      renderOracleFieldMappings();
+      renderOctaveFieldMappings();
+      refreshPayloadPreview();
+      showToast(`${catLabel} parameter mappings reset to factory defaults.`, "success");
+    }
+  } catch (e) {
+    showToast(`Failed to reset parameter mappings: ${e.message}`, "danger");
+  }
+}
+window.resetFieldMappings = resetFieldMappings;
+
+async function loadFieldMappings() {
+  try {
+    const res = await fetch("/api/field-mappings");
+    if (res.ok) {
+      currentFieldMappings = await res.json();
+      renderOracleFieldMappings();
+      renderOctaveFieldMappings();
+    }
+  } catch (e) {
+    console.error("Failed to load field mappings:", e);
+  }
+}
+window.loadFieldMappings = loadFieldMappings;
+
+function syncFieldMappingsFromDOM(category) {
+  const envKey = category === 'oracle'
+    ? (activeOracleEnv === 'prod' ? 'oracle_prod' : 'oracle_dev')
+    : (activeOctaveEnv === 'prod' ? 'octave_prod' : 'octave_dev');
+  const tbodyId = category === 'oracle' ? "oracle-field-mappings-tbody" : "octave-field-mappings-tbody";
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll("tr");
+  if (!rows || rows.length === 0) return;
+  const list = currentFieldMappings[envKey] || [];
+  rows.forEach((tr, idx) => {
+    if (idx >= list.length) return;
+    const chk = tr.querySelector("input[type='checkbox']");
+    const textInputs = tr.querySelectorAll("input[type='text']");
+    const sel = tr.querySelector("select");
+    if (chk) list[idx].enabled = chk.checked;
+    if (textInputs.length >= 1) list[idx].source = textInputs[0].value.trim();
+    if (textInputs.length >= 2) list[idx].target = textInputs[1].value.trim();
+    if (sel) list[idx].transform = sel.value;
+    if (textInputs.length >= 3) list[idx].description = textInputs[2].value.trim();
+  });
+}
+
+async function saveFieldMappingsToServer(showToastMsg = true) {
+  syncFieldMappingsFromDOM('oracle');
+  syncFieldMappingsFromDOM('octave');
+  try {
+    const res = await fetch("/api/field-mappings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentFieldMappings)
+    });
+    if (res.ok) {
+      updateFieldMappingEnvUI('oracle');
+      updateFieldMappingEnvUI('octave');
+      if (showToastMsg) {
+        showToast("Destination parameter mappings saved successfully.", "success");
+      }
+    }
+    refreshPayloadPreview();
+  } catch (e) {
+    if (showToastMsg) {
+      showToast(`Failed to save parameter mappings: ${e.message}`, "danger");
+    }
+  }
+}
+window.saveFieldMappingsToServer = saveFieldMappingsToServer;
 
 function loadSamplePresets() {
   if (confirm("Load standard industrial asset telemetry presets (Boiler, Turbine, Generator, Pumps)?")) {
@@ -2659,7 +3576,7 @@ function loadSamplePresets() {
     renderMappingsTable();
     saveMappingsToServer();
     refreshPayloadPreview();
-    showToast("Loaded industrial telemetry presets with Oracle ORDS & J5 endpoints.", "success");
+    showToast("Loaded industrial telemetry presets with Oracle Prod & Octave endpoints.", "success");
   }
 }
 
@@ -2811,6 +3728,8 @@ function initSettings() {
   document.getElementById("btn-test-oracledev-settings")?.addEventListener("click", handleTestOracleDevSettings);
   document.getElementById("btn-test-j5-settings")?.addEventListener("click", handleTestJ5Settings);
   document.getElementById("btn-toggle-j5-password")?.addEventListener("click", toggleJ5PasswordVisibility);
+  document.getElementById("btn-test-j5dev-settings")?.addEventListener("click", handleTestJ5DevSettings);
+  document.getElementById("btn-toggle-j5dev-password")?.addEventListener("click", toggleJ5DevPasswordVisibility);
 
   document.getElementById("setting-pi-auth-type")?.addEventListener("change", handlePiAuthChange);
   document.getElementById("setting-erp-auth-type")?.addEventListener("change", handleErpAuthChange);
@@ -2936,7 +3855,9 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-erp-username").value = erp.username || "";
     document.getElementById("setting-erp-password").value = erp.password || "";
     document.getElementById("setting-erp-bearer-token").value = erp.bearer_token || "";
-    document.getElementById("setting-erp-resource-endpoint").value = erp.resource_endpoint || "/fscmRestApi/resources/11.13.18.05/standardReceipts";
+    document.getElementById("setting-erp-resource-endpoint").value = erp.resource_endpoint || "/Final_Discharge_Effluent/";
+    const erpUtilResEl = document.getElementById("setting-erp-utility-resource-endpoint");
+    if (erpUtilResEl) erpUtilResEl.value = erp.utility_resource_endpoint || "/production_utilities_consumption/";
     document.getElementById("setting-erp-http-method").value = erp.http_method || "POST";
     document.getElementById("setting-erp-dry-run").checked = !!erp.dry_run;
 
@@ -2967,10 +3888,12 @@ async function loadSettingsIntoForm() {
     if (devPassEl) devPassEl.value = dev.password || "";
     if (devBearerEl) devBearerEl.value = dev.bearer_token || "";
     if (devResEl) devResEl.value = dev.resource_endpoint || "/Final_Discharge_Effluent/";
+    const devUtilResEl = document.getElementById("setting-oracledev-utility-resource-endpoint");
+    if (devUtilResEl) devUtilResEl.value = dev.utility_resource_endpoint || "/production_utilities_consumption/";
     if (devMethodEl) devMethodEl.value = dev.http_method || "POST";
     if (devDryEl) devDryEl.checked = !!dev.dry_run;
 
-    // J5 Inbound Message Settings (Hexagon Smart Cloud)
+    // J5 Inbound Message Settings (Octave)
     const j5 = currentSettings.j5_endpoint || {};
     const j5EnabledEl = document.getElementById("setting-j5-enabled");
     const j5UrlEl = document.getElementById("setting-j5-url");
@@ -2986,6 +3909,22 @@ async function loadSettingsIntoForm() {
     if (j5TenantEl) j5TenantEl.value = j5.tenant_id || "JZNOT1742577235_TST";
     if (j5TimeoutEl) j5TimeoutEl.value = j5.timeout_seconds || 15;
 
+    // Octave Dev Settings
+    const j5dev = currentSettings.j5dev_endpoint || {};
+    const j5devEnabledEl = document.getElementById("setting-j5dev-enabled");
+    const j5devUrlEl = document.getElementById("setting-j5dev-url");
+    const j5devUserEl = document.getElementById("setting-j5dev-username");
+    const j5devPassEl = document.getElementById("setting-j5dev-password");
+    const j5devTenantEl = document.getElementById("setting-j5dev-tenant-id");
+    const j5devTimeoutEl = document.getElementById("setting-j5dev-timeout");
+
+    if (j5devEnabledEl) j5devEnabledEl.checked = j5dev.enabled !== undefined ? !!j5dev.enabled : false;
+    if (j5devUrlEl) j5devUrlEl.value = j5dev.url || "";
+    if (j5devUserEl) j5devUserEl.value = j5dev.username || "";
+    if (j5devPassEl) j5devPassEl.value = j5dev.password || "";
+    if (j5devTenantEl) j5devTenantEl.value = j5dev.tenant_id || "";
+    if (j5devTimeoutEl) j5devTimeoutEl.value = j5dev.timeout_seconds || 15;
+
     // Pipeline Settings
     document.getElementById("setting-pipeline-interval").value = pipe.interval_seconds || 30;
     const autoDispatchEl = document.getElementById("setting-pipeline-auto-dispatch");
@@ -2995,6 +3934,8 @@ async function loadSettingsIntoForm() {
     if (autoJ5El) autoJ5El.checked = autoJ5Map;
     const mapAutoJ5El = document.getElementById("mapping-auto-create-j5-checkbox");
     if (mapAutoJ5El) mapAutoJ5El.checked = autoJ5Map;
+    const skipParamsEl = document.getElementById("setting-skip-parameters");
+    if (skipParamsEl) skipParamsEl.value = pipe.skip_parameters || "j5, j5dev, oracle, oracledev, endpoint, environment";
 
     // Endpoint Security Settings
     const sec = currentSettings.endpoint_security || {};
@@ -3489,7 +4430,8 @@ function collectSettingsFromForm() {
       username: document.getElementById("setting-erp-username").value.trim(),
       password: document.getElementById("setting-erp-password").value,
       bearer_token: document.getElementById("setting-erp-bearer-token").value.trim(),
-      resource_endpoint: document.getElementById("setting-erp-resource-endpoint").value.trim(),
+      resource_endpoint: document.getElementById("setting-erp-resource-endpoint").value.trim() || "/Final_Discharge_Effluent/",
+      utility_resource_endpoint: document.getElementById("setting-erp-utility-resource-endpoint") ? document.getElementById("setting-erp-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
       http_method: document.getElementById("setting-erp-http-method").value,
       dry_run: document.getElementById("setting-erp-dry-run").checked,
       custom_headers: {
@@ -3510,6 +4452,7 @@ function collectSettingsFromForm() {
       password: document.getElementById("setting-oracledev-password") ? document.getElementById("setting-oracledev-password").value : "",
       bearer_token: document.getElementById("setting-oracledev-bearer-token") ? document.getElementById("setting-oracledev-bearer-token").value.trim() : "",
       resource_endpoint: document.getElementById("setting-oracledev-resource-endpoint") ? document.getElementById("setting-oracledev-resource-endpoint").value.trim() : "/Final_Discharge_Effluent/",
+      utility_resource_endpoint: document.getElementById("setting-oracledev-utility-resource-endpoint") ? document.getElementById("setting-oracledev-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
       http_method: document.getElementById("setting-oracledev-http-method") ? document.getElementById("setting-oracledev-http-method").value : "POST",
       dry_run: document.getElementById("setting-oracledev-dry-run") ? document.getElementById("setting-oracledev-dry-run").checked : false,
       custom_headers: {
@@ -3520,18 +4463,28 @@ function collectSettingsFromForm() {
     },
     j5_endpoint: {
       enabled: document.getElementById("setting-j5-enabled") ? document.getElementById("setting-j5-enabled").checked : true,
-      url: document.getElementById("setting-j5-url") ? document.getElementById("setting-j5-url").value.trim() : "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+      url: document.getElementById("setting-j5-url") ? document.getElementById("setting-j5-url").value.trim() : "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
       auth_type: "basic",
       username: document.getElementById("setting-j5-username") ? document.getElementById("setting-j5-username").value.trim() : "HIRUJR_JZNOT1742577235_TST",
       password: document.getElementById("setting-j5-password") ? document.getElementById("setting-j5-password").value : "kah4YAH!bvm-vkt_jzd",
       tenant_id: document.getElementById("setting-j5-tenant-id") ? document.getElementById("setting-j5-tenant-id").value.trim() : "JZNOT1742577235_TST",
       timeout_seconds: parseInt(document.getElementById("setting-j5-timeout")?.value, 10) || 15
     },
+    j5dev_endpoint: {
+      enabled: document.getElementById("setting-j5dev-enabled") ? document.getElementById("setting-j5dev-enabled").checked : false,
+      url: document.getElementById("setting-j5dev-url") ? document.getElementById("setting-j5dev-url").value.trim() : "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
+      auth_type: "basic",
+      username: document.getElementById("setting-j5dev-username") ? document.getElementById("setting-j5dev-username").value.trim() : "",
+      password: document.getElementById("setting-j5dev-password") ? document.getElementById("setting-j5dev-password").value : "",
+      tenant_id: document.getElementById("setting-j5dev-tenant-id") ? document.getElementById("setting-j5dev-tenant-id").value.trim() : "",
+      timeout_seconds: parseInt(document.getElementById("setting-j5dev-timeout")?.value, 10) || 15
+    },
     pipeline: {
       interval_seconds: parseInt(document.getElementById("setting-pipeline-interval").value, 10) || 30,
       ingestion_mode: document.querySelector('input[name="setting-ingestion-mode"]:checked')?.value || "endpoint",
       auto_dispatch: document.getElementById("setting-pipeline-auto-dispatch") ? document.getElementById("setting-pipeline-auto-dispatch").checked : true,
       auto_create_j5_mapping: document.getElementById("setting-auto-create-j5-mapping") ? document.getElementById("setting-auto-create-j5-mapping").checked : true,
+      skip_parameters: document.getElementById("setting-skip-parameters") ? document.getElementById("setting-skip-parameters").value.trim() : "j5, j5dev, oracle, oracledev, endpoint, environment",
       auto_start: currentSettings?.pipeline?.auto_start !== undefined ? currentSettings.pipeline.auto_start : true,
       max_history_items: 100
     },
@@ -3760,6 +4713,59 @@ function toggleJ5PasswordVisibility() {
 }
 window.toggleJ5PasswordVisibility = toggleJ5PasswordVisibility;
 
+async function handleTestJ5DevSettings() {
+  const cfg = collectSettingsFromForm().j5dev_endpoint;
+  const box = document.getElementById("j5dev-test-result-box");
+  if (!box) return;
+  box.style.display = "block";
+  box.className = "error-console";
+  box.innerHTML = "Testing connection to Octave Dev Cloud endpoint with Basic Authentication...";
+
+  try {
+    const res = await fetch("/api/settings/test-j5dev", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg)
+    });
+    const result = await res.json();
+    if (result.success) {
+      box.className = "error-console";
+      box.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ ${escapeHtml(result.message)}</span>\nLatency: ${result.latency_ms}ms\nHTTP Status: ${result.status_code}\nEndpoint: ${escapeHtml(result.endpoint_tested || cfg.url)}`;
+      showToast("Octave Dev endpoint connected successfully!", "success");
+    } else {
+      box.className = "error-console danger";
+      let text = `<span style="color: var(--danger); font-weight: bold;">✕ Octave Dev Connection Test Failed</span>\nMessage: ${escapeHtml(result.message)}`;
+      if (result.status_code) {
+        text += `\nHTTP Status: ${result.status_code}`;
+      }
+      if (result.endpoint_tested) {
+        text += `\nTested Endpoint: ${escapeHtml(result.endpoint_tested)}`;
+      }
+      text += `\n\n${escapeHtml(result.error || '')}`;
+      box.innerHTML = text;
+      showToast("Failed to connect to Octave Dev endpoint", "danger");
+    }
+  } catch (e) {
+    box.className = "error-console danger";
+    box.innerHTML = `Request Exception: ${escapeHtml(e.message)}`;
+  }
+}
+window.handleTestJ5DevSettings = handleTestJ5DevSettings;
+
+function toggleJ5DevPasswordVisibility() {
+  const input = document.getElementById("setting-j5dev-password");
+  const btn = document.getElementById("btn-toggle-j5dev-password");
+  if (!input || !btn) return;
+  if (input.type === "password") {
+    input.type = "text";
+    btn.textContent = "Hide";
+  } else {
+    input.type = "password";
+    btn.textContent = "Show";
+  }
+}
+window.toggleJ5DevPasswordVisibility = toggleJ5DevPasswordVisibility;
+
 // ------------------------------------------------------------
 // Storage Files Cleanup & Production Pre-Flight Handlers
 // ------------------------------------------------------------
@@ -3880,4 +4886,644 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+
+// ============================================================
+// 7. BULK HISTORICAL DATA UPLOAD CONTROLLER
+// ============================================================
+let bulkWorkbook = null;
+let bulkActiveSheetIndex = 0;
+let bulkIsAllSheets = false;
+let bulkIsRunning = false;
+let bulkIsPaused = false;
+let bulkCancelRequested = false;
+
+function initBulkUpload() {
+  const dropzone = document.getElementById("bulk-dropzone");
+  const fileInput = document.getElementById("bulk-file-input");
+  const btnLoadSample = document.getElementById("btn-load-sample-file");
+  const btnStart = document.getElementById("btn-bulk-start");
+  const btnPause = document.getElementById("btn-bulk-pause");
+  const btnResume = document.getElementById("btn-bulk-resume");
+  const btnCancel = document.getElementById("btn-bulk-cancel");
+  const btnPreviewJson = document.getElementById("btn-bulk-preview-json");
+  const btnClearLog = document.getElementById("btn-bulk-clear-log");
+
+  if (!dropzone || !fileInput) return;
+
+  // File selection triggers
+  dropzone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleBulkFileUpload(e.target.files[0]);
+    }
+  });
+
+  // Drag and drop
+  dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleBulkFileUpload(e.dataTransfer.files[0]);
+    }
+  });
+
+  // Load bundled sample file
+  btnLoadSample?.addEventListener("click", async () => {
+    btnLoadSample.disabled = true;
+    appendBulkConsoleLog("Loading bundled sample file 'Cloud Utility updated.xlsx' from server...", "info");
+    try {
+      const res = await fetch("/api/bulk-upload/load-sample", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        onBulkFileParsed(data);
+        showToast("Bundled sample 'Cloud Utility updated.xlsx' loaded successfully!", "success");
+      } else {
+        appendBulkConsoleLog("Failed to load sample: " + (data.detail || "File not found"), "error");
+        showToast("Error loading sample: " + (data.detail || "File not found"), "danger");
+      }
+    } catch (err) {
+      appendBulkConsoleLog("Network error loading sample: " + err.message, "error");
+      showToast("Network error: " + err.message, "danger");
+    } finally {
+      btnLoadSample.disabled = false;
+    }
+  });
+
+  // Column dropdown changes trigger preview refresh
+  ["bulk-col-timestamp", "bulk-col-tag", "bulk-col-description", "bulk-col-value", "bulk-col-uom"].forEach(id => {
+    document.getElementById(id)?.addEventListener("change", () => {
+      refreshBulkTablePreview();
+      const previewContainer = document.getElementById("bulk-payload-preview-container");
+      if (previewContainer && previewContainer.style.display !== "none") {
+        fetchBulkPayloadPreview();
+      }
+    });
+  });
+
+  // Target type change updates preview
+  document.getElementById("bulk-target-type")?.addEventListener("change", () => {
+    const previewContainer = document.getElementById("bulk-payload-preview-container");
+    if (previewContainer && previewContainer.style.display !== "none") {
+      fetchBulkPayloadPreview();
+    }
+  });
+
+  // Preview JSON button
+  btnPreviewJson?.addEventListener("click", () => {
+    const container = document.getElementById("bulk-payload-preview-container");
+    if (!container) return;
+    if (container.style.display === "none") {
+      container.style.display = "block";
+      fetchBulkPayloadPreview();
+    } else {
+      container.style.display = "none";
+    }
+  });
+
+  // Clear log button
+  btnClearLog?.addEventListener("click", () => {
+    const consoleEl = document.getElementById("bulk-console-log");
+    if (consoleEl) {
+      consoleEl.innerHTML = `
+        <div class="bulk-log-line">
+          <span class="bulk-log-time">${new Date().toLocaleTimeString()}:</span>
+          <span class="bulk-log-msg-info">Console cleared.</span>
+        </div>`;
+    }
+  });
+
+  // Execution buttons
+  btnStart?.addEventListener("click", startBulkUpload);
+  btnPause?.addEventListener("click", pauseBulkUpload);
+  btnResume?.addEventListener("click", resumeBulkUpload);
+  btnCancel?.addEventListener("click", cancelBulkUpload);
+}
+
+async function handleBulkFileUpload(file) {
+  if (!file) return;
+  const badge = document.getElementById("bulk-file-badge");
+  const meta = document.getElementById("bulk-loaded-file-meta");
+  if (badge) {
+    badge.style.display = "inline-flex";
+    badge.textContent = "Parsing " + file.name + "...";
+    badge.className = "badge badge-info";
+  }
+  appendBulkConsoleLog(`Uploading and parsing file '${file.name}' (${(file.size / 1024).toFixed(1)} KB)...`, "info");
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    let res = await fetch(`/api/bulk-upload/parse?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      body: formData
+    });
+    if (!res.ok) {
+      res = await fetch(`/api/bulk-upload/parse?filename=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file
+      });
+    }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      onBulkFileParsed(data);
+      showToast(`File '${file.name}' parsed successfully!`, "success");
+    } else {
+      const errMsg = (typeof data.detail === "object") ? JSON.stringify(data.detail) : (data.detail || "Unknown error");
+      appendBulkConsoleLog("File parsing failed: " + errMsg, "error");
+      showToast("Error parsing file: " + errMsg, "danger");
+      if (badge) {
+        badge.textContent = "Parse Failed";
+        badge.className = "badge badge-danger";
+      }
+    }
+  } catch (err) {
+    appendBulkConsoleLog("Network error parsing file: " + err.message, "error");
+    showToast("Network error parsing file: " + err.message, "danger");
+    if (badge) {
+      badge.textContent = "Error";
+      badge.className = "badge badge-danger";
+    }
+  }
+}
+
+function onBulkFileParsed(data) {
+  bulkWorkbook = data;
+  bulkActiveSheetIndex = 0;
+  bulkIsAllSheets = false;
+
+  const sheets = data.sheets || [];
+  const filename = data.filename || "Uploaded File";
+  const totalRows = data.total_rows || (sheets.reduce((acc, s) => acc + (s.total_rows || 0), 0));
+  const fileSizeKb = data.file_size ? (data.file_size / 1024).toFixed(1) + " KB" : "";
+
+  // Update Badge & Meta
+  const badge = document.getElementById("bulk-file-badge");
+  if (badge) {
+    badge.style.display = "inline-flex";
+    badge.textContent = `${filename} (${totalRows} rows)`;
+    badge.className = "badge badge-success";
+  }
+
+  const meta = document.getElementById("bulk-loaded-file-meta");
+  if (meta) {
+    meta.textContent = `${sheets.length} sheet(s)${fileSizeKb ? ' · ' + fileSizeKb : ''}`;
+  }
+
+  // Render Sheet Selection Pills
+  const sheetGroup = document.getElementById("bulk-sheet-selector-group");
+  const pillsContainer = document.getElementById("bulk-sheet-pills");
+  if (sheetGroup && pillsContainer) {
+    if (sheets.length > 1) {
+      sheetGroup.style.display = "block";
+      pillsContainer.innerHTML = "";
+
+      // Individual sheet pills
+      sheets.forEach((sheet, idx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `sheet-pill ${idx === 0 ? 'active' : ''}`;
+        btn.textContent = `${sheet.name} (${sheet.total_rows || (sheet.rows || []).length} rows)`;
+        btn.addEventListener("click", () => {
+          bulkIsAllSheets = false;
+          bulkActiveSheetIndex = idx;
+          updateSheetPillsActive();
+          renderBulkActiveSheet();
+        });
+        pillsContainer.appendChild(btn);
+      });
+
+      // "All Sheets" pill
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className = "sheet-pill";
+      allBtn.textContent = `All Sheets (${totalRows} total rows)`;
+      allBtn.addEventListener("click", () => {
+        bulkIsAllSheets = true;
+        updateSheetPillsActive();
+        renderBulkActiveSheet();
+      });
+      pillsContainer.appendChild(allBtn);
+    } else {
+      sheetGroup.style.display = "none";
+    }
+  }
+
+  // Reveal Cards
+  document.getElementById("bulk-mapping-card")?.style.setProperty("display", "block");
+  document.getElementById("bulk-preview-card")?.style.setProperty("display", "block");
+
+  // Render active sheet mapping & preview
+  renderBulkActiveSheet();
+
+  // Enable Start Button
+  const startBtn = document.getElementById("btn-bulk-start");
+  if (startBtn) {
+    startBtn.disabled = false;
+  }
+
+  // Update KPI Total
+  updateBulkKpis({ total: totalRows, processed: 0, succeeded: 0, failed: 0 });
+  appendBulkConsoleLog(`Loaded '${filename}' with ${sheets.length} sheet(s) and ${totalRows} telemetry rows. Ready to map and dispatch.`, "info");
+}
+
+function updateSheetPillsActive() {
+  const pillsContainer = document.getElementById("bulk-sheet-pills");
+  if (!pillsContainer) return;
+  const pills = pillsContainer.querySelectorAll(".sheet-pill");
+  pills.forEach((p, idx) => {
+    if (bulkIsAllSheets) {
+      p.classList.toggle("active", idx === pills.length - 1);
+    } else {
+      p.classList.toggle("active", idx === bulkActiveSheetIndex);
+    }
+  });
+}
+
+function getActiveSheetData() {
+  if (!bulkWorkbook || !bulkWorkbook.sheets || bulkWorkbook.sheets.length === 0) return null;
+  return bulkWorkbook.sheets[bulkActiveSheetIndex] || bulkWorkbook.sheets[0];
+}
+
+function renderBulkActiveSheet() {
+  const sheet = getActiveSheetData();
+  if (!sheet) return;
+
+  const headers = sheet.headers || [];
+  const detected = sheet.detected_columns || {};
+
+  // Populate Mapping Dropdowns
+  const mappings = [
+    { id: "bulk-col-timestamp", role: "timestamp", required: true },
+    { id: "bulk-col-tag", role: "tag", required: true },
+    { id: "bulk-col-description", role: "description", required: false },
+    { id: "bulk-col-value", role: "value", required: true },
+    { id: "bulk-col-uom", role: "uom", required: false }
+  ];
+
+  mappings.forEach(m => {
+    const sel = document.getElementById(m.id);
+    if (!sel) return;
+    sel.innerHTML = "";
+    if (!m.required) {
+      const optEmpty = document.createElement("option");
+      optEmpty.value = "";
+      optEmpty.textContent = "-- None / Not Mapped --";
+      sel.appendChild(optEmpty);
+    }
+
+    const detectedCol = detected[m.role];
+    headers.forEach(h => {
+      const opt = document.createElement("option");
+      opt.value = h;
+      opt.textContent = h + (h === detectedCol ? " (Auto-detected)" : "");
+      if (h === detectedCol) {
+        opt.selected = true;
+      }
+      sel.appendChild(opt);
+    });
+  });
+
+  // Update Preview Table
+  refreshBulkTablePreview();
+
+  // Update Sheet Title in Preview
+  const titleEl = document.getElementById("bulk-preview-sheet-title");
+  if (titleEl) {
+    if (bulkIsAllSheets) {
+      titleEl.textContent = "— All Sheets Combined";
+    } else {
+      titleEl.textContent = `— Sheet '${sheet.name}'`;
+    }
+  }
+
+  // Update KPI Total for selection
+  const rowCount = bulkIsAllSheets ? bulkWorkbook.total_rows : (sheet.total_rows || (sheet.rows || []).length);
+  updateBulkKpis({ total: rowCount, processed: 0, succeeded: 0, failed: 0 });
+}
+
+function getCurrentColumnMapping() {
+  return {
+    timestamp: document.getElementById("bulk-col-timestamp")?.value || "",
+    tag: document.getElementById("bulk-col-tag")?.value || "",
+    description: document.getElementById("bulk-col-description")?.value || "",
+    value: document.getElementById("bulk-col-value")?.value || "",
+    uom: document.getElementById("bulk-col-uom")?.value || ""
+  };
+}
+
+function refreshBulkTablePreview() {
+  const sheet = getActiveSheetData();
+  if (!sheet) return;
+
+  const headers = sheet.headers || [];
+  const rows = (sheet.rows || []).slice(0, 5);
+  const thead = document.getElementById("bulk-preview-thead");
+  const tbody = document.getElementById("bulk-preview-tbody");
+  const badgeCount = document.getElementById("bulk-preview-row-count");
+
+  if (badgeCount) {
+    badgeCount.textContent = `${sheet.total_rows || (sheet.rows || []).length} rows (previewing first ${rows.length})`;
+  }
+
+  if (thead) {
+    thead.innerHTML = `<tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
+  }
+
+  if (tbody) {
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${headers.length}" style="text-align: center; color: var(--ink-secondary);">No data rows</td></tr>`;
+    } else {
+      tbody.innerHTML = rows.map(r => {
+        return `<tr>${headers.map(h => `<td>${escapeHtml(r[h] !== undefined && r[h] !== null ? r[h] : '')}</td>`).join("")}</tr>`;
+      }).join("");
+    }
+  }
+}
+
+async function fetchBulkPayloadPreview() {
+  const sheet = getActiveSheetData();
+  if (!sheet || !sheet.rows || sheet.rows.length === 0) return;
+
+  const targetType = document.getElementById("bulk-target-type")?.value || "oracle_utility";
+  const colMapping = getCurrentColumnMapping();
+  const sampleRow = sheet.rows[0];
+
+  const preEl = document.getElementById("bulk-payload-preview-json");
+  if (preEl) {
+    preEl.textContent = "Generating payload preview...";
+  }
+
+  try {
+    const res = await fetch("/api/bulk-upload/preview-payload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_type: targetType,
+        row: sampleRow,
+        column_mapping: colMapping
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.success && preEl) {
+      preEl.textContent = JSON.stringify(data.destination_payload, null, 2);
+    } else if (preEl) {
+      preEl.textContent = "Error generating preview: " + (data.detail || "Unknown error");
+    }
+  } catch (err) {
+    if (preEl) preEl.textContent = "Network error: " + err.message;
+  }
+}
+
+function updateBulkKpis(stats) {
+  if (stats.total !== undefined) {
+    const el = document.getElementById("bulk-kpi-total");
+    if (el) el.textContent = stats.total;
+  }
+  if (stats.processed !== undefined) {
+    const el = document.getElementById("bulk-kpi-processed");
+    if (el) el.textContent = stats.processed;
+  }
+  if (stats.succeeded !== undefined) {
+    const el = document.getElementById("bulk-kpi-succeeded");
+    if (el) el.textContent = stats.succeeded;
+  }
+  if (stats.failed !== undefined) {
+    const el = document.getElementById("bulk-kpi-failed");
+    if (el) el.textContent = stats.failed;
+  }
+}
+
+function appendBulkConsoleLog(msg, type = "info") {
+  const consoleEl = document.getElementById("bulk-console-log");
+  if (!consoleEl) return;
+
+  const timeStr = new Date().toLocaleTimeString();
+  const line = document.createElement("div");
+  line.className = "bulk-log-line";
+
+  let msgClass = "bulk-log-msg-info";
+  if (type === "success") msgClass = "bulk-log-msg-success";
+  if (type === "error") msgClass = "bulk-log-msg-error";
+  if (type === "warn") msgClass = "bulk-log-msg-warn";
+
+  line.innerHTML = `
+    <span class="bulk-log-time">[${timeStr}]</span>
+    <span class="${msgClass}">${escapeHtml(msg)}</span>
+  `;
+  consoleEl.appendChild(line);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+async function startBulkUpload() {
+  if (bulkIsRunning) return;
+  if (!bulkWorkbook) {
+    showToast("Please load an Excel or CSV file first.", "warn");
+    return;
+  }
+
+  // Gather rows to transmit
+  let allRows = [];
+  if (bulkIsAllSheets) {
+    (bulkWorkbook.sheets || []).forEach(s => {
+      if (s.rows) allRows = allRows.concat(s.rows);
+    });
+  } else {
+    const sheet = getActiveSheetData();
+    if (sheet && sheet.rows) {
+      allRows = Array.from(sheet.rows);
+    }
+  }
+
+  if (allRows.length === 0) {
+    showToast("No telemetry rows found to upload.", "warn");
+    return;
+  }
+
+  const targetType = document.getElementById("bulk-target-type")?.value || "oracle_utility";
+  const overrideUrl = document.getElementById("bulk-override-url")?.value?.trim() || "";
+  const chunkSize = parseInt(document.getElementById("bulk-chunk-size")?.value || "25", 10);
+  const throttleDelay = parseInt(document.getElementById("bulk-throttle-delay")?.value || "100", 10);
+  const stageHistory = document.getElementById("bulk-stage-history")?.checked ?? true;
+  const dryRun = document.getElementById("bulk-dry-run")?.checked ?? false;
+  const colMapping = getCurrentColumnMapping();
+
+  // Validate mapping
+  if (!colMapping.timestamp || !colMapping.tag || !colMapping.value) {
+    showToast("Please map Timestamp, Tag, and Value columns before starting.", "danger");
+    return;
+  }
+
+  // Execution state
+  bulkIsRunning = true;
+  bulkIsPaused = false;
+  bulkCancelRequested = false;
+
+  // Toggle buttons
+  document.getElementById("btn-bulk-start")?.style.setProperty("display", "none");
+  document.getElementById("btn-bulk-pause")?.style.setProperty("display", "inline-flex");
+  document.getElementById("btn-bulk-resume")?.style.setProperty("display", "none");
+  document.getElementById("btn-bulk-cancel")?.style.setProperty("display", "inline-flex");
+
+  const total = allRows.length;
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  updateBulkKpis({ total, processed: 0, succeeded: 0, failed: 0 });
+  updateBulkProgress(0, total, "Starting bulk upload...");
+
+  appendBulkConsoleLog(`Starting transmission of ${total} telemetry rows to ${targetType}${dryRun ? ' [DRY RUN SIMULATION]' : ''}...`, "info");
+
+  // Chunk processing
+  const totalChunks = Math.ceil(total / chunkSize);
+
+  for (let c = 0; c < totalChunks; c++) {
+    // Check cancel
+    if (bulkCancelRequested) {
+      appendBulkConsoleLog("Bulk upload cancelled by user.", "warn");
+      showToast("Bulk upload cancelled.", "warn");
+      break;
+    }
+
+    // Check pause
+    while (bulkIsPaused && !bulkCancelRequested) {
+      updateBulkProgress(processed, total, "Upload paused");
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    if (bulkCancelRequested) break;
+
+    const startIdx = c * chunkSize;
+    const endIdx = Math.min(startIdx + chunkSize, total);
+    const chunkRows = allRows.slice(startIdx, endIdx);
+
+    updateBulkProgress(processed, total, `Sending batch ${c + 1} of ${totalChunks} (${chunkRows.length} rows)...`);
+
+    try {
+      const res = await fetch("/api/bulk-upload/dispatch-chunk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_type: targetType,
+          override_url: overrideUrl,
+          dry_run: dryRun,
+          stage_history: stageHistory,
+          column_mapping: colMapping,
+          rows: chunkRows
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        const batchSucc = data.succeeded || 0;
+        const batchFail = data.failed || 0;
+        succeeded += batchSucc;
+        failed += batchFail;
+        processed += chunkRows.length;
+
+        updateBulkKpis({ processed, succeeded, failed });
+        updateBulkProgress(processed, total, `Batch ${c + 1}/${totalChunks} complete`);
+
+        const msgType = batchFail === 0 ? "success" : "warn";
+        appendBulkConsoleLog(
+          `Batch ${c + 1}/${totalChunks} dispatched: ${batchSucc} succeeded, ${batchFail} failed${data.target_endpoint ? ' -> ' + data.target_endpoint : ''}`,
+          msgType
+        );
+
+        // If batch had individual errors, log first error detail
+        if (batchFail > 0 && Array.isArray(data.results)) {
+          const firstErr = data.results.find(r => r.status !== "SUCCESS");
+          if (firstErr) {
+            appendBulkConsoleLog(`  Error sample (${firstErr.tag || 'row'}): ${firstErr.message || firstErr.error}`, "error");
+          }
+        }
+      } else {
+        failed += chunkRows.length;
+        processed += chunkRows.length;
+        updateBulkKpis({ processed, succeeded, failed });
+        appendBulkConsoleLog(`Batch ${c + 1}/${totalChunks} HTTP error: ${data.detail || 'Server error'}`, "error");
+      }
+    } catch (err) {
+      failed += chunkRows.length;
+      processed += chunkRows.length;
+      updateBulkKpis({ processed, succeeded, failed });
+      appendBulkConsoleLog(`Batch ${c + 1}/${totalChunks} network error: ${err.message}`, "error");
+    }
+
+    // Throttle delay between chunks
+    if (throttleDelay > 0 && c < totalChunks - 1 && !bulkCancelRequested) {
+      await new Promise(r => setTimeout(r, throttleDelay));
+    }
+  }
+
+  // Done execution
+  bulkIsRunning = false;
+  bulkIsPaused = false;
+  bulkCancelRequested = false;
+
+  // Reset buttons
+  document.getElementById("btn-bulk-start")?.style.setProperty("display", "inline-flex");
+  document.getElementById("btn-bulk-pause")?.style.setProperty("display", "none");
+  document.getElementById("btn-bulk-resume")?.style.setProperty("display", "none");
+  document.getElementById("btn-bulk-cancel")?.style.setProperty("display", "none");
+
+  const finalStatus = failed === 0 ? `Completed: all ${succeeded} rows uploaded successfully!` : `Completed with issues: ${succeeded} succeeded, ${failed} failed`;
+  updateBulkProgress(processed, total, finalStatus);
+  appendBulkConsoleLog(finalStatus, failed === 0 ? "success" : "warn");
+
+  if (failed === 0) {
+    showToast(`Bulk upload complete! ${succeeded} rows transmitted.`, "success");
+  } else {
+    showToast(`Bulk upload completed with ${failed} failures (${succeeded} succeeded).`, "warn");
+  }
+
+  // Refresh dashboard and history if records were staged
+  if (stageHistory) {
+    loadDashboardData();
+  }
+}
+
+function updateBulkProgress(processed, total, statusText) {
+  const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const statusEl = document.getElementById("bulk-progress-status");
+  const percentEl = document.getElementById("bulk-progress-percent");
+  const fillEl = document.getElementById("bulk-progress-fill");
+
+  if (statusEl && statusText) statusEl.textContent = statusText;
+  if (percentEl) percentEl.textContent = `${percent}%`;
+  if (fillEl) fillEl.style.width = `${percent}%`;
+}
+
+function pauseBulkUpload() {
+  if (!bulkIsRunning) return;
+  bulkIsPaused = true;
+  document.getElementById("btn-bulk-pause")?.style.setProperty("display", "none");
+  document.getElementById("btn-bulk-resume")?.style.setProperty("display", "inline-flex");
+  appendBulkConsoleLog("Upload paused by user.", "warn");
+}
+
+function resumeBulkUpload() {
+  if (!bulkIsRunning) return;
+  bulkIsPaused = false;
+  document.getElementById("btn-bulk-pause")?.style.setProperty("display", "inline-flex");
+  document.getElementById("btn-bulk-resume")?.style.setProperty("display", "none");
+  appendBulkConsoleLog("Upload resumed.", "info");
+}
+
+function cancelBulkUpload() {
+  if (!bulkIsRunning) return;
+  bulkCancelRequested = true;
+  bulkIsPaused = false;
+  appendBulkConsoleLog("Cancelling upload...", "warn");
 }

@@ -6,24 +6,32 @@ and single-page web UI.
 from __future__ import annotations
 import os
 from datetime import datetime, timezone
+import uuid
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.config import load_settings, save_settings, load_mappings, save_mappings
+from app.config import (
+    load_settings, save_settings, load_mappings, save_mappings,
+    load_field_mappings, save_field_mappings,
+    DEFAULT_ORACLE_FIELD_MAPPINGS, DEFAULT_OCTAVE_FIELD_MAPPINGS
+)
+from app.field_mapper import build_destination_payload
 from app.pi_client import PIWebApiClient
-from app.oracle_erp_client import OracleERPCloudClient
+from app.oracle_erp_client import OracleERPCloudClient, sanitize_endpoint_url, build_oracle_endpoint_url
 from app.j5_client import J5Client, DEFAULT_J5_URL
 from app.pipeline import pipeline_engine
 from app.storage import (
     get_pull_history,
     get_publish_history,
+    record_publish_event,
     get_logs,
     add_log,
     get_received_deliveries,
     get_delivery_by_id,
+    record_received_deliveries_batch,
     delete_received_delivery,
     clear_received_deliveries,
     clear_pull_history,
@@ -38,6 +46,7 @@ from app.delivery_handler import (
     validate_delivery_security
 )
 from app.mock_erp_server import mock_erp_manager
+from app.excel_parser import parse_telemetry_file, extract_standard_telemetry_row, parse_upload_request_body
 from app.version import __version__, APP_NAME, GITHUB_REPO
 
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
@@ -391,10 +400,21 @@ def test_oracledev_connection(config: Dict[str, Any] = None):
 
 @app.post("/api/settings/test-j5")
 def test_j5_connection(config: Dict[str, Any] = None):
-    """Test connection to J5 Inbound Message API endpoint using HTTP Basic Authentication."""
+    """Test connection to Octave Inbound Message API endpoint using HTTP Basic Authentication."""
     if not config:
         stored = load_settings()
         config = stored.get("j5_endpoint", {})
+    client = J5Client(config)
+    result = client.test_connection()
+    return result
+
+
+@app.post("/api/settings/test-j5dev")
+def test_j5dev_connection(config: Dict[str, Any] = None):
+    """Test connection to Octave Dev Inbound Message API endpoint using HTTP Basic Authentication."""
+    if not config:
+        stored = load_settings()
+        config = stored.get("j5dev_endpoint", {})
     client = J5Client(config)
     result = client.test_connection()
     return result
@@ -415,6 +435,48 @@ def update_attribute_mappings(mappings: List[Dict[str, Any]]):
     return {"success": True, "count": len(mappings)}
 
 
+@app.get("/api/field-mappings")
+def get_field_mappings():
+    """Retrieve configurable payload field/parameter schema mappings for Oracle and Octave."""
+    return load_field_mappings()
+
+
+@app.post("/api/field-mappings")
+def update_field_mappings(mappings: Dict[str, Any]):
+    """Update configurable payload field/parameter schema mappings for Oracle and Octave."""
+    save_field_mappings(mappings)
+    ora_cnt = len(mappings.get("oracle", [])) if isinstance(mappings.get("oracle"), list) else 0
+    oct_cnt = len(mappings.get("octave", [])) if isinstance(mappings.get("octave"), list) else 0
+    add_log("INFO", "CONFIG", f"Saved schema field mappings: {ora_cnt} Oracle parameters, {oct_cnt} Octave parameters")
+    return {"success": True, "oracle_count": ora_cnt, "octave_count": oct_cnt}
+
+
+@app.post("/api/field-mappings/reset")
+def reset_field_mappings(target: Optional[str] = None):
+    """Reset payload parameter mappings for Prod and Dev to factory defaults."""
+    current = load_field_mappings()
+    if target in ("oracle_prod", "oracle"):
+        current["oracle_prod"] = [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS]
+    elif target in ("oracle_dev", "oracledev"):
+        current["oracle_dev"] = [dict(x) for x in DEFAULT_ORACLE_DEV_FIELD_MAPPINGS]
+    elif target in ("octave_prod", "octave", "j5"):
+        current["octave_prod"] = [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS]
+    elif target in ("octave_dev", "octavedev", "j5dev"):
+        current["octave_dev"] = [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS]
+    else:
+        current = {
+            "oracle_prod": [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS],
+            "oracle_dev": [dict(x) for x in DEFAULT_ORACLE_DEV_FIELD_MAPPINGS],
+            "octave_prod": [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS],
+            "octave_dev": [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS],
+            "oracle": [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS],
+            "octave": [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS]
+        }
+    save_field_mappings(current)
+    add_log("INFO", "CONFIG", f"Reset schema parameter mappings for {target or 'all environments'}.")
+    return {"success": True, "field_mappings": current}
+
+
 @app.get("/api/pi/browse")
 def browse_af(path: str = ""):
     """Browse AF hierarchy (servers, databases, elements, attributes)."""
@@ -426,7 +488,7 @@ def browse_af(path: str = ""):
 
 @app.post("/api/mappings/test-endpoint")
 def test_mapping_endpoint(data: Dict[str, Any]):
-    """Test connectivity to a specific destination endpoint URL (Oracle, Oracle Dev, or J5)."""
+    """Test connectivity to a specific destination endpoint URL (Oracle, Oracle Dev, Octave, or Octave Dev)."""
     endpoint_url = (data.get("endpoint_url") or "").strip()
     if not endpoint_url:
         raise HTTPException(status_code=400, detail="Missing endpoint_url parameter.")
@@ -441,13 +503,22 @@ def test_mapping_endpoint(data: Dict[str, Any]):
             target_type = "oracle"
 
     stored = load_settings()
-    if target_type == "j5":
+    if target_type in ("j5", "octave"):
         j5_config = dict(stored.get("j5_endpoint", {}))
         if data.get("username"):
             j5_config["username"] = data.get("username")
         if data.get("password"):
             j5_config["password"] = data.get("password")
         client = J5Client(j5_config)
+        result = client.test_connection(test_url=endpoint_url)
+        return result
+    elif target_type in ("j5dev", "j5_dev", "octavedev", "octave_dev"):
+        j5dev_config = dict(stored.get("j5dev_endpoint", {}))
+        if data.get("username"):
+            j5dev_config["username"] = data.get("username")
+        if data.get("password"):
+            j5dev_config["password"] = data.get("password")
+        client = J5Client(j5dev_config)
         result = client.test_connection(test_url=endpoint_url)
         return result
     elif target_type in ("oracledev", "oracle_dev"):
@@ -470,13 +541,14 @@ def test_mapping_endpoint(data: Dict[str, Any]):
 
 @app.get("/api/mappings/preview")
 def preview_erp_payload():
-    """Generate a preview of destination payloads (Oracle, Oracle Dev, and J5) based on currently configured mappings."""
+    """Generate a preview of destination payloads (Oracle, Oracle Dev, Octave, and Octave Dev) based on currently configured mappings."""
     mappings = load_mappings()
     enabled = [m for m in mappings if m.get("enabled", True)]
     settings = load_settings()
     erp_cfg = settings.get("oracle_erp", {})
     oracledev_cfg = settings.get("oracledev", {})
     j5_cfg = settings.get("j5_endpoint", {})
+    j5dev_cfg = settings.get("j5dev_endpoint", {})
     now_iso = datetime.now(timezone.utc).isoformat()
     base_url = (erp_cfg.get("base_url") or "").rstrip("/")
     dev_base_url = (oracledev_cfg.get("base_url") or "").rstrip("/")
@@ -507,52 +579,69 @@ def preview_erp_payload():
         results_val = m.get("results") if m.get("results") is not None else ""
         uom_val = m.get("uom") if m.get("uom") is not None else (m.get("unit") or "")
 
-        ords_payload = {
+        sample_attr = {
+            "name": attr_name,
+            "value": sample_val,
             "timestamp": now_iso,
-            "tag": str(tag_val),
-            "description": str(desc_val),
-            "value": str(sample_val),
-            "limit": str(limit_val),
-            "results": str(results_val),
-            "uom": str(uom_val)
+            "quality": "Good",
+            "tag": tag_val,
+            "description": desc_val,
+            "limit": limit_val,
+            "results": results_val,
+            "uom": uom_val,
+            "AnalysisTime": now_iso,
+            "extra_fields": {
+                "AnalysisTime": now_iso
+            }
         }
+
+        ords_payload = build_destination_payload("oracle", sample_attr, mapping_rule=m, received_at=now_iso)
 
         for t_type in target_types:
             t_lower = str(t_type).strip().lower()
-            if t_lower == "j5":
+            if t_lower in ("j5", "octave"):
                 target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
-                sample_attr = {
-                    "name": attr_name,
-                    "value": sample_val,
-                    "timestamp": now_iso,
-                    "quality": "Good",
-                    "tag": tag_val,
-                    "description": desc_val,
-                    "limit": limit_val,
-                    "results": results_val
-                }
-                j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m)
+                j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m, target_type="j5")
                 tenant_id = j5_cfg.get("tenant_id") or "JZNOT1742577235_TST"
                 previews.append({
-                    "target_type": "J5 (Hexagon Smart Cloud)",
+                    "target_type": "Octave",
                     "target_endpoint": target_url,
                     "http_method": "POST",
                     "auth_type": "HTTP Basic Auth",
                     "headers": {
                         "Content-Type": "application/json",
                         "Accept": "application/json",
-                        "Authorization": "Basic [HIRUJR_JZNOT1742577235_TST:***]",
+                        "Authorization": f"Basic [{j5_cfg.get('username') or 'HIRUJR_JZNOT1742577235_TST'}:***]",
                         "X-Tenant-Id": tenant_id
                     },
                     "body": j5_payload
                 })
-            elif t_lower in ("oracledev", "oracle_dev"):
-                target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or (raw_target if "dev" in raw_target.lower() else None)
-                if not target_url:
-                    res_path = m.get("resource_endpoint") or oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
-                    target_url = f"{dev_base_url}/{res_path.lstrip('/')}" if dev_base_url else res_path
+            elif t_lower in ("j5dev", "j5_dev", "octavedev", "octave_dev"):
+                target_url = m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL
+                j5dev_payload = J5Client.build_j5_payload(sample_attr, mapping=m, target_type="j5dev")
+                tenant_id = j5dev_cfg.get("tenant_id") or "JZNOT1742577235_TST"
                 previews.append({
-                    "target_type": "Oracle Dev (ORDS)",
+                    "target_type": "Octave Dev",
+                    "target_endpoint": target_url,
+                    "http_method": "POST",
+                    "auth_type": "HTTP Basic Auth",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Authorization": f"Basic [{j5dev_cfg.get('username') or 'HIRUJR_JZNOT1742577235_TST'}:***]",
+                        "X-Tenant-Id": tenant_id
+                    },
+                    "body": j5dev_payload
+                })
+            elif t_lower in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
+                target_url = m.get("target_endpoint_url_dev_utility")
+                if not target_url:
+                    res_path = oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+                    target_url = build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else res_path
+                target_url = sanitize_endpoint_url(target_url)
+                dev_payload = build_destination_payload("oracledev_utility", sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": "Oracle Dev (Utility)",
                     "target_endpoint": target_url,
                     "http_method": oracledev_cfg.get("http_method", "POST"),
                     "auth_type": f"Oracle Dev ({oracledev_cfg.get('auth_type', 'none')})",
@@ -560,27 +649,65 @@ def preview_erp_payload():
                         "Content-Type": "application/json",
                         "Accept": "application/json"
                     },
-                    "body": ords_payload
+                    "body": dev_payload
+                })
+            elif t_lower in ("oracledev", "oracle_dev", "oracledev_effluent", "oracle_dev_effluent"):
+                target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or (raw_target if "dev" in raw_target.lower() else None)
+                if not target_url:
+                    res_path = m.get("resource_endpoint") or oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+                    target_url = build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else res_path
+                target_url = sanitize_endpoint_url(target_url)
+                dev_payload = build_destination_payload("oracledev", sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": "Oracle Dev",
+                    "target_endpoint": target_url,
+                    "http_method": oracledev_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Dev ({oracledev_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": dev_payload
+                })
+            elif t_lower in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
+                target_url = m.get("target_endpoint_url_oracle_utility")
+                if not target_url:
+                    res_path = erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+                    target_url = build_oracle_endpoint_url(base_url, res_path) if base_url else res_path
+                target_url = sanitize_endpoint_url(target_url)
+                prod_payload = build_destination_payload("oracle_utility", sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": "Oracle Prod (Utility)",
+                    "target_endpoint": target_url,
+                    "http_method": erp_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Prod ({erp_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": prod_payload
                 })
             else:
                 target_url = m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None)
                 if not target_url:
                     res_path = m.get("resource_endpoint") or erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
-                    target_url = f"{base_url}/{res_path.lstrip('/')}" if base_url else res_path
+                    target_url = build_oracle_endpoint_url(base_url, res_path) if base_url else res_path
+                target_url = sanitize_endpoint_url(target_url)
+                prod_payload = build_destination_payload("oracle", sample_attr, mapping_rule=m, received_at=now_iso)
                 previews.append({
-                    "target_type": "Oracle Production (ORDS)",
+                    "target_type": "Oracle Prod",
                     "target_endpoint": target_url,
                     "http_method": erp_cfg.get("http_method", "POST"),
-                    "auth_type": f"Oracle ({erp_cfg.get('auth_type', 'none')})",
+                    "auth_type": f"Oracle Prod ({erp_cfg.get('auth_type', 'none')})",
                     "headers": {
                         "Content-Type": "application/json",
                         "Accept": "application/json"
                     },
-                    "body": ords_payload
+                    "body": prod_payload
                 })
 
     return {
-        "mode": "Destination Endpoints (Multicast Dispatch: Oracle, Oracle Dev, J5)",
+        "mode": "Destination Endpoints (Multicast Dispatch: Oracle, Oracle Dev, Octave, Octave Dev)",
         "mapped_items_count": len(previews),
         "dispatches": previews
     }
@@ -692,6 +819,344 @@ def get_mock_erp_transactions(limit: int = 20):
     from app.mock_erp_server import _received_transactions
     return {"total": len(_received_transactions), "items": _received_transactions[:limit]}
 
+
+
+# -------------------------------------------------------------
+# Bulk Historical Data Upload API (.xlsx / .csv)
+# -------------------------------------------------------------
+@app.post("/api/bulk-upload/parse")
+async def bulk_upload_parse(request: Request, filename: Optional[str] = None):
+    """
+    Parse uploaded Excel (.xlsx) or CSV telemetry file and return sheets, columns, and sample preview.
+    Zero-dependency implementation: Does NOT require python-multipart to boot or parse uploads.
+    """
+    try:
+        content_type = request.headers.get("content-type", "")
+        file_bytes = b""
+        actual_filename = filename or ""
+
+        # Option A: Try standard form parsing if python-multipart happens to be installed
+        try:
+            form = await request.form()
+            for key, val in form.items():
+                if hasattr(val, "read") and hasattr(val, "filename"):
+                    file_bytes = await val.read()
+                    actual_filename = val.filename or actual_filename
+                    break
+        except Exception:
+            # Fallback to Option B: Zero-dependency stdlib parser
+            pass
+
+        # Option B: Zero-dependency stdlib parsing for raw binary stream or multipart
+        if not file_bytes:
+            raw_body = await request.body()
+            if not raw_body:
+                raise HTTPException(status_code=400, detail="Uploaded file payload is empty.")
+            file_bytes, detected_fn = parse_upload_request_body(raw_body, content_type, actual_filename)
+            if detected_fn:
+                actual_filename = detected_fn
+
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="No file content detected in upload request.")
+
+        final_filename = actual_filename or "uploaded_telemetry.xlsx"
+        parsed = parse_telemetry_file(file_bytes, filename=final_filename)
+        return {
+            "success": True,
+            "filename": final_filename,
+            "file_size": len(file_bytes),
+            **parsed
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(exc)}")
+
+
+@app.post("/api/bulk-upload/load-sample")
+def bulk_upload_load_sample():
+    """Load and parse the bundled sample file 'Cloud Utility updated.xlsx'."""
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "Cloud Utility updated.xlsx"),
+        os.path.join(os.path.dirname(__file__), "..", "Cloud Utility updated.xlsx"),
+        "Cloud Utility updated.xlsx"
+    ]
+    sample_path = None
+    for c in candidates:
+        if os.path.exists(c):
+            sample_path = c
+            break
+    if not sample_path:
+        raise HTTPException(status_code=404, detail="Sample file 'Cloud Utility updated.xlsx' not found on server.")
+    with open(sample_path, "rb") as f:
+        content = f.read()
+    parsed = parse_telemetry_file(content, filename="Cloud Utility updated.xlsx")
+    return {
+        "success": True,
+        "filename": "Cloud Utility updated.xlsx",
+        "file_size": len(content),
+        **parsed
+    }
+
+
+@app.get("/api/bulk-upload/sample-file")
+def bulk_upload_download_sample():
+    """Download the sample Excel template file."""
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "Cloud Utility updated.xlsx"),
+        os.path.join(os.path.dirname(__file__), "..", "Cloud Utility updated.xlsx"),
+        "Cloud Utility updated.xlsx"
+    ]
+    sample_path = None
+    for c in candidates:
+        if os.path.exists(c):
+            sample_path = c
+            break
+    if not sample_path:
+        raise HTTPException(status_code=404, detail="Sample file 'Cloud Utility updated.xlsx' not found.")
+    return FileResponse(
+        sample_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="Cloud Utility updated.xlsx"
+    )
+
+
+@app.post("/api/bulk-upload/preview-payload")
+def bulk_upload_preview_payload(data: Dict[str, Any]):
+    """Generate sample destination payload preview for a given row and mapping."""
+    target_type = (data.get("target_type") or "oracle_utility").strip().lower()
+    row = data.get("row") or {}
+    column_mapping = data.get("column_mapping") or {}
+    settings = load_settings()
+    skip_str = str(settings.get("pipeline", {}).get("skip_parameters", "j5, j5dev, oracle, oracledev") or "")
+    skip_params = {p.strip().lower() for p in skip_str.replace(";", ",").split(",") if p.strip()}
+    
+    std_row = extract_standard_telemetry_row(row, column_mapping)
+    row_ts = std_row.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    
+    if target_type in ("j5", "octave"):
+        payload = J5Client.build_j5_payload(std_row, mapping=None, skip_params=skip_params, received_at=row_ts)
+    elif target_type in ("j5dev", "octavedev", "j5_dev"):
+        payload = J5Client.build_j5_payload(std_row, mapping=None, skip_params=skip_params, received_at=row_ts)
+    else:
+        payload = build_destination_payload(
+            target_type=target_type,
+            source_attr=std_row,
+            mapping_rule=None,
+            received_at=row_ts,
+            skip_params=skip_params
+        )
+    return {
+        "success": True,
+        "target_type": target_type,
+        "standard_row": std_row,
+        "destination_payload": payload
+    }
+
+
+@app.post("/api/bulk-upload/dispatch-chunk")
+def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
+    """Dispatch a chunk/batch of parsed rows to the designated target destination."""
+    target_type = (data.get("target_type") or "oracle_utility").strip().lower()
+    override_url = (data.get("override_url") or data.get("target_url") or "").strip()
+    dry_run = bool(data.get("dry_run", False))
+    stage_history = bool(data.get("stage_history", True))
+    column_mapping = data.get("column_mapping") or {}
+    rows = data.get("rows") or []
+
+    if not rows:
+        return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
+
+    settings = load_settings()
+    erp_cfg = settings.get("oracle_erp", {})
+    oracledev_cfg = settings.get("oracledev", {})
+    j5_cfg = settings.get("j5_endpoint", {})
+    j5dev_cfg = settings.get("j5dev_endpoint", {})
+
+    skip_str = str(settings.get("pipeline", {}).get("skip_parameters", "j5, j5dev, oracle, oracledev") or "")
+    skip_params = {p.strip().lower() for p in skip_str.replace(";", ",").split(",") if p.strip()}
+
+    target_endpoint_url = ""
+    if target_type in ("j5", "octave"):
+        client = J5Client(j5_cfg)
+        target_endpoint_url = sanitize_endpoint_url(override_url or j5_cfg.get("url") or DEFAULT_J5_URL)
+    elif target_type in ("j5dev", "octavedev", "j5_dev"):
+        client = J5Client(j5dev_cfg)
+        target_endpoint_url = sanitize_endpoint_url(override_url or j5dev_cfg.get("url") or DEFAULT_J5_URL)
+    elif target_type in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
+        client = OracleERPCloudClient(oracledev_cfg)
+        def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or oracledev_cfg.get("base_url"))
+    elif target_type in ("oracledev", "oracle_dev", "oracledev_effluent"):
+        client = OracleERPCloudClient(oracledev_cfg)
+        def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or oracledev_cfg.get("base_url"))
+    elif target_type in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
+        client = OracleERPCloudClient(erp_cfg)
+        def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or erp_cfg.get("base_url"))
+    else:
+        client = OracleERPCloudClient(erp_cfg)
+        def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or erp_cfg.get("base_url"))
+
+    succeeded = 0
+    failed = 0
+    results = []
+    bulk_deliveries_to_stage = []
+
+    t_low = target_type.lower()
+    target_badge = "ORACLE_UTILITY" if "utility" in t_low and "dev" not in t_low else (
+        "ORACLEDEV_UTILITY" if "utility" in t_low and "dev" in t_low else (
+            "ORACLEDEV" if "dev" in t_low and "oracle" in t_low else (
+                "ORACLE" if "oracle" in t_low else (
+                    "J5DEV" if "dev" in t_low else "J5"
+                )
+            )
+        )
+    )
+
+    for row in rows:
+        try:
+            std_row = extract_standard_telemetry_row(row, column_mapping)
+            row_ts = std_row.get("timestamp") or datetime.now(timezone.utc).isoformat()
+
+            if target_type in ("j5", "octave", "j5dev", "octavedev", "j5_dev"):
+                payload = J5Client.build_j5_payload(std_row, mapping=None, skip_params=skip_params, received_at=row_ts)
+            else:
+                payload = build_destination_payload(
+                    target_type=target_type,
+                    source_attr=std_row,
+                    mapping_rule=None,
+                    received_at=row_ts,
+                    skip_params=skip_params
+                )
+
+            if dry_run:
+                pub_res = {
+                    "status": "SUCCESS",
+                    "http_code": 200,
+                    "message": "[DRY RUN] Telemetry validated successfully",
+                    "response_body": {"simulated": True, "payload": payload},
+                    "target_endpoint": target_endpoint_url
+                }
+            else:
+                pub_res = client.publish_data(payload, target_endpoint=target_endpoint_url)
+
+            is_success = (pub_res.get("status") == "SUCCESS")
+            if is_success:
+                succeeded += 1
+            else:
+                failed += 1
+
+            if stage_history:
+                pub_record = {
+                    "publish_id": str(uuid.uuid4())[:8],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": pub_res.get("status", "FAILED"),
+                    "message": f"Bulk Upload: {std_row.get('tag') or std_row.get('description') or std_row.get('name')} -> {pub_res.get('status')}",
+                    "record_count": 1,
+                    "target_endpoint": pub_res.get("target_endpoint") or target_endpoint_url,
+                    "http_code": pub_res.get("http_code"),
+                    "payload_sample": payload,
+                    "response_body": pub_res.get("response_body"),
+                    "error_detail": pub_res.get("error_detail")
+                }
+                record_publish_event(pub_record)
+
+                deliv_id = f"bulk-{str(uuid.uuid4())[:8]}"
+                bulk_deliveries_to_stage.append({
+                    "delivery_id": deliv_id,
+                    "received_at": datetime.now(timezone.utc).isoformat(),
+                    "client_ip": "Bulk Upload",
+                    "notification_name": f"Bulk: {std_row.get('description') or std_row.get('tag') or 'Telemetry'}",
+                    "event_type": "Bulk Upload",
+                    "target_path": f"\\\\BulkUpload\\\\" + str(target_type),
+                    "attribute_count": 1,
+                    "attributes_summary": [
+                        {
+                            "name": std_row.get("description") or std_row.get("tag") or "Bulk Telemetry",
+                            "tag": std_row.get("tag") or "",
+                            "description": std_row.get("description") or "",
+                            "value": std_row.get("value"),
+                            "uom": std_row.get("uom") or "",
+                            "timestamp": row_ts,
+                            "quality": std_row.get("quality") or "Good",
+                            "target_endpoint_url": pub_res.get("target_endpoint") or target_endpoint_url
+                        }
+                    ],
+                    "raw_payload": payload,
+                    "oracle_status": "DISPATCHED" if is_success else "FAILED",
+                    "oracle_dispatch": {
+                        "status": "DISPATCHED" if is_success else "FAILED",
+                        "http_code": pub_res.get("http_code"),
+                        "target_endpoint": pub_res.get("target_endpoint") or target_endpoint_url,
+                        "target_types": [target_badge],
+                        "message": pub_res.get("message") or ("Dispatched successfully" if is_success else "Dispatch failed"),
+                        "dispatched_at": datetime.now(timezone.utc).isoformat(),
+                        "items_count": 1,
+                        "erp_response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "dispatches": [
+                            {
+                                "target_type": target_type,
+                                "attribute_name": std_row.get("tag") or std_row.get("description") or "Bulk Upload",
+                                "target_endpoint": pub_res.get("target_endpoint") or target_endpoint_url,
+                                "status": pub_res.get("status"),
+                                "http_code": pub_res.get("http_code"),
+                                "payload": payload,
+                                "response": pub_res.get("response_body"),
+                                "error": pub_res.get("error_detail"),
+                                "message": pub_res.get("message")
+                            }
+                        ]
+                    }
+                })
+
+            results.append({
+                "tag": std_row.get("tag"),
+                "description": std_row.get("description"),
+                "timestamp": row_ts,
+                "value": std_row.get("value"),
+                "status": pub_res.get("status"),
+                "http_code": pub_res.get("http_code"),
+                "message": pub_res.get("message"),
+                "error": pub_res.get("error_detail")
+            })
+        except Exception as item_exc:
+            failed += 1
+            results.append({
+                "tag": row.get("Tag") or row.get("tag") or "UNKNOWN",
+                "description": row.get("Description") or row.get("description") or "",
+                "timestamp": None,
+                "value": None,
+                "status": "FAILED",
+                "http_code": None,
+                "message": f"Row processing error: {str(item_exc)}",
+                "error": str(item_exc)
+            })
+
+    if bulk_deliveries_to_stage:
+        try:
+            record_received_deliveries_batch(bulk_deliveries_to_stage)
+        except Exception:
+            pass
+
+    if not dry_run and rows:
+        add_log(
+            "INFO" if failed == 0 else "WARNING",
+            "BULK_UPLOAD",
+            f"Bulk upload batch: {succeeded}/{len(rows)} rows succeeded to {target_type} ({target_endpoint_url})"
+        )
+
+    return {
+        "total": len(rows),
+        "succeeded": succeeded,
+        "failed": failed,
+        "target_type": target_type,
+        "target_endpoint": target_endpoint_url,
+        "results": results
+    }
 
 # -------------------------------------------------------------
 # System Version, Patching & Auto-Update API (No Git Required)

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.2.5">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.7.1">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.2.5</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.1</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -27,6 +27,10 @@
         <button class="nav-tab" data-tab="history">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           Historical Data
+        </button>
+        <button class="nav-tab" data-tab="bulk-upload">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Bulk Upload
         </button>
         <button class="nav-tab" data-tab="mappings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3"></path><path d="m15 9 6-6"></path></svg>
@@ -362,7 +366,7 @@
             <thead>
               <tr>
                 <th style="min-width: 150px;">Received At</th>
-                <th style="min-width: 180px;">Notification / Target</th>
+                <th style="min-width: 180px;" title="Telemetry Description (falls back to Tagname if empty) / Target">Description / Target</th>
                 <th>Attributes &amp; Values</th>
                 <th style="min-width: 140px;">Staging Status</th>
                 <th style="min-width: 170px; text-align: right;">Actions</th>
@@ -474,10 +478,10 @@
           <button type="button" class="info-card-close" data-close="history-info-card">✕</button>
         </div>
         <div class="info-card-body">
-          <p>This table displays all historical telemetry records received from AVEVA PI Notifications and their forwarding status to Oracle ORDS or Hexagon J5:</p>
+          <p>This table displays all historical telemetry records received from AVEVA PI Notifications and their forwarding status to Oracle Prod, Oracle Dev, Octave, or Octave Dev:</p>
           <ul>
             <li><strong>Pagination:</strong> Browse 10 deliveries per page with instant page switching and total record counts.</li>
-            <li><strong>Endpoint Response:</strong> Click <em>Endpoint Response</em> to inspect live echo and verification fields (including Tag, Description, Value, UOM, Limit, Results, and Timestamp).</li>
+            <li><strong>Endpoint Response:</strong> Click <em>Endpoint Response</em> to inspect live echo and verification fields (including Tag, Description, Value, UOM, Limit, Results, Timestamp, and forwarded extra parameters).</li>
             <li><strong>Raw JSON Inspection:</strong> Click <em>Inspect</em> to review the exact inbound PI Notification JSON payload.</li>
             <li><strong>Dispatch / Re-send:</strong> Click <em>Send to Endpoint</em> to re-dispatch any pending or failed delivery to its mapped destination.</li>
             <li><strong>Record Deletion &amp; Purge:</strong> Remove individual records or use <em>Purge Staged Data</em> to clear records in bulk.</li>
@@ -522,13 +526,15 @@
 
           <!-- Bottom Row: Filter Controls -->
           <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <!-- Endpoint Filter (Oracle / J5) -->
+            <!-- Endpoint Filter (Oracle / Oracle Dev / Octave / Octave Dev) -->
             <div style="display: flex; align-items: center; gap: 6px;">
               <label for="history-filter-endpoint" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Endpoint:</label>
               <select id="history-filter-endpoint" class="form-control" style="width: auto; height: 30px; font-size: 11px; padding: 2px 24px 2px 8px;">
                 <option value="ALL">All Endpoints</option>
-                <option value="ORACLE">Oracle ORDS</option>
-                <option value="J5">Hexagon J5</option>
+                <option value="ORACLE">Oracle Prod</option>
+                <option value="ORACLEDEV">Oracle Dev</option>
+                <option value="J5">Octave</option>
+                <option value="J5DEV">Octave Dev</option>
               </select>
             </div>
 
@@ -568,7 +574,7 @@
             <thead>
               <tr>
                 <th style="min-width: 150px;">Received At</th>
-                <th style="min-width: 180px;">Notification / Target</th>
+                <th style="min-width: 180px;" title="Telemetry Description (falls back to Tagname if empty) / Target">Description / Target</th>
                 <th>Attributes &amp; Values</th>
                 <th style="min-width: 140px;">Staging Status</th>
                 <th style="min-width: 170px; text-align: right;">Actions</th>
@@ -597,6 +603,269 @@
             <button id="history-btn-next" class="btn btn-secondary btn-sm" disabled style="padding: 4px 10px; font-size: 12px;">
               Next &rarr;
             </button>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ========================================================
+         VIEW: BULK HISTORICAL DATA UPLOAD
+         ======================================================== -->
+    <section id="view-bulk-upload" class="page-view">
+      
+      <!-- Page Top Bar with Info Trigger & Sample Download -->
+      <div class="page-top-bar">
+        <div class="page-title-group">
+          <h1 class="page-heading">Bulk Historical Telemetry Upload</h1>
+          <div class="page-subheading">Backfill telemetry beyond the AVEVA PI AF Notifications 72-hour delivery limit from Excel (.xlsx) or CSV</div>
+        </div>
+        <div style="display: flex; gap: var(--space-2); align-items: center;">
+          <a href="/api/bulk-upload/sample-file" class="btn btn-secondary btn-sm" download="Cloud Utility updated.xlsx" title="Download Sample Excel Template">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download Sample Template</span>
+          </a>
+          <button type="button" class="btn-info-trigger" data-target="bulk-upload-info-card" title="Page Information">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>Page Info</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Collapsible Info Card -->
+      <div id="bulk-upload-info-card" class="collapsible-info-card" style="display: none;">
+        <div class="info-card-header">
+          <div class="info-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            Why Use Bulk Historical Telemetry Upload?
+          </div>
+          <button type="button" class="info-card-close" data-close="bulk-upload-info-card">✕</button>
+        </div>
+        <div class="info-card-body">
+          <p>AVEVA PI AF Notifications WebService REST delivery endpoints have a maximum backward delivery window of <strong>72 hours</strong>. When backfilling historical operational data for 30, 60, or 90 days, use this tool to bulk-import telemetry directly into Oracle ORDS or Octave:</p>
+          <ul>
+            <li><strong>Auto-Detection of Columns:</strong> Automatically recognizes Timestamp, Tag, Description, Value (e.g. Total Daily Consumption), and UOM from file headers.</li>
+            <li><strong>Multi-Sheet Support:</strong> Processes multi-sheet Excel files (e.g. Natural Gas and Electricity sheets in <code>Cloud Utility updated.xlsx</code>).</li>
+            <li><strong>Environment Flexibility:</strong> Choose target destination between Oracle Cloud Prod / Dev (Utility or Effluent) or Octave Prod / Dev.</li>
+            <li><strong>Batch Throttling & Progress Tracking:</strong> Dispatches in controlled chunks with live progress bar, real-time counters, pause/resume, and audit logging.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Grid 2: File Selector & Target Config -->
+      <div class="grid-2">
+        
+        <!-- CARD 1: File Upload / Selection -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">1. Telemetry File Selection</span>
+            <span id="bulk-file-badge" class="badge badge-info" style="display: none;">No File Loaded</span>
+          </div>
+          
+          <div id="bulk-dropzone" class="bulk-dropzone">
+            <svg class="bulk-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            <div class="bulk-dropzone-title">Click to upload or drag &amp; drop spreadsheet</div>
+            <div class="bulk-dropzone-hint">Supports Excel (.xlsx) and CSV files</div>
+            <input type="file" id="bulk-file-input" accept=".xlsx,.csv" style="display: none;">
+          </div>
+
+          <div style="margin-top: var(--space-3); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2);">
+            <button type="button" id="btn-load-sample-file" class="btn btn-secondary btn-sm" title="Quickly load the bundled Cloud Utility updated.xlsx file">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span>Load Bundled 'Cloud Utility updated.xlsx'</span>
+            </button>
+            <span id="bulk-loaded-file-meta" style="font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary);"></span>
+          </div>
+
+          <!-- Sheet Selector (visible when multi-sheet) -->
+          <div id="bulk-sheet-selector-group" style="margin-top: var(--space-4); display: none;">
+            <label class="form-label" style="margin-bottom: var(--space-2);">Workbook Sheet Selection</label>
+            <div id="bulk-sheet-pills" class="sheet-pills"></div>
+          </div>
+        </div>
+
+        <!-- CARD 2: Target Destination & Settings -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">2. Target Destination &amp; Transmission Options</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="bulk-target-type">Target Destination</label>
+            <select id="bulk-target-type" class="form-select">
+              <option value="oracle_utility" selected>Oracle Cloud Prod &mdash; Utility Consumption (/production_utilities_consumption/)</option>
+              <option value="oracle">Oracle Cloud Prod &mdash; Effluent Discharge (/Final_Discharge_Effluent/)</option>
+              <option value="oracledev_utility">Oracle Cloud Dev &mdash; Utility Consumption</option>
+              <option value="oracledev">Oracle Cloud Dev &mdash; Effluent Discharge</option>
+              <option value="j5">Octave Prod (j5)</option>
+              <option value="j5dev">Octave Dev (j5dev)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="bulk-override-url">Target Endpoint URL (Optional Override)</label>
+            <input type="text" id="bulk-override-url" class="form-control" placeholder="Leave blank to use active Settings endpoint URL">
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+            <div class="form-group">
+              <label class="form-label" for="bulk-chunk-size">Batch Size</label>
+              <select id="bulk-chunk-size" class="form-select">
+                <option value="10">10 rows per batch</option>
+                <option value="25" selected>25 rows per batch (Recommended)</option>
+                <option value="50">50 rows per batch</option>
+                <option value="100">100 rows per batch</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="bulk-throttle-delay">Throttle Delay</label>
+              <select id="bulk-throttle-delay" class="form-select">
+                <option value="0">0 ms (Fastest)</option>
+                <option value="100" selected>100 ms (Recommended)</option>
+                <option value="250">250 ms</option>
+                <option value="500">500 ms (Safe)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: var(--space-4); margin-top: var(--space-2); flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="bulk-stage-history" checked>
+              <span>Record in Historical Data (`publish_history.json`)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="bulk-dry-run">
+              <span style="color: var(--status-warn); font-weight: 500;">Dry Run (Validate without remote HTTP call)</span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CARD 3: Column Mapping & JSON Preview -->
+      <div id="bulk-mapping-card" class="card" style="margin-top: var(--space-4); display: none;">
+        <div class="card-header">
+          <span class="card-title">3. Column Role Mapping</span>
+          <div style="display: flex; gap: var(--space-2);">
+            <button type="button" id="btn-bulk-preview-json" class="btn btn-secondary btn-sm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>Inspect Generated JSON Payload</span>
+            </button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-3); margin-bottom: var(--space-3);">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Timestamp Column *</label>
+            <select id="bulk-col-timestamp" class="form-select"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Tag Column *</label>
+            <select id="bulk-col-tag" class="form-select"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Description Column</label>
+            <select id="bulk-col-description" class="form-select"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">Value Column *</label>
+            <select id="bulk-col-value" class="form-select"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">UOM Column</label>
+            <select id="bulk-col-uom" class="form-select"></select>
+          </div>
+        </div>
+
+        <!-- Sample Payload Preview Container (Collapsible) -->
+        <div id="bulk-payload-preview-container" style="display: none; margin-top: var(--space-3); border-top: 1px solid var(--border); padding-top: var(--space-3);">
+          <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-secondary); margin-bottom: var(--space-1);">
+            Sample Destination Payload Preview (Row 1):
+          </div>
+          <pre id="bulk-payload-preview-json" style="background: var(--bg-subtle); padding: var(--space-3); border-radius: var(--radius); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; max-height: 180px; overflow-y: auto;"></pre>
+        </div>
+      </div>
+
+      <!-- CARD 4: Data Preview (First 5 Rows) -->
+      <div id="bulk-preview-card" class="card" style="margin-top: var(--space-4); display: none;">
+        <div class="card-header">
+          <span class="card-title">4. Data Preview <span id="bulk-preview-sheet-title" style="color: var(--ink-secondary); font-weight: normal;"></span></span>
+          <span id="bulk-preview-row-count" class="badge badge-info">0 rows</span>
+        </div>
+        <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+          <table class="data-table" id="bulk-preview-table">
+            <thead id="bulk-preview-thead"></thead>
+            <tbody id="bulk-preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CARD 5: Execution Control & Live Progress -->
+      <div class="card" style="margin-top: var(--space-4);">
+        <div class="card-header">
+          <span class="card-title">5. Transmission Execution &amp; Real-Time Progress</span>
+          <div style="display: flex; gap: var(--space-2);">
+            <button type="button" id="btn-bulk-start" class="btn btn-primary" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span>Start Bulk Upload</span>
+            </button>
+            <button type="button" id="btn-bulk-pause" class="btn btn-secondary" style="display: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+              <span>Pause</span>
+            </button>
+            <button type="button" id="btn-bulk-resume" class="btn btn-primary" style="display: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span>Resume</span>
+            </button>
+            <button type="button" id="btn-bulk-cancel" class="btn btn-danger" style="display: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <span>Cancel</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 KPI Stat Counters -->
+        <div class="bulk-kpi-grid">
+          <div class="bulk-kpi-card">
+            <div id="bulk-kpi-total" class="bulk-kpi-val">0</div>
+            <div class="bulk-kpi-lbl">Total Records</div>
+          </div>
+          <div class="bulk-kpi-card">
+            <div id="bulk-kpi-processed" class="bulk-kpi-val">0</div>
+            <div class="bulk-kpi-lbl">Processed</div>
+          </div>
+          <div class="bulk-kpi-card kpi-success">
+            <div id="bulk-kpi-succeeded" class="bulk-kpi-val">0</div>
+            <div class="bulk-kpi-lbl">Succeeded</div>
+          </div>
+          <div class="bulk-kpi-card kpi-fail">
+            <div id="bulk-kpi-failed" class="bulk-kpi-val">0</div>
+            <div class="bulk-kpi-lbl">Failed</div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--ink-secondary); margin-bottom: 4px;">
+          <span id="bulk-progress-status">Ready to upload</span>
+          <span id="bulk-progress-percent">0%</span>
+        </div>
+        <div class="bulk-progress-bar-container">
+          <div id="bulk-progress-fill" class="bulk-progress-bar-fill"></div>
+        </div>
+
+        <!-- Real-time Console Log -->
+        <div style="margin-top: var(--space-4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+            <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-secondary);">Live Execution Console</span>
+            <button type="button" id="btn-bulk-clear-log" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px;">Clear Console</button>
+          </div>
+          <div id="bulk-console-log" class="bulk-log-console">
+            <div class="bulk-log-line">
+              <span class="bulk-log-time">System:</span>
+              <span class="bulk-log-msg-info">Bulk upload engine ready. Upload an Excel or CSV file or click 'Load Bundled Cloud Utility updated.xlsx' to begin.</span>
+            </div>
           </div>
         </div>
 
@@ -683,7 +952,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
               Configured Attribute Mappings (<span id="mappings-count-badge">0</span>)
             </div>
-            <div class="form-help">Attributes dispatched to Oracle ORDS or J5 Inbound Message endpoints</div>
+            <div class="form-help">Attributes dispatched to Oracle Prod, Oracle Dev, Octave, or Octave Dev Inbound Message endpoints</div>
           </div>
           <div class="btn-group">
             <button id="btn-add-mapping-modal" class="btn btn-secondary btn-sm">+ Add Attribute Mapping</button>
@@ -691,15 +960,27 @@
           </div>
         </div>
 
-        <!-- Auto-Create J5 Mapping on Push Option -->
+        <!-- Auto-Create Mapping on Push Option -->
         <div style="background: var(--bg-subtle); padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
           <label class="form-check" style="margin: 0; font-size: 12px; font-weight: 500; cursor: pointer;">
             <input type="checkbox" id="mapping-auto-create-j5-checkbox" checked>
-            <span>Auto-create new mapping &amp; send to J5 when PI AF Push includes extra parameter <code>"J5"</code></span>
+            <span>Auto-create new mapping &amp; dispatch when PI AF Push includes routing parameter (<code>j5=true</code> &rarr; Octave, <code>j5dev=true</code> &rarr; Octave Dev, <code>oracle=yes</code> &rarr; Oracle, <code>oracledev=yes</code> &rarr; Oracle Dev)</span>
           </label>
           <span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);">
-            <span class="badge-dot" style="background:#6366f1;"></span> J5 Push Auto-Mapping
+            <span class="badge-dot" style="background:#6366f1;"></span> Push Auto-Mapping
           </span>
+        </div>
+
+        <!-- Environment Filter Bar for Attribute Mappings -->
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
+          <span style="font-size: 11px; font-weight: 600; color: var(--ink-secondary);">Filter Environment:</span>
+          <div class="btn-group">
+            <button type="button" id="btn-filter-mappings-all" class="btn btn-primary btn-sm" onclick="filterMappingsByEnv('all')" style="padding: 2px 9px; font-size: 11px;">All (<span id="filter-count-all">0</span>)</button>
+            <button type="button" id="btn-filter-mappings-oracle" class="btn btn-secondary btn-sm" onclick="filterMappingsByEnv('oracle')" style="padding: 2px 9px; font-size: 11px;">Oracle Prod (<span id="filter-count-oracle">0</span>)</button>
+            <button type="button" id="btn-filter-mappings-oracledev" class="btn btn-secondary btn-sm" onclick="filterMappingsByEnv('oracledev')" style="padding: 2px 9px; font-size: 11px;">Oracle Dev (<span id="filter-count-oracledev">0</span>)</button>
+            <button type="button" id="btn-filter-mappings-octave" class="btn btn-secondary btn-sm" onclick="filterMappingsByEnv('octave')" style="padding: 2px 9px; font-size: 11px;">Octave (<span id="filter-count-octave">0</span>)</button>
+            <button type="button" id="btn-filter-mappings-octavedev" class="btn btn-secondary btn-sm" onclick="filterMappingsByEnv('octavedev')" style="padding: 2px 9px; font-size: 11px;">Octave Dev (<span id="filter-count-octavedev">0</span>)</button>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -719,6 +1000,110 @@
               <!-- Rendered dynamically -->
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Destination Parameter & Attribute Mappings Section -->
+      <div class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3"></path><path d="m15 9 6-6"></path></svg>
+              Destination Parameter &amp; Schema Mappings
+            </div>
+            <div class="form-help">Customize field-level attribute mappings dispatched to Oracle ORDS Cloud and Octave Inbound Message endpoints</div>
+          </div>
+          <div class="btn-group">
+            <button type="button" id="btn-save-field-mappings" class="btn btn-primary btn-sm">Save Parameter Mappings</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 10px;">
+          
+          <!-- SUBSECTION 1: ORACLE PARAMETER MAPPING -->
+          <div class="card" style="padding: 16px; border: 1px solid var(--border); background: var(--bg-surface);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <strong style="font-size: 14px; color: var(--ink-primary);">Oracle Cloud Parameter Mapping</strong>
+                  <div class="btn-group" style="margin-left: 4px;">
+                    <button type="button" id="btn-oracle-env-prod" class="btn btn-primary btn-sm" onclick="switchFieldMappingEnv('oracle', 'prod')" style="padding: 3px 10px; font-size: 11px;">Production <span id="count-oracle-prod" class="badge" style="margin-left: 4px; padding: 1px 5px; font-size: 10px; background: rgba(0,0,0,0.12);"></span></button>
+                    <button type="button" id="btn-oracle-env-dev" class="btn btn-secondary btn-sm" onclick="switchFieldMappingEnv('oracle', 'dev')" style="padding: 3px 10px; font-size: 11px;">Dev / Test <span id="count-oracle-dev" class="badge" style="margin-left: 4px; padding: 1px 5px; font-size: 10px; background: rgba(0,0,0,0.12);"></span></button>
+                  </div>
+                  <span id="badge-oracle-active-env" class="badge" style="background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 11px;">Editing: Production</span>
+                </div>
+                <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 6px;">
+                  Configure independent parameter schemas for Production and Dev. Specifically maps <code>AnalysisTime</code> &rarr; <code>TESTTIMESTAMP</code>, <code>tag</code>, <code>value</code>, <code>limit</code>, etc.
+                </div>
+              </div>
+              <div class="btn-group" style="align-items: center;">
+                <button type="button" id="btn-oracle-sync-env" class="btn btn-outline btn-sm" onclick="syncFieldMappingBetweenEnvs('oracle')" title="Copy parameter list between environments">Copy to Dev</button>
+                <button type="button" id="btn-add-oracle-field-map" class="btn btn-secondary btn-sm">+ Add Parameter</button>
+                <button type="button" id="btn-reset-oracle-field-maps" class="btn btn-outline btn-sm" title="Reset current environment parameters to factory defaults">Reset Defaults</button>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th style="width: 44px; text-align: center;">Active</th>
+                    <th style="min-width: 170px;">Source PI Attribute</th>
+                    <th style="min-width: 170px;">Target Oracle Column</th>
+                    <th style="min-width: 160px;">Data Transform</th>
+                    <th>Description / Notes</th>
+                    <th style="width: 50px; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="oracle-field-mappings-tbody">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SUBSECTION 2: OCTAVE PARAMETER MAPPING -->
+          <div class="card" style="padding: 16px; border: 1px solid var(--border); background: var(--bg-surface);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <strong style="font-size: 14px; color: var(--ink-primary);">Octave Inbound Message Parameter Mapping</strong>
+                  <div class="btn-group" style="margin-left: 4px;">
+                    <button type="button" id="btn-octave-env-prod" class="btn btn-primary btn-sm" onclick="switchFieldMappingEnv('octave', 'prod')" style="padding: 3px 10px; font-size: 11px;">Production <span id="count-octave-prod" class="badge" style="margin-left: 4px; padding: 1px 5px; font-size: 10px; background: rgba(0,0,0,0.12);"></span></button>
+                    <button type="button" id="btn-octave-env-dev" class="btn btn-secondary btn-sm" onclick="switchFieldMappingEnv('octave', 'dev')" style="padding: 3px 10px; font-size: 11px;">Dev / Test <span id="count-octave-dev" class="badge" style="margin-left: 4px; padding: 1px 5px; font-size: 10px; background: rgba(0,0,0,0.12);"></span></button>
+                  </div>
+                  <span id="badge-octave-active-env" class="badge" style="background: rgba(59, 130, 246, 0.12); color: #2563eb; border: 1px solid rgba(59, 130, 246, 0.3); font-size: 11px;">Editing: Production</span>
+                </div>
+                <div style="font-size: 12px; color: var(--ink-secondary); margin-top: 6px;">
+                  Configure independent parameter schemas for Production and Dev (e.g. <code>messageTag</code>, <code>readingValue</code>, <code>unitOfMeasure</code>).
+                </div>
+              </div>
+              <div class="btn-group" style="align-items: center;">
+                <button type="button" id="btn-octave-sync-env" class="btn btn-outline btn-sm" onclick="syncFieldMappingBetweenEnvs('octave')" title="Copy parameter list between environments">Copy to Dev</button>
+                <button type="button" id="btn-add-octave-field-map" class="btn btn-secondary btn-sm">+ Add Parameter</button>
+                <button type="button" id="btn-reset-octave-field-maps" class="btn btn-outline btn-sm" title="Reset current environment parameters to factory defaults">Reset Defaults</button>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th style="width: 44px; text-align: center;">Active</th>
+                    <th style="min-width: 170px;">Source PI Attribute</th>
+                    <th style="min-width: 170px;">Target Octave Field</th>
+                    <th style="min-width: 160px;">Data Transform</th>
+                    <th>Description / Notes</th>
+                    <th style="width: 50px; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="octave-field-mappings-tbody">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -1017,14 +1402,14 @@
                       <td>Trigger timestamp (e.g. <code>%StartTime%</code>); automatically formatted to Oracle UTC Zulu (<code>YYYY-MM-DDTHH:MM:SSZ</code>)</td>
                     </tr>
                     <tr>
-                      <td><code style="font-family: var(--font-mono); font-weight: 600; color: #4f46e5;">J5</code> <em>(Optional)</em></td>
-                      <td><code>J5 Auto-Mapping</code></td>
-                      <td>When included (e.g. <code>"J5": "true"</code>), automatically creates a mapping for that attribute (if it doesn't exist) and dispatches the data to Hexagon J5 as well</td>
+                      <td><code style="font-family: var(--font-mono); font-weight: 600; color: #4f46e5;">j5 / j5dev / oracle / oracledev</code> <em>(Routing)</em></td>
+                      <td><code>Target Auto-Mapping</code></td>
+                      <td>Automatically registers the attribute mapping and sends ONLY to the specified endpoint: <code>"j5": "true"</code> (&rarr; Octave), <code>"j5dev": "true"</code> (&rarr; Octave Dev), <code>"oracle": "yes"</code> (&rarr; Oracle), or <code>"oracledev": "yes"</code> (&rarr; Oracle Dev). All other extra parameters (e.g. <code>hilimit</code>, <code>low limit</code>) are automatically forwarded to the destination endpoint.</td>
                     </tr>
                   </tbody>
                 </table>
                 <div style="font-size: 11px; color: var(--ink-secondary); line-height: 1.4;">
-                  <strong>Note:</strong> When these variable names are provided by PI AF Notifications, you <strong>do not need to configure anything in the Attribute Mapping page</strong>. Including <code>"J5"</code> automatically registers the attribute mapping and forwards to J5 as well.
+                  <strong>Note:</strong> When these variable names are provided by PI AF Notifications, you <strong>do not need to configure anything in the Attribute Mapping page</strong>. Including a target routing flag automatically registers the attribute mapping for that specific destination and forwards all non-skipped parameters.
                 </div>
               </div>
 
@@ -1042,7 +1427,7 @@
   "Limit": "LIMIT2",
   "Result": "RESULTS2",
   "Timestamp": "%StartTime%",
-  "J5": "true"
+  "j5": "true"
 }</pre>
               </div>
             </div>
@@ -1326,7 +1711,7 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-erp-base-url">Oracle Base URL / ORDS Root</label>
+            <label class="form-label" for="setting-erp-base-url">Oracle Prod Base URL</label>
             <input type="url" id="setting-erp-base-url" class="form-control" placeholder="https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int">
           </div>
 
@@ -1379,10 +1764,16 @@
             <input type="text" id="setting-erp-bearer-token" class="form-control form-control-mono" placeholder="Bearer eyJ...">
           </div>
 
-          <!-- Resource Endpoint -->
-          <div class="form-group full-width">
-            <label class="form-label" for="setting-erp-resource-endpoint">Resource Path</label>
-            <input type="text" id="setting-erp-resource-endpoint" class="form-control form-control-mono" value="/fscmRestApi/resources/11.13.18.05/standardReceipts">
+          <!-- Resource Endpoints (Effluent vs Utility) -->
+          <div class="form-group">
+            <label class="form-label" for="setting-erp-resource-endpoint">Effluent Resource Path</label>
+            <input type="text" id="setting-erp-resource-endpoint" class="form-control form-control-mono" value="/Final_Discharge_Effluent/">
+            <div class="form-help">ORDS resource path for Effluent data.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="setting-erp-utility-resource-endpoint">Utility Resource Path</label>
+            <input type="text" id="setting-erp-utility-resource-endpoint" class="form-control form-control-mono" value="/production_utilities_consumption/">
+            <div class="form-help">ORDS resource path for Utility consumption data.</div>
           </div>
 
           <div class="form-group">
@@ -1492,10 +1883,16 @@
             <input type="text" id="setting-oracledev-bearer-token" class="form-control form-control-mono" placeholder="Bearer eyJ...">
           </div>
 
-          <!-- Resource Endpoint -->
-          <div class="form-group full-width">
-            <label class="form-label" for="setting-oracledev-resource-endpoint">Resource Path</label>
+          <!-- Resource Endpoints (Effluent vs Utility) -->
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-resource-endpoint">Effluent Resource Path</label>
             <input type="text" id="setting-oracledev-resource-endpoint" class="form-control form-control-mono" value="/Final_Discharge_Effluent/">
+            <div class="form-help">ORDS resource path for Effluent data in Dev.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-utility-resource-endpoint">Utility Resource Path</label>
+            <input type="text" id="setting-oracledev-utility-resource-endpoint" class="form-control form-control-mono" value="/production_utilities_consumption/">
+            <div class="form-help">ORDS resource path for Utility consumption data in Dev.</div>
           </div>
 
           <div class="form-group">
@@ -1519,19 +1916,19 @@
         <div id="oracledev-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
-      <!-- J5 Inbound Message Configuration (Hexagon Smart Cloud) -->
+      <!-- Octave Inbound Message Configuration -->
       <div class="form-section">
         <div class="section-title-bar">
           <div>
             <div class="section-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              J5 Inbound Message Configuration (Hexagon Smart Cloud)
+              Octave Inbound Message Configuration
             </div>
-            <div class="form-help">Destination API settings for streaming telemetry to J5 via HTTP Basic Authentication</div>
+            <div class="form-help">Destination API settings for streaming telemetry to Octave via HTTP Basic Authentication</div>
           </div>
           <button type="button" id="btn-test-j5-settings" class="btn btn-secondary btn-sm">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-            Test J5 Connection
+            Test Octave Connection
           </button>
         </div>
 
@@ -1539,15 +1936,15 @@
           <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
             <label class="form-check" style="font-weight: 500;">
               <input type="checkbox" id="setting-j5-enabled" checked>
-              <span>Enable J5 Message Transmission</span>
+              <span>Enable Octave Message Transmission</span>
             </label>
-            <span class="form-help" style="margin-left: 24px;">When checked, mappings targeting J5 will be dispatched to Hexagon J5 Cloud.</span>
+            <span class="form-help" style="margin-left: 24px;">When checked, mappings targeting Octave will be dispatched to the Octave Inbound Message API.</span>
           </div>
 
           <div class="form-group full-width">
-            <label class="form-label" for="setting-j5-url">J5 Inbound Message URL *</label>
-            <input type="url" id="setting-j5-url" class="form-control form-control-mono" value="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder">
-            <div class="form-help">Default POST endpoint for J5 Dataflow Inbound Messages.</div>
+            <label class="form-label" for="setting-j5-url">Octave Inbound Message URL *</label>
+            <input type="url" id="setting-j5-url" class="form-control form-control-mono" value="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook">
+            <div class="form-help">Default POST endpoint for Octave Dataflow Inbound Messages.</div>
           </div>
 
           <div class="form-group">
@@ -1561,12 +1958,12 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-j5-username">J5 Basic Auth Username *</label>
+            <label class="form-label" for="setting-j5-username">Octave Basic Auth Username *</label>
             <input type="text" id="setting-j5-username" class="form-control form-control-mono" value="HIRUJR_JZNOT1742577235_TST">
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="setting-j5-password">J5 Basic Auth Password *</label>
+            <label class="form-label" for="setting-j5-password">Octave Basic Auth Password *</label>
             <div style="display: flex; gap: 6px;">
               <input type="password" id="setting-j5-password" class="form-control form-control-mono" value="kah4YAH!bvm-vkt_jzd">
               <button type="button" id="btn-toggle-j5-password" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Show</button>
@@ -1574,13 +1971,77 @@
           </div>
 
           <div class="form-group full-width">
-            <label class="form-label" for="setting-j5-tenant-id">J5 Tenant ID (X-Tenant-Id header)</label>
+            <label class="form-label" for="setting-j5-tenant-id">Octave Tenant ID (X-Tenant-Id header)</label>
             <input type="text" id="setting-j5-tenant-id" class="form-control form-control-mono" value="JZNOT1742577235_TST">
-            <div class="form-help">Sent as <code>X-Tenant-Id: &lt;Tenant-ID&gt;</code> in all J5 HTTP request headers.</div>
+            <div class="form-help">Sent as <code>X-Tenant-Id: &lt;Tenant-ID&gt;</code> in all Octave HTTP request headers.</div>
           </div>
         </div>
 
         <div id="j5-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
+      </div>
+
+      <!-- Octave Dev Inbound Message Configuration -->
+      <div class="form-section">
+        <div class="section-title-bar">
+          <div>
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              Octave Dev Inbound Message Configuration
+            </div>
+            <div class="form-help">Development API settings for streaming telemetry to Octave Dev via HTTP Basic Authentication (j5dev)</div>
+          </div>
+          <button type="button" id="btn-test-j5dev-settings" class="btn btn-secondary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            Test Octave Dev Connection
+          </button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-check" style="font-weight: 500;">
+              <input type="checkbox" id="setting-j5dev-enabled" checked>
+              <span>Enable Octave Dev Message Transmission</span>
+            </label>
+            <span class="form-help" style="margin-left: 24px;">When checked, mappings targeting Octave Dev (or pushes with <code>j5dev=true</code>) will be dispatched to Octave Dev.</span>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="setting-j5dev-url">Octave Dev Inbound Message URL *</label>
+            <input type="url" id="setting-j5dev-url" class="form-control form-control-mono" value="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook">
+            <div class="form-help">Default POST endpoint for Octave Dev Dataflow Inbound Messages.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-j5dev-auth-type">Authentication Method</label>
+            <input type="text" id="setting-j5dev-auth-type" class="form-control" value="HTTP Basic Authentication" readonly>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-j5dev-timeout">Timeout (Seconds)</label>
+            <input type="number" id="setting-j5dev-timeout" class="form-control" min="3" max="120" value="15">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-j5dev-username">Octave Dev Basic Auth Username *</label>
+            <input type="text" id="setting-j5dev-username" class="form-control form-control-mono" value="HIRUJR_JZNOT1742577235_TST">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="setting-j5dev-password">Octave Dev Basic Auth Password *</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="password" id="setting-j5dev-password" class="form-control form-control-mono" value="kah4YAH!bvm-vkt_jzd">
+              <button type="button" id="btn-toggle-j5dev-password" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Show</button>
+            </div>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="setting-j5dev-tenant-id">Octave Dev Tenant ID (X-Tenant-Id header)</label>
+            <input type="text" id="setting-j5dev-tenant-id" class="form-control form-control-mono" value="JZNOT1742577235_TST">
+            <div class="form-help">Sent as <code>X-Tenant-Id: &lt;Tenant-ID&gt;</code> in all Octave Dev HTTP request headers.</div>
+          </div>
+        </div>
+
+        <div id="j5dev-test-result-box" class="error-console" style="display: none; margin-top: 16px;"></div>
       </div>
 
       <!-- Scheduler & Persistence (Unified for PI Web API Pull & ERP Dispatch) -->
@@ -1591,7 +2052,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               Scheduler &amp; Persistence
             </div>
-            <div class="form-help">Unified cycle frequency for pulling data from PI (in Pull mode) and sending staged data to Oracle ERP (in Endpoint mode)</div>
+            <div class="form-help">Unified cycle frequency for pulling data from PI (in Pull mode) and sending staged data to destination endpoints (in Endpoint mode)</div>
           </div>
         </div>
 
@@ -1602,8 +2063,8 @@
             <div class="form-help" id="help-pipeline-interval" style="margin-top: 6px; font-size: 11px; line-height: 1.5;">
               <strong>Unified background execution timer:</strong>
               <ul style="margin: 4px 0 0 16px; padding: 0;">
-                <li><strong>PI Web API Pull mode:</strong> Controls how frequently the engine polls telemetry from AVEVA PI Web API and sends it to Oracle ERP.</li>
-                <li><strong>Delivery Endpoint mode:</strong> Deliveries are automatically dispatched to Oracle ERP Cloud <em>immediately upon receipt</em>. Only if an initial dispatch fails (e.g. network outage or ERP temporary error) will the scheduler automatically trigger retries as per this interval setting until successfully delivered.</li>
+                <li><strong>PI Web API Pull mode:</strong> Controls how frequently the engine polls telemetry from AVEVA PI Web API and sends it to destination endpoints.</li>
+                <li><strong>Delivery Endpoint mode:</strong> Deliveries are automatically dispatched to destination endpoints <em>immediately upon receipt</em>. Only if an initial dispatch fails (e.g. network outage or temporary error) will the scheduler automatically trigger retries as per this interval setting until successfully delivered.</li>
               </ul>
             </div>
           </div>
@@ -1614,18 +2075,26 @@
               <span>Enable Immediate Auto-Dispatch &amp; Scheduled Retries on Failure</span>
             </label>
             <span class="form-help" style="margin-left: 24px; font-size: 11px;">
-              When checked, incoming PI Notifications are dispatched immediately to Oracle ERP upon receipt, with automatic scheduled retries whenever a transmission fails. When unchecked, incoming records remain staged in <code>data/received_deliveries.json</code> for manual dispatch.
+              When checked, incoming PI Notifications are dispatched immediately upon receipt, with automatic scheduled retries whenever a transmission fails. When unchecked, incoming records remain staged in <code>data/received_deliveries.json</code> for manual dispatch.
             </span>
           </div>
 
           <div class="form-group full-width" style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
             <label class="form-check" style="font-weight: 500;">
               <input type="checkbox" id="setting-auto-create-j5-mapping" checked>
-              <span>Auto-Create Attribute Mapping &amp; Send to J5 when PI AF Push includes <code>"J5"</code> Parameter</span>
+              <span>Auto-Create Attribute Mapping on Target Routing Parameter (<code>j5</code>, <code>j5dev</code>, <code>oracle</code>, <code>oracledev</code>)</span>
             </label>
             <span class="form-help" style="margin-left: 24px; font-size: 11px;">
-              When checked, if PI AF sends a push delivery with an extra parameter called <code>"J5"</code>, the pipeline automatically creates a new attribute mapping (if it does not exist yet) and dispatches the telemetry data to Hexagon J5 as well.
+              When checked, if PI AF sends a push delivery with <code>j5=true</code> (Octave), <code>j5dev=true</code> (Octave Dev), <code>oracle=yes</code> (Oracle Prod), or <code>oracledev=yes</code> (Oracle Dev), the pipeline automatically creates a new attribute mapping (if it does not exist yet) and dispatches ONLY to that specified target endpoint.
             </span>
+          </div>
+
+          <div class="form-group full-width" style="background: var(--bg-surface); padding: 12px; border-radius: var(--radius); border: 1px solid var(--border);">
+            <label class="form-label" for="setting-skip-parameters">Parameters to Skip Forwarding to Destination Endpoints</label>
+            <input type="text" id="setting-skip-parameters" class="form-control form-control-mono" value="j5, j5dev, oracle, oracledev, endpoint, environment" placeholder="j5, j5dev, oracle, oracledev, endpoint, environment">
+            <div class="form-help" style="margin-top: 4px; font-size: 11px;">
+              All extra parameters sent by PI AF in the request body (e.g. <code>hilimit</code>, <code>low limit</code>) are automatically forwarded to the destination endpoint <strong>except</strong> parameters listed here (comma-separated, case-insensitive). Routing flags (<code>j5</code>, <code>j5dev</code>, <code>oracle</code>, <code>oracledev</code>) are always skipped.
+            </div>
           </div>
 
           <div class="form-group full-width">
@@ -1833,7 +2302,11 @@
                 </label>
                 <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0;">
                   <input type="checkbox" id="modal-target-j5" onchange="handleModalTargetEndpointsChange()">
-                  <span>J5 (Hexagon)</span>
+                  <span>Octave</span>
+                </label>
+                <label style="font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0;">
+                  <input type="checkbox" id="modal-target-j5dev" onchange="handleModalTargetEndpointsChange()">
+                  <span>Octave Dev</span>
                 </label>
               </div>
             </div>
@@ -1848,7 +2321,7 @@
                   Test Oracle
                 </button>
               </div>
-              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Production ORDS table/resource POST URL for this item.</div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Oracle Prod table/resource POST URL for this item.</div>
             </div>
 
             <!-- Oracle Dev URL Row -->
@@ -1861,20 +2334,33 @@
                   Test Oracle Dev
                 </button>
               </div>
-              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Development ORDS table/resource POST URL for this item.</div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Oracle Dev table/resource POST URL for this item.</div>
             </div>
 
-            <!-- J5 URL Row -->
+            <!-- Octave URL Row -->
             <div id="row-url-j5" class="form-group full-width" style="display: none; margin-bottom: 8px;">
-              <label class="form-label" for="modal-target-endpoint-url-j5">J5 Inbound Message URL *</label>
+              <label class="form-label" for="modal-target-endpoint-url-j5">Octave Inbound Message URL *</label>
               <div style="display: flex; gap: 8px;">
                 <input type="url" id="modal-target-endpoint-url-j5" class="form-control form-control-mono" placeholder="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder">
                 <button type="button" id="btn-modal-test-endpoint-j5" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                  Test J5
+                  Test Octave
                 </button>
               </div>
-              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Hexagon J5 Inbound Message API endpoint receiving JSON telemetry via Basic Auth.</div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Octave Inbound Message API endpoint receiving JSON telemetry via Basic Auth.</div>
+            </div>
+
+            <!-- Octave Dev URL Row -->
+            <div id="row-url-j5dev" class="form-group full-width" style="display: none; margin-bottom: 8px;">
+              <label class="form-label" for="modal-target-endpoint-url-j5dev">Octave Dev Inbound Message URL *</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="url" id="modal-target-endpoint-url-j5dev" class="form-control form-control-mono" placeholder="https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder">
+                <button type="button" id="btn-modal-test-endpoint-j5dev" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 12px; height: 12px; margin-right: 3px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Test Octave Dev
+                </button>
+              </div>
+              <div class="form-help" style="margin-top: 3px; font-size: 11px;">Octave Dev Inbound Message API endpoint receiving JSON telemetry via Basic Auth.</div>
             </div>
 
             <div id="modal-endpoint-test-box" class="error-console" style="display: none; margin-top: 8px; font-size: 11px; margin-bottom: 8px;"></div>
@@ -2120,6 +2606,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.2.5"></script>
+  <script src="/static/js/app.js?v=2.7.1"></script>
 </body>
 </html>

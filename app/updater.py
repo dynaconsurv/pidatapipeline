@@ -286,9 +286,9 @@ def apply_patch_from_zip(zip_path: str, backup: bool = True) -> Dict[str, Any]:
             if norm_rel.startswith("data/") and not norm_rel.endswith(".gitkeep"):
                 continue
 
-            # Rule 2: NEVER overwrite existing settings.json or mappings.json
+            # Rule 2: NEVER overwrite existing settings.json, mappings.json, or field_mappings.json
             dest_file = os.path.join(ROOT_DIR, norm_rel)
-            if norm_rel in ("config/settings.json", "config/mappings.json") and os.path.exists(dest_file):
+            if norm_rel in ("config/settings.json", "config/mappings.json", "config/field_mappings.json") and os.path.exists(dest_file):
                 continue
 
             # Check if requirements.txt changed

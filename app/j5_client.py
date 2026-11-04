@@ -17,33 +17,94 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 
-DEFAULT_J5_URL = "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
+DEFAULT_J5_URL = "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook"
 DEFAULT_J5_USERNAME = "HIRUJR_JZNOT1742577235_TST"
 DEFAULT_J5_PASSWORD = "kah4YAH!bvm-vkt_jzd"
 DEFAULT_J5_TENANT_ID = "JZNOT1742577235_TST"
 
 
-def format_j5_timestamp(ts: Any) -> str:
+def format_j5_timestamp(ts: Any, allow_empty: bool = False) -> Optional[str]:
     """
     Format timestamp to ISO 8601 Zulu UTC: YYYY-MM-DDTHH:MM:SSZ
+    Strips fractional microseconds.
+    If allow_empty is True, None or empty/null values return None.
     """
-    if not ts:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if ts is None:
+        return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, datetime):
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
         return ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        val = float(ts)
+        if 20000 <= val <= 100000:
+            from datetime import timedelta
+            excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+            sec = round(val * 86400)
+            return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if val > 1e11:
+            val = val / 1000.0
+        return datetime.fromtimestamp(val, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, str):
         s = ts.strip().strip('"').strip("'")
+        if not s or s.lower() in ("null", "none"):
+            return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            fnum = float(s)
+            if 20000 <= fnum <= 100000:
+                from datetime import timedelta
+                excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+                sec = round(fnum * 86400)
+                return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if s.isdigit() and len(s) >= 10:
+                if fnum > 1e11:
+                    fnum = fnum / 1000.0
+                return datetime.fromtimestamp(fnum, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
         try:
             clean_s = s.replace("Z", "+00:00")
+            if "." in clean_s:
+                parts = clean_s.split(".", 1)
+                date_time_part = parts[0]
+                rest = parts[1]
+                tz_idx = -1
+                for idx, ch in enumerate(rest):
+                    if ch in ("+", "-"):
+                        tz_idx = idx
+                        break
+                if tz_idx != -1:
+                    frac = rest[:tz_idx][:6]
+                    tz = rest[tz_idx:]
+                    clean_s = f"{date_time_part}.{frac}{tz}"
+                else:
+                    clean_s = f"{date_time_part}.{rest[:6]}"
             dt = datetime.fromisoformat(clean_s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S",
+                "%Y/%m/%d %H:%M:%S",
+                "%d/%m/%Y %H:%M:%S",
+                "%m/%d/%Y %H:%M:%S",
+                "%d-%b-%Y %H:%M:%S",
+                "%d-%B-%Y %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d",
+            ):
+                try:
+                    dt = datetime.strptime(s.split(".")[0], fmt)
+                    dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                except Exception:
+                    continue
+
             if "." in s:
                 base = s.split(".")[0]
+                if " " in base and "T" not in base:
+                    base = base.replace(" ", "T")
                 return f"{base}Z" if not base.endswith("Z") else base
             if " " in s and "T" not in s:
                 s = s.replace(" ", "T")
@@ -246,86 +307,38 @@ class J5Client:
     def build_j5_payload(
         attr_data: Dict[str, Any],
         mapping: Optional[Dict[str, Any]] = None,
-        custom_schema_fn: Optional[Any] = None
+        custom_schema_fn: Optional[Any] = None,
+        skip_params: Optional[Any] = None,
+        received_at: Optional[str] = None,
+        target_type: str = "j5"
     ) -> Dict[str, Any]:
         """
-        Extensible framework for building J5 Inbound Message payload bodies.
-        
-        NOTE FOR USER ADJUSTMENT:
-        When sample body format for J5 is provided, adjust this function or
-        provide a custom transformer to output the exact schema expected by J5.
-        
-        Currently structures standard telemetry:
-        - tag / message identifier
-        - timestamp (ISO 8601 Zulu)
-        - value (scaled and rounded)
-        - description
-        - uom
-        - quality
-        - limit / operating parameters
-        - results
+        Extensible framework for building Octave (J5) Inbound Message payload bodies
+        driven by customizable parameter schema mappings (supports separate prod and dev).
         """
-        mapping = mapping or {}
-        now_iso = datetime.now(timezone.utc).isoformat()
+        always_skip = {"j5", "jf", "j5dev", "jfdev", "j5_dev", "octave", "octavedev", "octave_dev", "oracle", "oracle_erp", "oracledev", "oracle_dev"}
+        user_skip = set()
+        if skip_params:
+            if isinstance(skip_params, str):
+                user_skip = {p.strip().lower() for p in skip_params.replace(";", ",").split(",") if p.strip()}
+            elif isinstance(skip_params, (list, set, tuple)):
+                user_skip = {str(p).strip().lower() for p in skip_params if str(p).strip()}
+        all_skip = always_skip | user_skip
 
-        # Scale and round value if configured in mapping
-        raw_val = attr_data.get("value")
-        scale = float(mapping.get("scale_factor", 1.0))
-        decimals = int(mapping.get("round_decimals", 2))
-        scaled_val = raw_val
-        try:
-            if raw_val is not None and str(raw_val).strip() != "":
-                scaled_val = round(float(raw_val) * scale, decimals)
-        except Exception:
-            scaled_val = raw_val
-
-        # Tag selection: attr tag > mapping tag > meter_tag > empty
-        tag_val = (
-            attr_data.get("tag") if attr_data.get("tag") is not None and str(attr_data.get("tag")).strip() != ""
-            else (mapping.get("tag") if mapping.get("tag") is not None else (mapping.get("meter_tag") or ""))
+        from app.field_mapper import build_destination_payload
+        payload = build_destination_payload(
+            target_type=target_type,
+            source_attr=attr_data,
+            mapping_rule=mapping,
+            received_at=received_at,
+            skip_params=all_skip
         )
 
-        # Description selection: attr description > mapping description > mapping name > empty
-        desc_val = (
-            attr_data.get("description") if attr_data.get("description") is not None and str(attr_data.get("description")).strip() != ""
-            else (mapping.get("description") if mapping.get("description") is not None else (mapping.get("name") or ""))
-        )
-
-        # Limit: attr limit > mapping limit > empty
-        limit_val = (
-            attr_data.get("limit") if attr_data.get("limit") is not None and str(attr_data.get("limit")).strip() != ""
-            else (mapping.get("limit") if mapping.get("limit") is not None else "")
-        )
-
-        # Results: attr results > mapping results > empty
-        results_val = (
-            attr_data.get("results") if attr_data.get("results") is not None and str(attr_data.get("results")).strip() != ""
-            else (mapping.get("results") if mapping.get("results") is not None else "")
-        )
-
-        uom_val = (
-            attr_data.get("uom") if attr_data.get("uom") is not None and str(attr_data.get("uom")).strip() != ""
-            else (mapping.get("uom") if mapping.get("uom") is not None else "")
-        )
-        ts_val = format_j5_timestamp(attr_data.get("timestamp") or now_iso)
-        quality_val = attr_data.get("quality") or "Good"
-
-        # Default extensible J5 telemetry framework payload
-        payload = {
-            "sourceSystem": "AVEVA_PI_NOTIFICATION",
-            "messageTag": str(tag_val),
-            "tag": str(tag_val),
-            "description": str(desc_val),
-            "value": str(scaled_val) if scaled_val is not None else "",
-            "readingValue": scaled_val,
-            "unitOfMeasure": str(uom_val),
-            "uom": str(uom_val),
-            "limit": str(limit_val),
-            "results": str(results_val),
-            "quality": str(quality_val),
-            "timestamp": ts_val,
-            "readingTimestamp": ts_val
-        }
+        # Also remove any top-level payload keys explicitly listed in user_skip
+        if user_skip:
+            for k in list(payload.keys()):
+                if k.strip().lower() in user_skip:
+                    payload.pop(k, None)
 
         # If a custom schema transformer is registered, run it
         if callable(custom_schema_fn):

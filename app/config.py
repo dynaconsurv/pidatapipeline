@@ -2,10 +2,41 @@
 Configuration management for the PI-to-Oracle ERP Data Pipeline.
 All configurations are persisted exclusively in JSON files (no database).
 """
+from __future__ import annotations
 import json
 import os
 import threading
-from typing import Dict, Any, List
+import urllib.parse
+from typing import Dict, Any, List, Optional
+
+
+def sanitize_endpoint_url(url: Any) -> str:
+    """
+    Sanitizes an endpoint URL to remove duplicate consecutive path segments
+    (e.g. /Final_Discharge_Effluent/Final_Discharge_Effluent/) and normalize slashes.
+    """
+    if not url or not isinstance(url, str):
+        return ""
+    u = str(url).strip().strip('"').strip("'")
+    if not u:
+        return ""
+    if not (u.startswith("http://") or u.startswith("https://")):
+        return u
+    try:
+        parsed = urllib.parse.urlsplit(u)
+        raw_segments = [s for s in parsed.path.split("/") if s]
+        deduped = []
+        for s in raw_segments:
+            if deduped and s.lower() == deduped[-1].lower():
+                continue
+            deduped.append(s)
+        new_path = "/" + "/".join(deduped)
+        if parsed.path.endswith("/") and not new_path.endswith("/"):
+            new_path += "/"
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment))
+    except Exception:
+        return u
+
 
 CONFIG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
@@ -42,6 +73,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "password": "",
         "bearer_token": "",
         "resource_endpoint": "/Final_Discharge_Effluent/",
+        "utility_resource_endpoint": "/production_utilities_consumption/",
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -61,6 +93,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "password": "",
         "bearer_token": "",
         "resource_endpoint": "/Final_Discharge_Effluent/",
+        "utility_resource_endpoint": "/production_utilities_consumption/",
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -71,7 +104,16 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "j5_endpoint": {
         "enabled": True,
         "auth_type": "basic",
-        "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+        "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
+        "username": "HIRUJR_JZNOT1742577235_TST",
+        "password": "kah4YAH!bvm-vkt_jzd",
+        "tenant_id": "JZNOT1742577235_TST",
+        "timeout_seconds": 15
+    },
+    "j5dev_endpoint": {
+        "enabled": True,
+        "auth_type": "basic",
+        "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
         "username": "HIRUJR_JZNOT1742577235_TST",
         "password": "kah4YAH!bvm-vkt_jzd",
         "tenant_id": "JZNOT1742577235_TST",
@@ -82,6 +124,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "ingestion_mode": "endpoint",
         "auto_dispatch": True,
         "auto_create_j5_mapping": True,
+        "skip_parameters": "j5, j5dev, oracle, oracledev, endpoint, environment",
         "auto_start": True,
         "max_history_items": 100
     },
@@ -271,6 +314,15 @@ def load_settings() -> Dict[str, Any]:
                         erp["custom_headers"] = DEFAULT_SETTINGS["oracle_erp"]["custom_headers"]
                     save_settings(data)
 
+                # Ensure resource paths are populated for Oracle Prod and Oracle Dev
+                for sec_name in ("oracle_erp", "oracledev"):
+                    sec = data.get(sec_name)
+                    if isinstance(sec, dict):
+                        if not sec.get("resource_endpoint"):
+                            sec["resource_endpoint"] = "/Final_Discharge_Effluent/"
+                        if not sec.get("utility_resource_endpoint"):
+                            sec["utility_resource_endpoint"] = "/production_utilities_consumption/"
+
                 return data
         except Exception as e:
             print(f"Error loading settings.json: {e}. Returning defaults.")
@@ -279,9 +331,24 @@ def load_settings() -> Dict[str, Any]:
 
 def save_settings(settings: Dict[str, Any]) -> None:
     ensure_config_dir()
+    for sec_key in ("oracle_erp", "oracledev"):
+        sec = settings.get(sec_key)
+        if isinstance(sec, dict) and sec.get("base_url"):
+            sec["base_url"] = sanitize_endpoint_url(sec["base_url"])
     with _lock:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
+
+
+MAPPING_URL_PROPERTIES = (
+    "target_endpoint_url",
+    "target_endpoint_url_oracle",
+    "target_endpoint_url_oracle_utility",
+    "target_endpoint_url_dev",
+    "target_endpoint_url_dev_utility",
+    "target_endpoint_url_j5",
+    "target_endpoint_url_j5dev",
+)
 
 
 def load_mappings() -> List[Dict[str, Any]]:
@@ -301,6 +368,9 @@ def load_mappings() -> List[Dict[str, Any]]:
                         else:
                             url = str(m.get("target_endpoint_url") or "").lower()
                             m["target_types"] = ["j5"] if ("hxgnsmartcloud" in url or "tag=purchaseorder" in url) else ["oracle"]
+                    for u_prop in MAPPING_URL_PROPERTIES:
+                        if m.get(u_prop):
+                            m[u_prop] = sanitize_endpoint_url(m[u_prop])
                 return mappings
         except Exception as e:
             print(f"Error loading mappings.json: {e}. Returning defaults.")
@@ -309,6 +379,323 @@ def load_mappings() -> List[Dict[str, Any]]:
 
 def save_mappings(mappings: List[Dict[str, Any]]) -> None:
     ensure_config_dir()
+    for m in mappings:
+        for u_prop in MAPPING_URL_PROPERTIES:
+            if m.get(u_prop):
+                m[u_prop] = sanitize_endpoint_url(m[u_prop])
     with _lock:
         with open(MAPPINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(mappings, f, indent=2)
+
+
+FIELD_MAPPINGS_FILE = os.path.join(CONFIG_DIR, "field_mappings.json")
+
+DEFAULT_ORACLE_FIELD_MAPPINGS: List[Dict[str, Any]] = [
+    {
+        "id": "ora-ts",
+        "source": "timestamp",
+        "target": "timestamp",
+        "transform": "receipt_time",
+        "description": "Delivery receipt arrival timestamp (UTC Zulu)",
+        "enabled": True
+    },
+    {
+        "id": "ora-analysis-time",
+        "source": "AnalysisTime",
+        "target": "TESTTIMESTAMP",
+        "transform": "timestamp_zulu",
+        "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+        "enabled": True
+    },
+    {
+        "id": "ora-tag",
+        "source": "tag",
+        "target": "tag",
+        "transform": "string",
+        "description": "PI meter tag name (or Tagname / Name)",
+        "enabled": True
+    },
+    {
+        "id": "ora-desc",
+        "source": "description",
+        "target": "description",
+        "transform": "string",
+        "description": "Telemetry attribute description",
+        "enabled": True
+    },
+    {
+        "id": "ora-val",
+        "source": "value",
+        "target": "value",
+        "transform": "numeric_scaled",
+        "description": "Telemetry reading value (scaled & rounded)",
+        "enabled": True
+    },
+    {
+        "id": "ora-limit",
+        "source": "limit",
+        "target": "limit",
+        "transform": "string",
+        "description": "Telemetry threshold limit",
+        "enabled": True
+    },
+    {
+        "id": "ora-res",
+        "source": "results",
+        "target": "results",
+        "transform": "string",
+        "description": "PASS / FAIL / Normal quality result",
+        "enabled": False
+    },
+    {
+        "id": "ora-uom",
+        "source": "uom",
+        "target": "uom",
+        "transform": "string",
+        "description": "Unit of measure",
+        "enabled": True
+    },
+    {
+        "id": "ora-hilimit",
+        "source": "hilimit",
+        "target": "hilimit",
+        "transform": "string",
+        "description": "High limit threshold",
+        "enabled": True
+    },
+    {
+        "id": "ora-lolimit",
+        "source": "lolimit",
+        "target": "lolimit",
+        "transform": "string",
+        "description": "Low limit threshold",
+        "enabled": True
+    }
+]
+
+DEFAULT_OCTAVE_FIELD_MAPPINGS: List[Dict[str, Any]] = [
+    {
+        "id": "oct-tag-msg",
+        "source": "tag",
+        "target": "messageTag",
+        "transform": "string",
+        "description": "Octave message routing tag",
+        "enabled": True
+    },
+    {
+        "id": "oct-tag",
+        "source": "tag",
+        "target": "tag",
+        "transform": "string",
+        "description": "Meter tag name",
+        "enabled": True
+    },
+    {
+        "id": "oct-desc",
+        "source": "description",
+        "target": "description",
+        "transform": "string",
+        "description": "Attribute description",
+        "enabled": True
+    },
+    {
+        "id": "oct-val-num",
+        "source": "value",
+        "target": "readingValue",
+        "transform": "numeric_scaled",
+        "description": "Numeric reading value",
+        "enabled": True
+    },
+    {
+        "id": "oct-val-str",
+        "source": "value",
+        "target": "value",
+        "transform": "string",
+        "description": "Reading value as string",
+        "enabled": True
+    },
+    {
+        "id": "oct-uom-long",
+        "source": "uom",
+        "target": "unitOfMeasure",
+        "transform": "string",
+        "description": "Unit of measure name",
+        "enabled": True
+    },
+    {
+        "id": "oct-uom-short",
+        "source": "uom",
+        "target": "uom",
+        "transform": "string",
+        "description": "Short unit of measure",
+        "enabled": True
+    },
+    {
+        "id": "oct-limit",
+        "source": "limit",
+        "target": "limit",
+        "transform": "string",
+        "description": "Threshold limit",
+        "enabled": True
+    },
+    {
+        "id": "oct-results",
+        "source": "results",
+        "target": "results",
+        "transform": "string",
+        "description": "Results string",
+        "enabled": True
+    },
+    {
+        "id": "oct-quality",
+        "source": "quality",
+        "target": "quality",
+        "transform": "string",
+        "description": "Data quality flag",
+        "enabled": True
+    },
+    {
+        "id": "oct-ts",
+        "source": "timestamp",
+        "target": "timestamp",
+        "transform": "receipt_time",
+        "description": "Delivery receipt timestamp (UTC Zulu)",
+        "enabled": True
+    },
+    {
+        "id": "oct-reading-ts",
+        "source": "timestamp",
+        "target": "readingTimestamp",
+        "transform": "receipt_time",
+        "description": "Reading timestamp (UTC Zulu)",
+        "enabled": True
+    },
+    {
+        "id": "oct-analysistime",
+        "source": "AnalysisTime",
+        "target": "AnalysisTime",
+        "transform": "timestamp_zulu",
+        "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+        "enabled": True
+    }
+]
+
+
+DEFAULT_ORACLE_PROD_FIELD_MAPPINGS = DEFAULT_ORACLE_FIELD_MAPPINGS
+DEFAULT_ORACLE_DEV_FIELD_MAPPINGS = [dict(x) for x in DEFAULT_ORACLE_FIELD_MAPPINGS]
+DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS = DEFAULT_OCTAVE_FIELD_MAPPINGS
+DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS = [dict(x) for x in DEFAULT_OCTAVE_FIELD_MAPPINGS]
+
+
+def load_field_mappings() -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Loads configurable parameter & schema mappings for destination payloads.
+    Provides separate mapping lists for both Prod and Dev environments:
+    - oracle_prod: Oracle Cloud Production
+    - oracle_dev: Oracle Cloud Development / Test
+    - octave_prod: Octave / J5 Inbound Message Production
+    - octave_dev: Octave / J5 Inbound Message Development / Test
+    Persists to config/field_mappings.json and syncs with config/settings.json.
+    """
+    ensure_config_dir()
+    with _lock:
+        data = None
+        if os.path.exists(FIELD_MAPPINGS_FILE):
+            try:
+                with open(FIELD_MAPPINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                print(f"Error loading {FIELD_MAPPINGS_FILE}: {e}. Falling back.")
+
+        if not data or not isinstance(data, dict):
+            settings = load_settings()
+            ora_prod_maps = settings.get("oracle_erp", {}).get("parameter_mappings")
+            ora_dev_maps = settings.get("oracledev", {}).get("parameter_mappings")
+            oct_prod_maps = settings.get("j5_endpoint", {}).get("parameter_mappings")
+            oct_dev_maps = settings.get("j5dev_endpoint", {}).get("parameter_mappings")
+            data = {
+                "oracle_prod": ora_prod_maps or [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS],
+                "oracle_dev": ora_dev_maps or ora_prod_maps or [dict(x) for x in DEFAULT_ORACLE_DEV_FIELD_MAPPINGS],
+                "octave_prod": oct_prod_maps or [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS],
+                "octave_dev": oct_dev_maps or oct_prod_maps or [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS]
+            }
+
+        # Resolve environments with fallback preserving explicit lists
+        ora_prod = data.get("oracle_prod") if data.get("oracle_prod") is not None else (data.get("oracle") if data.get("oracle") is not None else [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS])
+        ora_dev = data.get("oracle_dev") if data.get("oracle_dev") is not None else (data.get("oracle") if data.get("oracle") is not None else [dict(x) for x in DEFAULT_ORACLE_DEV_FIELD_MAPPINGS])
+        oct_prod = data.get("octave_prod") if data.get("octave_prod") is not None else (data.get("octave") if data.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS])
+        oct_dev = data.get("octave_dev") if data.get("octave_dev") is not None else (data.get("octave") if data.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS])
+
+        result = {
+            "oracle_prod": ora_prod,
+            "oracle_dev": ora_dev,
+            "octave_prod": oct_prod,
+            "octave_dev": oct_dev,
+            # Legacy backwards-compatible aliases
+            "oracle": ora_prod,
+            "octave": oct_prod
+        }
+        return result
+
+
+def save_field_mappings(mappings_dict: Dict[str, List[Dict[str, Any]]]) -> None:
+    """
+    Saves configurable parameter and schema mappings for Prod and Dev to config/field_mappings.json.
+    Also syncs with config/settings.json under oracle_erp, oracledev, j5_endpoint, and j5dev_endpoint.
+    Preserves existing environment mappings if an incoming payload only updates one environment.
+    """
+    ensure_config_dir()
+    existing = {}
+    if os.path.exists(FIELD_MAPPINGS_FILE):
+        try:
+            with open(FIELD_MAPPINGS_FILE, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    ora_prod = mappings_dict.get("oracle_prod")
+    if ora_prod is None:
+        ora_prod = mappings_dict.get("oracle")
+    if ora_prod is None:
+        ora_prod = existing.get("oracle_prod") if existing.get("oracle_prod") is not None else [dict(x) for x in DEFAULT_ORACLE_PROD_FIELD_MAPPINGS]
+    ora_dev = mappings_dict.get("oracle_dev")
+    if ora_dev is None:
+        ora_dev = existing.get("oracle_dev") if existing.get("oracle_dev") is not None else (mappings_dict.get("oracle") if mappings_dict.get("oracle") is not None else [dict(x) for x in DEFAULT_ORACLE_DEV_FIELD_MAPPINGS])
+    oct_prod = mappings_dict.get("octave_prod")
+    if oct_prod is None:
+        oct_prod = mappings_dict.get("octave")
+    if oct_prod is None:
+        oct_prod = existing.get("octave_prod") if existing.get("octave_prod") is not None else [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS]
+    oct_dev = mappings_dict.get("octave_dev")
+    if oct_dev is None:
+        oct_dev = existing.get("octave_dev") if existing.get("octave_dev") is not None else (mappings_dict.get("octave") if mappings_dict.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS])
+    to_save = {
+        "oracle_prod": ora_prod,
+        "oracle_dev": ora_dev,
+        "octave_prod": oct_prod,
+        "octave_dev": oct_dev,
+        "oracle": ora_prod,
+        "octave": oct_prod
+    }
+    with _lock:
+        with open(FIELD_MAPPINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(to_save, f, indent=2)
+
+        # Also update settings.json sections
+        try:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+                if "oracle_erp" in settings and isinstance(settings["oracle_erp"], dict):
+                    settings["oracle_erp"]["parameter_mappings"] = ora_prod
+                if "oracledev" in settings and isinstance(settings["oracledev"], dict):
+                    settings["oracledev"]["parameter_mappings"] = ora_dev
+                if "j5_endpoint" in settings and isinstance(settings["j5_endpoint"], dict):
+                    settings["j5_endpoint"]["parameter_mappings"] = oct_prod
+                if "j5dev_endpoint" in settings and isinstance(settings["j5dev_endpoint"], dict):
+                    settings["j5dev_endpoint"]["parameter_mappings"] = oct_dev
+                with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(settings, f, indent=2)
+        except Exception as e:
+            print(f"Notice: Could not sync field_mappings into settings.json: {e}")
+
+

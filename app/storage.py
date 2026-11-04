@@ -199,16 +199,22 @@ def get_received_deliveries(
                 if status and status.upper() != "ALL":
                     data = [d for d in data if (d.get("oracle_status") or "").upper() == status.upper()]
 
-                # Filter by destination endpoint (e.g. 'J5' or 'ORACLE')
+                # Filter by destination endpoint (e.g. 'J5'/'OCTAVE', 'J5DEV'/'OCTAVEDEV', 'ORACLE', 'ORACLEDEV')
                 if endpoint and endpoint.upper() != "ALL":
                     ep_target = endpoint.upper()
                     filtered_by_ep = []
                     for d in data:
                         target_types = [str(t).upper() for t in (d.get("oracle_dispatch") or {}).get("target_types", [])]
                         ep_url = str((d.get("oracle_dispatch") or {}).get("target_endpoint") or (d.get("oracle_dispatch") or {}).get("endpoint_url") or "").lower()
-                        is_j5 = "J5" in target_types or "hxgnsmartcloud" in ep_url or "purchaseorder" in ep_url
-                        is_oracle = "ORACLE" in target_types or "oraclecloudapps" in ep_url or "/ords/" in ep_url or (not is_j5)
-                        if ep_target == "J5" and is_j5:
+                        is_j5dev = "J5DEV" in target_types or "OCTAVEDEV" in target_types or "OCTAVE DEV" in target_types
+                        is_j5 = "J5" in target_types or "OCTAVE" in target_types or (("hxgnsmartcloud" in ep_url or "purchaseorder" in ep_url) and not is_j5dev)
+                        is_oracledev = "ORACLEDEV" in target_types or "ORACLE DEV" in target_types
+                        is_oracle = "ORACLE" in target_types or (("oraclecloudapps" in ep_url or "/ords/" in ep_url) and not is_oracledev) or (not is_j5 and not is_j5dev and not is_oracledev)
+                        if ep_target in ("J5", "OCTAVE") and is_j5:
+                            filtered_by_ep.append(d)
+                        elif ep_target in ("J5DEV", "OCTAVEDEV", "OCTAVE_DEV") and is_j5dev:
+                            filtered_by_ep.append(d)
+                        elif ep_target in ("ORACLEDEV", "ORACLE_DEV") and is_oracledev:
                             filtered_by_ep.append(d)
                         elif ep_target == "ORACLE" and is_oracle:
                             filtered_by_ep.append(d)
@@ -319,6 +325,33 @@ def record_received_delivery(delivery_record: Dict[str, Any]) -> None:
                 current = []
 
         current.insert(0, delivery_record)
+        current = current[:MAX_DELIVERY_ENTRIES]
+
+        with open(DELIVERIES_FILE, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2)
+
+
+def record_received_deliveries_batch(delivery_records: List[Dict[str, Any]]) -> None:
+    """
+    Persist multiple deliveries into data/received_deliveries.json in a single atomic operation.
+    Ideal for bulk uploads to eliminate repeated file write overhead.
+    """
+    if not delivery_records:
+        return
+    ensure_data_dir()
+    with _storage_lock:
+        current: List[Dict[str, Any]] = []
+        if os.path.exists(DELIVERIES_FILE):
+            try:
+                with open(DELIVERIES_FILE, "r", encoding="utf-8") as f:
+                    current = json.load(f)
+                    if not isinstance(current, list):
+                        current = []
+            except Exception:
+                current = []
+
+        # Prepend new records preserving order
+        current = list(delivery_records) + current
         current = current[:MAX_DELIVERY_ENTRIES]
 
         with open(DELIVERIES_FILE, "w", encoding="utf-8") as f:

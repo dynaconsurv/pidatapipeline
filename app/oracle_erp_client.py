@@ -15,28 +15,88 @@ from typing import Dict, Any, Optional, Tuple
 import requests
 
 
-def format_ords_timestamp(ts: Any) -> str:
+def format_ords_timestamp(ts: Any, allow_empty: bool = False) -> Optional[str]:
     """
     Format timestamp to Oracle ORDS standard ISO 8601 Zulu UTC: YYYY-MM-DDTHH:MM:SSZ
     Strips fractional microseconds which cause Oracle DATE column parsing issues.
+    If allow_empty is True, None or empty/null values return None.
     """
-    if not ts:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if ts is None:
+        return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, datetime):
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
         return ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        val = float(ts)
+        if 20000 <= val <= 100000:
+            from datetime import timedelta
+            excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+            sec = round(val * 86400)
+            return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if val > 1e11:
+            val = val / 1000.0
+        return datetime.fromtimestamp(val, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, str):
         s = ts.strip().strip('"').strip("'")
+        if not s or s.lower() in ("null", "none"):
+            return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            fnum = float(s)
+            if 20000 <= fnum <= 100000:
+                from datetime import timedelta
+                excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+                sec = round(fnum * 86400)
+                return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if s.isdigit() and len(s) >= 10:
+                if fnum > 1e11:
+                    fnum = fnum / 1000.0
+                return datetime.fromtimestamp(fnum, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
         try:
             clean_s = s.replace("Z", "+00:00")
+            if "." in clean_s:
+                parts = clean_s.split(".", 1)
+                date_time_part = parts[0]
+                rest = parts[1]
+                tz_idx = -1
+                for idx, ch in enumerate(rest):
+                    if ch in ("+", "-"):
+                        tz_idx = idx
+                        break
+                if tz_idx != -1:
+                    frac = rest[:tz_idx][:6]
+                    tz = rest[tz_idx:]
+                    clean_s = f"{date_time_part}.{frac}{tz}"
+                else:
+                    clean_s = f"{date_time_part}.{rest[:6]}"
             dt = datetime.fromisoformat(clean_s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S",
+                "%Y/%m/%d %H:%M:%S",
+                "%d/%m/%Y %H:%M:%S",
+                "%m/%d/%Y %H:%M:%S",
+                "%d-%b-%Y %H:%M:%S",
+                "%d-%B-%Y %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d",
+            ):
+                try:
+                    dt = datetime.strptime(s.split(".")[0], fmt)
+                    dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                except Exception:
+                    continue
+
             if "." in s:
                 base = s.split(".")[0]
+                if " " in base and "T" not in base:
+                    base = base.replace(" ", "T")
                 return f"{base}Z" if not base.endswith("Z") else base
             if " " in s and "T" not in s:
                 s = s.replace(" ", "T")
@@ -44,6 +104,68 @@ def format_ords_timestamp(ts: Any) -> str:
                 return f"{s}Z"
             return s
     return str(ts)
+
+
+def sanitize_endpoint_url(url: Optional[str]) -> str:
+    """
+    Sanitizes an endpoint URL to remove duplicate consecutive path segments
+    (e.g. /Final_Discharge_Effluent/Final_Discharge_Effluent/) and normalize slashes.
+    """
+    if not url or not isinstance(url, str):
+        return ""
+    u = str(url).strip().strip('"').strip("'")
+    if not u:
+        return ""
+    if not (u.startswith("http://") or u.startswith("https://")):
+        return u
+    try:
+        import urllib.parse
+        parsed = urllib.parse.urlsplit(u)
+        raw_segments = [s for s in parsed.path.split("/") if s]
+        deduped = []
+        for s in raw_segments:
+            if deduped and s.lower() == deduped[-1].lower():
+                continue
+            deduped.append(s)
+        new_path = "/" + "/".join(deduped)
+        if parsed.path.endswith("/") and not new_path.endswith("/"):
+            new_path += "/"
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment))
+    except Exception:
+        return u
+
+
+KNOWN_ORDS_RESOURCE_SEGMENTS = (
+    "final_discharge_effluent",
+    "production_utilities_consumption",
+)
+
+
+def build_oracle_endpoint_url(base_url: Optional[str], resource_endpoint: Optional[str]) -> str:
+    """
+    Safely joins base_url and resource_endpoint without duplicating paths.
+    Handles situations where base_url already contains the resource_endpoint or another known resource endpoint.
+    """
+    base = sanitize_endpoint_url(str(base_url or "").strip().rstrip("/"))
+    res = (resource_endpoint or "").strip().strip("/")
+    if not base:
+        return f"/{res}/" if res else "/"
+
+    if res:
+        # If res is provided, strip any known trailing resource segment from base to avoid appending resource onto resource
+        for seg in KNOWN_ORDS_RESOURCE_SEGMENTS:
+            if base.lower().endswith("/" + seg):
+                base = base[:-(len(seg) + 1)].rstrip("/")
+                break
+        res_lower = res.lower()
+        if base.lower().endswith("/" + res_lower):
+            raw_url = f"{base}/"
+        else:
+            raw_url = f"{base}/{res}/"
+    else:
+        raw_url = f"{base}/"
+
+    return sanitize_endpoint_url(raw_url)
 
 
 class OracleERPCloudClient:
@@ -59,7 +181,7 @@ class OracleERPCloudClient:
         self.username = config.get("username", "").strip()
         self.password = config.get("password", "").strip()
         self.bearer_token = config.get("bearer_token", "").strip()
-        self.resource_endpoint = config.get("resource_endpoint", "/fscmRestApi/resources/11.13.18.05/standardReceipts").strip()
+        self.resource_endpoint = (config.get("resource_endpoint") or "").strip()
         self.http_method = config.get("http_method", "POST").upper()
         self.custom_headers = config.get("custom_headers", {})
         self.timeout = config.get("timeout_seconds", 15)
@@ -146,14 +268,23 @@ class OracleERPCloudClient:
 
     def test_connection(self, test_url: Optional[str] = None) -> Dict[str, Any]:
         """Validate Oracle Cloud / ORDS connection settings."""
+        if not self.enabled:
+            return {
+                "success": False,
+                "status": "PENDING_SETUP",
+                "message": "Oracle ERP integration is currently disabled in settings.",
+                "details": {
+                    "auth_type": self.auth_type,
+                    "base_url": self.base_url or "(Not set)",
+                    "enabled": False
+                }
+            }
         # Resolve endpoint URL to test
         if test_url:
-            clean_test = str(test_url).strip().strip('"').strip("'")
+            clean_test = sanitize_endpoint_url(str(test_url).strip().strip('"').strip("'"))
             full_endpoint = clean_test
-        elif self.base_url and self.resource_endpoint:
-            full_endpoint = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
         elif self.base_url:
-            full_endpoint = self.base_url
+            full_endpoint = build_oracle_endpoint_url(self.base_url, self.resource_endpoint)
         else:
             return {
                 "success": False,
@@ -313,7 +444,7 @@ class OracleERPCloudClient:
                 "status": "PENDING_SETUP",
                 "message": reason,
                 "record_count": 1 if not isinstance(payload.get("items"), list) else len(payload.get("items")),
-                "target_endpoint": target_endpoint or f"{self.base_url}{self.resource_endpoint}",
+                "target_endpoint": sanitize_endpoint_url(target_endpoint) or build_oracle_endpoint_url(self.base_url, self.resource_endpoint),
                 "http_code": None,
                 "payload_sample": payload,
                 "response_body": None,
@@ -322,15 +453,16 @@ class OracleERPCloudClient:
             }
 
         if target_endpoint:
-            clean_target = str(target_endpoint).strip().strip('"').strip("'")
+            clean_target = sanitize_endpoint_url(str(target_endpoint).strip().strip('"').strip("'"))
             if clean_target.startswith("http://") or clean_target.startswith("https://"):
                 full_url = clean_target
             else:
-                full_url = f"{self.base_url.rstrip('/')}/{clean_target.lstrip('/')}"
+                full_url = build_oracle_endpoint_url(self.base_url, clean_target)
         elif self.base_url:
-            full_url = f"{self.base_url.rstrip('/')}/{self.resource_endpoint.lstrip('/')}"
+            full_url = build_oracle_endpoint_url(self.base_url, self.resource_endpoint)
         else:
             full_url = "https://oracle-ords-endpoint.local"
+        full_url = sanitize_endpoint_url(full_url)
 
         headers = self._build_request_headers(target_endpoint=full_url)
         start_t = time.time()

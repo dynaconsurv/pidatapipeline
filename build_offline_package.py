@@ -61,10 +61,12 @@ def ensure_cached_assets():
     else:
         print("[OK] Using cached Python 3.11 embeddable package.")
 
-    # 2. Download 64-bit Windows wheels if not cached
+    # 2. Download 64-bit Windows wheels if not cached or missing new requirements
     cached_wheels = glob.glob(os.path.join(WHEELS_CACHE, "*.whl"))
     req_file = os.path.join(ROOT_DIR, "requirements.txt")
-    if len(cached_wheels) < 10:
+    has_multipart = any("multipart" in w.lower() for w in cached_wheels)
+    has_openpyxl = any("openpyxl" in w.lower() for w in cached_wheels)
+    if len(cached_wheels) < 10 or not has_multipart or not has_openpyxl:
         print("[*] Downloading offline binary wheels for requirements.txt (win_amd64)...")
         cmd = [
             sys.executable, "-m", "pip", "download",
@@ -132,6 +134,9 @@ def build_portable_package(version: str, output_dir: str) -> str:
     shutil.copy2(os.path.join(ROOT_DIR, "run_mock_erp.py"), os.path.join(stage_dir, "run_mock_erp.py"))
     shutil.copy2(os.path.join(ROOT_DIR, "requirements.txt"), os.path.join(stage_dir, "requirements.txt"))
     shutil.copy2(os.path.join(ROOT_DIR, "README.md"), os.path.join(stage_dir, "README.md"))
+    sample_excel = os.path.join(ROOT_DIR, "Cloud Utility updated.xlsx")
+    if os.path.exists(sample_excel):
+        shutil.copy2(sample_excel, os.path.join(stage_dir, "Cloud Utility updated.xlsx"))
 
     # 3. Create 1-Click Portable Batch Launchers
     # start.bat
@@ -176,7 +181,7 @@ timeout /t 2 >nul
         f.write(stop_bat_content)
 
     # install_service.bat
-    install_service_content = '''@echo off
+    install_service_content = r'''@echo off
 net session >nul 2>&1
 if %errorLevel% neq 0 (
     echo ================================================================

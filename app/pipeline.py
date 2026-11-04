@@ -16,6 +16,7 @@ from app.config import load_settings, load_mappings
 from app.pi_client import PIWebApiClient
 from app.oracle_erp_client import OracleERPCloudClient, format_ords_timestamp
 from app.j5_client import J5Client, DEFAULT_J5_URL, format_j5_timestamp
+from app.field_mapper import build_destination_payload
 from app.storage import (
     record_pull_batch,
     record_publish_event,
@@ -122,11 +123,13 @@ class DataPipelineEngine:
         erp_cfg = settings.get("oracle_erp", {})
         oracledev_cfg = settings.get("oracledev", {})
         j5_cfg = settings.get("j5_endpoint", {})
+        j5dev_cfg = settings.get("j5dev_endpoint", {})
 
         pi_client = PIWebApiClient(pi_cfg)
         erp_client = OracleERPCloudClient(erp_cfg)
         oracledev_client = OracleERPCloudClient(oracledev_cfg)
         j5_client = J5Client(j5_cfg)
+        j5dev_client = J5Client(j5dev_cfg)
 
         batch_id = f"batch-{int(time.time())}-{uuid.uuid4().hex[:6]}"
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -265,30 +268,32 @@ class DataPipelineEngine:
                     else:
                         target_types = ["oracle"]
 
-            tag_val = m.get("tag") if m.get("tag") is not None else (m.get("meter_tag") or "")
-            desc_val = m.get("description") if m.get("description") is not None else (m.get("name") or "")
-            limit_val = m.get("limit") if m.get("limit") is not None else ""
-            results_val = m.get("results") if m.get("results") is not None else ""
-            uom_val = item.get("uom") or item.get("UOM") or item.get("unit") or m.get("uom") or m.get("unit") or ""
-
-            ords_payload = {
-                "timestamp": format_ords_timestamp(item.get("timestamp") or now_iso),
-                "tag": str(tag_val),
-                "description": str(desc_val),
-                "value": str(item.get("value", "")),
-                "limit": str(limit_val),
-                "results": str(results_val),
-                "uom": str(uom_val)
-            }
+            ords_payload = build_destination_payload(
+                target_type="oracle",
+                source_attr=item,
+                mapping_rule=m,
+                received_at=now_iso,
+                skip_params={"j5", "j5dev", "oracle", "oracledev", "endpoint", "environment"}
+            )
 
             for t_type in target_types:
                 t_lower = str(t_type).strip().lower()
-                if t_lower == "j5":
+                if t_lower in ("j5", "octave"):
                     if j5_cfg.get("enabled", True):
                         j5_payload = J5Client.build_j5_payload(item, mapping=m)
                         target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
                         res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
                         res["target_type"] = "j5"
+                        res["attribute_name"] = attr_name
+                        item_results.append(res)
+                        if res.get("status") != "SUCCESS":
+                            all_succeeded = False
+                elif t_lower in ("j5dev", "j5_dev", "octavedev", "octave_dev"):
+                    if j5dev_cfg.get("enabled", True):
+                        j5dev_payload = J5Client.build_j5_payload(item, mapping=m)
+                        target_url = m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL
+                        res = j5dev_client.publish_data(j5dev_payload, target_endpoint=target_url)
+                        res["target_type"] = "j5dev"
                         res["attribute_name"] = attr_name
                         item_results.append(res)
                         if res.get("status") != "SUCCESS":

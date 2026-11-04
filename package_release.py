@@ -82,6 +82,10 @@ def should_exclude(rel_path: str) -> bool:
     """Check if relative path should be excluded from release zip."""
     norm = rel_path.replace("\\", "/")
     
+    base = os.path.basename(norm)
+    if base.startswith("~$") or base.startswith(".~") or base.endswith(".tmp") or base.startswith("scratch_"):
+        return True
+
     # Exclude version control and development files
     if norm.startswith(".git/") or norm == ".git":
         return True
@@ -152,8 +156,11 @@ def build_package(version: str, output_dir: str = "dist") -> str:
                 if should_exclude(rel_path):
                     continue
 
-                zf.write(full_path, rel_path)
-                files_added += 1
+                try:
+                    zf.write(full_path, rel_path)
+                    files_added += 1
+                except (PermissionError, OSError):
+                    pass
 
     size_kb = round(os.path.getsize(zip_path) / 1024, 1)
     sha256 = compute_sha256(zip_path)

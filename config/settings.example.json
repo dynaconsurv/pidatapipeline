@@ -33,15 +33,46 @@
       "Content-Type": "application/json",
       "Accept": "application/json"
     },
-    "timeout_seconds": 15
+    "timeout_seconds": 15,
+    "utility_resource_endpoint": "/production_utilities_consumption/"
+  },
+  "oracledev": {
+    "enabled": true,
+    "auth_type": "none",
+    "base_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int",
+    "token_url": "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/oauth/token",
+    "client_id": "",
+    "client_secret": "",
+    "scope": "",
+    "username": "",
+    "password": "",
+    "bearer_token": "",
+    "resource_endpoint": "/Final_Discharge_Effluent/",
+    "http_method": "POST",
+    "dry_run": false,
+    "custom_headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "timeout_seconds": 15,
+    "utility_resource_endpoint": "/production_utilities_consumption/"
   },
   "j5_endpoint": {
     "enabled": true,
     "auth_type": "basic",
-    "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder",
+    "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
     "username": "HIRUJR_JZNOT1742577235_TST",
     "password": "kah4YAH!bvm-vkt_jzd",
     "tenant_id": "JZNOT1742577235_TST",
+    "timeout_seconds": 15
+  },
+  "j5dev_endpoint": {
+    "enabled": false,
+    "auth_type": "basic",
+    "url": "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook",
+    "username": "",
+    "password": "",
+    "tenant_id": "",
     "timeout_seconds": 15
   },
   "pipeline": {
@@ -49,7 +80,9 @@
     "ingestion_mode": "endpoint",
     "auto_dispatch": true,
     "auto_start": true,
-    "max_history_items": 100
+    "max_history_items": 100,
+    "auto_create_j5_mapping": true,
+    "skip_parameters": "j5, j5dev, oracle, oracledev, endpoint, environment"
   },
   "endpoint_security": {
     "api_key_enabled": false,

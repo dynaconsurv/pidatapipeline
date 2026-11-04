@@ -1,0 +1,574 @@
+{
+  "oracle_prod": [
+    {
+      "id": "ora-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt arrival timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "ora-analysis-time",
+      "source": "SourceTime",
+      "target": "TESTTIMESTAMP",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    },
+    {
+      "id": "ora-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "PI meter tag name (or Tagname / Name)",
+      "enabled": true
+    },
+    {
+      "id": "ora-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Telemetry attribute description",
+      "enabled": true
+    },
+    {
+      "id": "ora-val",
+      "source": "value",
+      "target": "value",
+      "transform": "numeric_scaled",
+      "description": "Telemetry reading value (scaled & rounded)",
+      "enabled": true
+    },
+    {
+      "id": "ora-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Telemetry threshold limit",
+      "enabled": false
+    },
+    {
+      "id": "ora-res",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "PASS / FAIL / Normal quality result",
+      "enabled": false
+    },
+    {
+      "id": "ora-uom",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "ora-hilimit",
+      "source": "hilimit",
+      "target": "hilimit",
+      "transform": "string",
+      "description": "High limit threshold",
+      "enabled": false
+    },
+    {
+      "id": "ora-lolimit",
+      "source": "lolimit",
+      "target": "lolimit",
+      "transform": "string",
+      "description": "Low limit threshold",
+      "enabled": false
+    }
+  ],
+  "oracle_dev": [
+    {
+      "id": "ora-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt arrival timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "ora-analysis-time",
+      "source": "AnalysisTime",
+      "target": "TESTTIMESTAMP",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    },
+    {
+      "id": "ora-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "PI meter tag name (or Tagname / Name)",
+      "enabled": true
+    },
+    {
+      "id": "ora-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Telemetry attribute description",
+      "enabled": true
+    },
+    {
+      "id": "ora-val",
+      "source": "value",
+      "target": "value",
+      "transform": "numeric_scaled",
+      "description": "Telemetry reading value (scaled & rounded)",
+      "enabled": true
+    },
+    {
+      "id": "ora-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Telemetry threshold limit",
+      "enabled": false
+    },
+    {
+      "id": "ora-res",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "PASS / FAIL / Normal quality result",
+      "enabled": false
+    },
+    {
+      "id": "ora-uom",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "ora-hilimit",
+      "source": "hilimit",
+      "target": "hilimit",
+      "transform": "string",
+      "description": "High limit threshold",
+      "enabled": false
+    },
+    {
+      "id": "ora-lolimit",
+      "source": "lolimit",
+      "target": "lolimit",
+      "transform": "string",
+      "description": "Low limit threshold",
+      "enabled": false
+    },
+    {
+      "id": "ora-custom-1793608188265",
+      "source": "testdummy",
+      "target": "dummydata",
+      "transform": "string",
+      "description": "",
+      "enabled": true
+    }
+  ],
+  "octave_prod": [
+    {
+      "id": "oct-tag-msg",
+      "source": "tag",
+      "target": "messageTag",
+      "transform": "string",
+      "description": "Octave message routing tag",
+      "enabled": true
+    },
+    {
+      "id": "oct-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "Meter tag name",
+      "enabled": true
+    },
+    {
+      "id": "oct-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Attribute description",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-num",
+      "source": "value",
+      "target": "readingValue",
+      "transform": "numeric_scaled",
+      "description": "Numeric reading value",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-str",
+      "source": "value",
+      "target": "value",
+      "transform": "string",
+      "description": "Reading value as string",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-long",
+      "source": "uom",
+      "target": "unitOfMeasure",
+      "transform": "string",
+      "description": "Unit of measure name",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-short",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Short unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "oct-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Threshold limit",
+      "enabled": true
+    },
+    {
+      "id": "oct-results",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "Results string",
+      "enabled": true
+    },
+    {
+      "id": "oct-quality",
+      "source": "quality",
+      "target": "quality",
+      "transform": "string",
+      "description": "Data quality flag",
+      "enabled": true
+    },
+    {
+      "id": "oct-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-reading-ts",
+      "source": "timestamp",
+      "target": "readingTimestamp",
+      "transform": "receipt_time",
+      "description": "Reading timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-analysistime",
+      "source": "AnalysisTime",
+      "target": "AnalysisTime",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    }
+  ],
+  "octave_dev": [
+    {
+      "id": "oct-tag-msg",
+      "source": "tag",
+      "target": "messageTag",
+      "transform": "string",
+      "description": "Octave message routing tag",
+      "enabled": true
+    },
+    {
+      "id": "oct-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "Meter tag name",
+      "enabled": true
+    },
+    {
+      "id": "oct-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Attribute description",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-num",
+      "source": "value",
+      "target": "readingValue",
+      "transform": "numeric_scaled",
+      "description": "Numeric reading value",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-str",
+      "source": "value",
+      "target": "value",
+      "transform": "string",
+      "description": "Reading value as string",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-long",
+      "source": "uom",
+      "target": "unitOfMeasure",
+      "transform": "string",
+      "description": "Unit of measure name",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-short",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Short unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "oct-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Threshold limit",
+      "enabled": true
+    },
+    {
+      "id": "oct-results",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "Results string",
+      "enabled": true
+    },
+    {
+      "id": "oct-quality",
+      "source": "quality",
+      "target": "quality",
+      "transform": "string",
+      "description": "Data quality flag",
+      "enabled": true
+    },
+    {
+      "id": "oct-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-reading-ts",
+      "source": "timestamp",
+      "target": "readingTimestamp",
+      "transform": "receipt_time",
+      "description": "Reading timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-analysistime",
+      "source": "AnalysisTime",
+      "target": "AnalysisTime",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    }
+  ],
+  "oracle": [
+    {
+      "id": "ora-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt arrival timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "ora-analysis-time",
+      "source": "SourceTime",
+      "target": "TESTTIMESTAMP",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    },
+    {
+      "id": "ora-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "PI meter tag name (or Tagname / Name)",
+      "enabled": true
+    },
+    {
+      "id": "ora-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Telemetry attribute description",
+      "enabled": true
+    },
+    {
+      "id": "ora-val",
+      "source": "value",
+      "target": "value",
+      "transform": "numeric_scaled",
+      "description": "Telemetry reading value (scaled & rounded)",
+      "enabled": true
+    },
+    {
+      "id": "ora-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Telemetry threshold limit",
+      "enabled": false
+    },
+    {
+      "id": "ora-res",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "PASS / FAIL / Normal quality result",
+      "enabled": false
+    },
+    {
+      "id": "ora-uom",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "ora-hilimit",
+      "source": "hilimit",
+      "target": "hilimit",
+      "transform": "string",
+      "description": "High limit threshold",
+      "enabled": false
+    },
+    {
+      "id": "ora-lolimit",
+      "source": "lolimit",
+      "target": "lolimit",
+      "transform": "string",
+      "description": "Low limit threshold",
+      "enabled": false
+    }
+  ],
+  "octave": [
+    {
+      "id": "oct-tag-msg",
+      "source": "tag",
+      "target": "messageTag",
+      "transform": "string",
+      "description": "Octave message routing tag",
+      "enabled": true
+    },
+    {
+      "id": "oct-tag",
+      "source": "tag",
+      "target": "tag",
+      "transform": "string",
+      "description": "Meter tag name",
+      "enabled": true
+    },
+    {
+      "id": "oct-desc",
+      "source": "description",
+      "target": "description",
+      "transform": "string",
+      "description": "Attribute description",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-num",
+      "source": "value",
+      "target": "readingValue",
+      "transform": "numeric_scaled",
+      "description": "Numeric reading value",
+      "enabled": true
+    },
+    {
+      "id": "oct-val-str",
+      "source": "value",
+      "target": "value",
+      "transform": "string",
+      "description": "Reading value as string",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-long",
+      "source": "uom",
+      "target": "unitOfMeasure",
+      "transform": "string",
+      "description": "Unit of measure name",
+      "enabled": true
+    },
+    {
+      "id": "oct-uom-short",
+      "source": "uom",
+      "target": "uom",
+      "transform": "string",
+      "description": "Short unit of measure",
+      "enabled": true
+    },
+    {
+      "id": "oct-limit",
+      "source": "limit",
+      "target": "limit",
+      "transform": "string",
+      "description": "Threshold limit",
+      "enabled": true
+    },
+    {
+      "id": "oct-results",
+      "source": "results",
+      "target": "results",
+      "transform": "string",
+      "description": "Results string",
+      "enabled": true
+    },
+    {
+      "id": "oct-quality",
+      "source": "quality",
+      "target": "quality",
+      "transform": "string",
+      "description": "Data quality flag",
+      "enabled": true
+    },
+    {
+      "id": "oct-ts",
+      "source": "timestamp",
+      "target": "timestamp",
+      "transform": "receipt_time",
+      "description": "Delivery receipt timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-reading-ts",
+      "source": "timestamp",
+      "target": "readingTimestamp",
+      "transform": "receipt_time",
+      "description": "Reading timestamp (UTC Zulu)",
+      "enabled": true
+    },
+    {
+      "id": "oct-analysistime",
+      "source": "AnalysisTime",
+      "target": "AnalysisTime",
+      "transform": "timestamp_zulu",
+      "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+      "enabled": true
+    }
+  ]
+}
