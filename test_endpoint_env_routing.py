@@ -434,6 +434,76 @@ class TestEndpointEnvRouting(unittest.TestCase):
         finally:
             save_field_mappings(original_maps)
 
+    def test_octave_dev_url_sync_when_settings_changed(self):
+        import json
+        from unittest.mock import patch
+        from app.config import load_settings, save_settings, load_mappings, save_mappings
+        from app.delivery_handler import process_incoming_delivery, dispatch_delivery_to_oracle
+
+        orig_settings = load_settings()
+        orig_mappings = load_mappings()
+        try:
+            old_placeholder_url = "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
+            new_octave_dev_url = "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook"
+
+            # Simulate existing mapping created when Octave Dev still had placeholder URL
+            stale_mapping = {
+                "id": "map-auto-test-j5dev",
+                "name": "Bleaching Filter F7202ab Differential Pressure.Alarm",
+                "attribute_name": "Bleaching Filter F7202ab Differential Pressure.Alarm",
+                "tag": "Bleaching Filter F7202ab Differential Pressure.Alarm",
+                "meter_tag": "Bleaching Filter F7202ab Differential Pressure.Alarm",
+                "target_type": "j5dev",
+                "target_types": ["j5dev"],
+                "target_endpoint_url": old_placeholder_url,
+                "target_endpoint_url_j5": old_placeholder_url,
+                "target_endpoint_url_j5dev": old_placeholder_url,
+                "enabled": True
+            }
+            save_mappings([stale_mapping])
+
+            # Now user configures the new Octave Dev URL in Settings
+            updated_settings = json.loads(json.dumps(orig_settings))
+            updated_settings.setdefault("j5dev_endpoint", {})["enabled"] = True
+            updated_settings["j5dev_endpoint"]["url"] = new_octave_dev_url
+            updated_settings.setdefault("pipeline", {})["auto_dispatch"] = False
+            save_settings(updated_settings)
+
+            # 1. Verify mappings.json was synced to the new Octave Dev URL
+            synced_mappings = load_mappings()
+            self.assertEqual(len(synced_mappings), 1)
+            self.assertEqual(synced_mappings[0]["target_endpoint_url_j5dev"], new_octave_dev_url)
+            self.assertEqual(synced_mappings[0]["target_endpoint_url"], new_octave_dev_url)
+
+            # 2. Verify incoming Octave Test delivery dispatches to the new Octave Dev URL
+            payload = {
+                "Tagname": "Bleaching Filter F7202ab Differential Pressure.Alarm",
+                "Value": "Active",
+                "Endpoint": "Octave",
+                "Environment": "Test"
+            }
+            with patch("app.j5_client.J5Client.publish_data") as mock_pub:
+                mock_pub.return_value = {
+                    "status": "SUCCESS",
+                    "http_code": 200,
+                    "target_endpoint": new_octave_dev_url,
+                    "response_body": {"status": "ok"},
+                    "error_detail": None,
+                    "message": "OK"
+                }
+                res = process_incoming_delivery(payload, client_ip="10.60.2.20")
+                dispatch_res = dispatch_delivery_to_oracle(res["delivery_id"])
+                self.assertTrue(mock_pub.called)
+                called_kwargs = mock_pub.call_args.kwargs
+                self.assertEqual(called_kwargs.get("target_endpoint"), new_octave_dev_url)
+                dispatches = dispatch_res.get("dispatches", [])
+                self.assertEqual(len(dispatches), 1)
+                self.assertEqual(dispatches[0].get("target_type"), "j5dev")
+                self.assertEqual(dispatches[0].get("target_endpoint"), new_octave_dev_url)
+        finally:
+            save_settings(orig_settings)
+            save_mappings(orig_mappings)
+
 
 if __name__ == "__main__":
     unittest.main()

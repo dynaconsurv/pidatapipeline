@@ -1148,23 +1148,27 @@ def ensure_j5_mapping_for_attribute(
                         m[url_prop] = sanitized_prop
                         updated = True
 
-            if not m.get("target_endpoint_url_oracle"):
+            if default_oracle_url and m.get("target_endpoint_url_oracle") != default_oracle_url:
                 m["target_endpoint_url_oracle"] = default_oracle_url
                 updated = True
-            if not m.get("target_endpoint_url_oracle_utility"):
+            if default_oracle_util_url and m.get("target_endpoint_url_oracle_utility") != default_oracle_util_url:
                 m["target_endpoint_url_oracle_utility"] = default_oracle_util_url
                 updated = True
-            if not m.get("target_endpoint_url_dev"):
+            if default_dev_url and m.get("target_endpoint_url_dev") != default_dev_url:
                 m["target_endpoint_url_dev"] = default_dev_url
                 updated = True
-            if not m.get("target_endpoint_url_dev_utility"):
+            if default_dev_util_url and m.get("target_endpoint_url_dev_utility") != default_dev_util_url:
                 m["target_endpoint_url_dev_utility"] = default_dev_util_url
                 updated = True
-            if not m.get("target_endpoint_url_j5"):
+            if default_j5_url and m.get("target_endpoint_url_j5") != default_j5_url:
                 m["target_endpoint_url_j5"] = default_j5_url
                 updated = True
-            if not m.get("target_endpoint_url_j5dev"):
+            if default_j5dev_url and m.get("target_endpoint_url_j5dev") != default_j5dev_url:
                 m["target_endpoint_url_j5dev"] = default_j5dev_url
+                updated = True
+            expected_primary_url = resolve_target_url(m.get("target_type") or (m.get("target_types") or ["oracle"])[0])
+            if expected_primary_url and m.get("target_endpoint_url") != expected_primary_url:
+                m["target_endpoint_url"] = expected_primary_url
                 updated = True
         if updated:
             save_mappings(mappings)
@@ -1560,11 +1564,12 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 if t_lower in ("j5", "octave"):
                     if not is_retry and (t_lower in disabled_targets or attr.get("j5") is False):
                         continue
+                    resolved_j5_url = sanitize_endpoint_url(attr.get("target_endpoint_url_j5") or j5_cfg.get("url") or m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or DEFAULT_J5_URL)
                     if not j5_cfg.get("enabled", True) and not attr.get("j5"):
                         item_results.append({
                             "target_type": "j5",
                             "attribute_name": attr_name,
-                            "target_endpoint": m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL,
+                            "target_endpoint": resolved_j5_url,
                             "status": "PENDING_SETUP",
                             "http_code": None,
                             "payload": {},
@@ -1577,7 +1582,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     j5_payload = J5Client.build_j5_payload(attr, mapping=m, skip_params=skip_params_set, received_at=received_time)
-                    target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                    target_url = resolved_j5_url
                     pub_res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
 
                     item_results.append({
@@ -1600,11 +1605,12 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                 elif t_lower in ("j5dev", "j5_dev", "jfdev", "octavedev", "octave_dev"):
                     if not is_retry and (t_lower in disabled_targets or attr.get("j5dev") is False):
                         continue
+                    resolved_j5dev_url = sanitize_endpoint_url(attr.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or m.get("target_endpoint_url_j5dev") or DEFAULT_J5_URL)
                     if not j5dev_cfg.get("enabled", True) and not attr.get("j5dev"):
                         item_results.append({
                             "target_type": "j5dev",
                             "attribute_name": attr_name,
-                            "target_endpoint": m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL,
+                            "target_endpoint": resolved_j5dev_url,
                             "status": "PENDING_SETUP",
                             "http_code": None,
                             "payload": {},
@@ -1617,7 +1623,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     j5dev_payload = J5Client.build_j5_payload(attr, mapping=m, skip_params=skip_params_set, received_at=received_time, target_type="j5dev")
-                    target_url = m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL
+                    target_url = resolved_j5dev_url
                     pub_res = j5dev_client.publish_data(j5dev_payload, target_endpoint=target_url)
 
                     item_results.append({
@@ -1658,7 +1664,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     util_def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
-                    target_url = sanitize_endpoint_url(m.get("target_endpoint_url_dev_utility") or util_def_url or None)
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_dev_utility") or util_def_url or m.get("target_endpoint_url_dev_utility") or None)
                     dev_ords_payload = build_destination_payload("oracledev_utility", source_attr=attr, mapping_rule=m, received_at=received_time, skip_params=skip_params_set)
                     pub_res = oracledev_client.publish_data(dev_ords_payload, target_endpoint=target_url)
 
@@ -1703,7 +1709,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     eff_def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
-                    target_url = sanitize_endpoint_url(m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or eff_def_url or (raw_target if "dev" in raw_target.lower() else None) or None)
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_dev") or eff_def_url or m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or (raw_target if "dev" in raw_target.lower() else None) or None)
                     dev_ords_payload = build_destination_payload("oracledev", source_attr=attr, mapping_rule=m, received_at=received_time, skip_params=skip_params_set)
                     pub_res = oracledev_client.publish_data(dev_ords_payload, target_endpoint=target_url)
 
@@ -1748,7 +1754,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     util_def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
-                    target_url = sanitize_endpoint_url(m.get("target_endpoint_url_oracle_utility") or util_def_url or None)
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_oracle_utility") or util_def_url or m.get("target_endpoint_url_oracle_utility") or None)
                     pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
 
                     item_results.append({
@@ -1793,7 +1799,7 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         continue
 
                     eff_def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
-                    target_url = sanitize_endpoint_url(m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or eff_def_url or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None) or None)
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_oracle") or eff_def_url or m.get("target_endpoint_url_oracle") or m.get("target_endpoint_url") or (raw_target if "hxgnsmartcloud" not in raw_target.lower() and "dev" not in raw_target.lower() else None) or None)
                     pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
 
                     item_results.append({

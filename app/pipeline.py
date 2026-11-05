@@ -281,7 +281,7 @@ class DataPipelineEngine:
                 if t_lower in ("j5", "octave"):
                     if j5_cfg.get("enabled", True):
                         j5_payload = J5Client.build_j5_payload(item, mapping=m)
-                        target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                        target_url = j5_cfg.get("url") or m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or DEFAULT_J5_URL
                         res = j5_client.publish_data(j5_payload, target_endpoint=target_url)
                         res["target_type"] = "j5"
                         res["attribute_name"] = attr_name
@@ -291,7 +291,7 @@ class DataPipelineEngine:
                 elif t_lower in ("j5dev", "j5_dev", "octavedev", "octave_dev"):
                     if j5dev_cfg.get("enabled", True):
                         j5dev_payload = J5Client.build_j5_payload(item, mapping=m)
-                        target_url = m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL
+                        target_url = j5dev_cfg.get("url") or m.get("target_endpoint_url_j5dev") or DEFAULT_J5_URL
                         res = j5dev_client.publish_data(j5dev_payload, target_endpoint=target_url)
                         res["target_type"] = "j5dev"
                         res["attribute_name"] = attr_name
@@ -300,7 +300,7 @@ class DataPipelineEngine:
                             all_succeeded = False
                 elif t_lower in ("oracledev", "oracle_dev"):
                     if oracledev_cfg.get("enabled", False):
-                        target_url = m.get("target_endpoint_url_dev") or m.get("target_endpoint_url_oracledev") or None
+                        target_url = None
                         res = oracledev_client.publish_data(ords_payload, target_endpoint=target_url)
                         res["target_type"] = "oracledev"
                         res["attribute_name"] = attr_name
@@ -310,7 +310,7 @@ class DataPipelineEngine:
                 else:
                     # oracle production
                     if erp_cfg.get("enabled", False):
-                        target_url = m.get("target_endpoint_url") or m.get("target_endpoint_url_oracle") or None
+                        target_url = None
                         res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
                         res["target_type"] = "oracle"
                         res["attribute_name"] = attr_name

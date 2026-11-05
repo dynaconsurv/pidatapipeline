@@ -113,7 +113,7 @@ def build_portable_package(version: str, output_dir: str) -> str:
 
     # 2. Copy Application Folders
     shutil.copytree(os.path.join(ROOT_DIR, "app"), os.path.join(stage_dir, "app"), ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    shutil.copytree(os.path.join(ROOT_DIR, "scripts"), os.path.join(stage_dir, "scripts"))
+    shutil.copytree(os.path.join(ROOT_DIR, "scripts"), os.path.join(stage_dir, "scripts"), ignore=shutil.ignore_patterns("test_*", "reproduce_*", "__pycache__", "*.pyc"))
 
     # Config folder with clean templates
     os.makedirs(os.path.join(stage_dir, "config"), exist_ok=True)

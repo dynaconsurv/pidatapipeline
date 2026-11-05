@@ -2572,19 +2572,19 @@ function renderMappingsTable() {
     // Build URL display lines
     const urlLines = [];
     if (targetTypes.includes('oracle')) {
-      const u = m.target_endpoint_url_oracle || (targetTypes[0] === 'oracle' ? m.target_endpoint_url : null) || defaultOracleUrl;
+      const u = (defaultOracleUrl !== '--' ? defaultOracleUrl : null) || m.target_endpoint_url_oracle || (targetTypes[0] === 'oracle' ? m.target_endpoint_url : null) || defaultOracleUrl;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: var(--ink-secondary);">ORACLE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     if (targetTypes.includes('oracledev')) {
-      const u = m.target_endpoint_url_dev || defaultDevUrl;
+      const u = (defaultDevUrl !== '--' ? defaultDevUrl : null) || m.target_endpoint_url_dev || defaultDevUrl;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #d97706;">DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     if (targetTypes.includes('j5') || targetTypes.includes('octave')) {
-      const u = m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !targetTypes.includes('oracle') ? m.target_endpoint_url : null) || defaultJ5Url;
+      const u = (defaultJ5Url !== '--' ? defaultJ5Url : null) || m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !targetTypes.includes('oracle') ? m.target_endpoint_url : null) || defaultJ5Url;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #4f46e5;">OCTAVE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     if (targetTypes.includes('j5dev') || targetTypes.includes('octavedev')) {
-      const u = m.target_endpoint_url_j5dev || defaultJ5DevUrl;
+      const u = (defaultJ5DevUrl !== '--' ? defaultJ5DevUrl : null) || m.target_endpoint_url_j5dev || defaultJ5DevUrl;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #7e22ce;">OCTAVE DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     const urlsDisplay = urlLines.length > 0 ? urlLines.join("") : `<span class="path-code" style="font-size: 10px;">${escapeHtml(m.target_endpoint_url || '--')}</span>`;
@@ -2736,6 +2736,7 @@ function openMappingModal(mapping = null, index = -1) {
     || "https://gda83ebb4f9065b-ecoatpdev1.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/Final_Discharge_Effluent/";
 
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder";
+  const defaultJ5DevUrl = currentSettings?.j5dev_endpoint?.url || "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook";
 
   if (mapping) {
     title.textContent = "Edit Attribute Mapping";
@@ -2762,10 +2763,10 @@ function openMappingModal(mapping = null, index = -1) {
     if (chkJ5) chkJ5.checked = targetTypes.includes("j5") || targetTypes.includes("octave");
     if (chkJ5Dev) chkJ5Dev.checked = targetTypes.includes("j5dev") || targetTypes.includes("octavedev") || targetTypes.includes("j5_dev");
 
-    document.getElementById("modal-target-endpoint-url").value = sanitizeEndpointUrl(mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultOrdsUrl) : defaultOrdsUrl));
-    document.getElementById("modal-target-endpoint-url-dev").value = sanitizeEndpointUrl(mapping.target_endpoint_url_dev || defaultDevOrdsUrl);
-    document.getElementById("modal-target-endpoint-url-j5").value = sanitizeEndpointUrl(mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? (mapping.target_endpoint_url || defaultJ5Url) : defaultJ5Url));
-    document.getElementById("modal-target-endpoint-url-j5dev").value = sanitizeEndpointUrl(mapping.target_endpoint_url_j5dev || defaultJ5DevUrl);
+    document.getElementById("modal-target-endpoint-url").value = sanitizeEndpointUrl(defaultOrdsUrl || mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? mapping.target_endpoint_url : ""));
+    document.getElementById("modal-target-endpoint-url-dev").value = sanitizeEndpointUrl(defaultDevOrdsUrl || mapping.target_endpoint_url_dev);
+    document.getElementById("modal-target-endpoint-url-j5").value = sanitizeEndpointUrl(defaultJ5Url || mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? mapping.target_endpoint_url : ""));
+    document.getElementById("modal-target-endpoint-url-j5dev").value = sanitizeEndpointUrl(defaultJ5DevUrl || mapping.target_endpoint_url_j5dev);
 
     handleModalTargetEndpointsChange();
 
@@ -2909,16 +2910,16 @@ async function testTableEndpoint(idx) {
     let url = "";
     let label = "Oracle";
     if (ttLower === 'j5' || ttLower === 'octave') {
-      url = m.target_endpoint_url_j5 || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud') ? m.target_endpoint_url : null) || currentSettings?.j5_endpoint?.url;
+      url = currentSettings?.j5_endpoint?.url || m.target_endpoint_url_j5 || (m.target_endpoint_url && m.target_endpoint_url.toLowerCase().includes('hxgnsmartcloud') ? m.target_endpoint_url : null);
       label = "Octave";
     } else if (ttLower === 'j5dev' || ttLower === 'octavedev' || ttLower === 'j5_dev') {
-      url = m.target_endpoint_url_j5dev || currentSettings?.j5dev_endpoint?.url;
+      url = currentSettings?.j5dev_endpoint?.url || m.target_endpoint_url_j5dev;
       label = "Octave Dev";
     } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
-      url = sanitizeEndpointUrl(m.target_endpoint_url_dev || buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint));
+      url = sanitizeEndpointUrl(buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint) || m.target_endpoint_url_dev);
       label = "Oracle Dev";
     } else {
-      url = sanitizeEndpointUrl(m.target_endpoint_url_oracle || m.target_endpoint_url || buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint));
+      url = sanitizeEndpointUrl(buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint) || m.target_endpoint_url_oracle || m.target_endpoint_url);
       label = "Oracle Prod";
     }
 
@@ -4509,6 +4510,9 @@ async function handleSaveSettings() {
       currentSettings = newSettings;
       showToast("Settings successfully saved to config/settings.json!", "success");
       loadDashboardData();
+      if (typeof loadMappingsData === "function") {
+        loadMappingsData();
+      }
     } else {
       showToast("Error saving settings.", "danger");
     }

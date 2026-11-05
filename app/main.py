@@ -600,7 +600,7 @@ def preview_erp_payload():
         for t_type in target_types:
             t_lower = str(t_type).strip().lower()
             if t_lower in ("j5", "octave"):
-                target_url = m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or j5_cfg.get("url") or DEFAULT_J5_URL
+                target_url = j5_cfg.get("url") or m.get("target_endpoint_url_j5") or (raw_target if "hxgnsmartcloud" in raw_target.lower() else None) or DEFAULT_J5_URL
                 j5_payload = J5Client.build_j5_payload(sample_attr, mapping=m, target_type="j5")
                 tenant_id = j5_cfg.get("tenant_id") or "JZNOT1742577235_TST"
                 previews.append({
@@ -617,7 +617,7 @@ def preview_erp_payload():
                     "body": j5_payload
                 })
             elif t_lower in ("j5dev", "j5_dev", "octavedev", "octave_dev"):
-                target_url = m.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL
+                target_url = j5dev_cfg.get("url") or m.get("target_endpoint_url_j5dev") or DEFAULT_J5_URL
                 j5dev_payload = J5Client.build_j5_payload(sample_attr, mapping=m, target_type="j5dev")
                 tenant_id = j5dev_cfg.get("tenant_id") or "JZNOT1742577235_TST"
                 previews.append({

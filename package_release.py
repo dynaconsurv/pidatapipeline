@@ -104,8 +104,12 @@ def should_exclude(rel_path: str) -> bool:
     if norm.startswith("test_") or "/test_" in norm:
         return True
 
-    # Exclude local scratch/documentation/screenshot artifacts in root
-    if norm.startswith("runtime_architecture.") or norm.endswith((".pdf", ".png", ".jpeg", ".jpg")) and "/" not in norm:
+    # Exclude local scratch/documentation/screenshot/diagnostic artifacts in root
+    if norm.startswith(("not working ", "runtime_architecture.")):
+        return True
+    if "/" not in norm and norm.endswith((".pdf", ".png", ".jpeg", ".jpg", ".xlsx", ".xls", ".xml")):
+        return True
+    if norm in ("Integration_Architecture_Options_Plan.md", "generate_guide_pdf.py", "scripts/reproduce_user_case.py"):
         return True
 
     # EXCLUDE user-specific data and live configs (MUST preserve user privacy and prevent overwrite!)

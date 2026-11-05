@@ -335,9 +335,22 @@ def save_settings(settings: Dict[str, Any]) -> None:
         sec = settings.get(sec_key)
         if isinstance(sec, dict) and sec.get("base_url"):
             sec["base_url"] = sanitize_endpoint_url(sec["base_url"])
+    for j5_key in ("j5_endpoint", "j5dev_endpoint"):
+        j5_sec = settings.get(j5_key)
+        if isinstance(j5_sec, dict) and j5_sec.get("url"):
+            j5_sec["url"] = sanitize_endpoint_url(j5_sec["url"])
     with _lock:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
+        if os.path.exists(MAPPINGS_FILE):
+            try:
+                with open(MAPPINGS_FILE, "r", encoding="utf-8") as mf:
+                    mappings = json.load(mf)
+                if isinstance(mappings, list) and sync_mappings_urls_with_settings(mappings, settings):
+                    with open(MAPPINGS_FILE, "w", encoding="utf-8") as mf:
+                        json.dump(mappings, mf, indent=2)
+            except Exception as e:
+                print(f"Warning: could not sync mappings.json on save_settings: {e}")
 
 
 MAPPING_URL_PROPERTIES = (
@@ -351,6 +364,114 @@ MAPPING_URL_PROPERTIES = (
 )
 
 
+def _build_oracle_config_url(base_url: Any, resource_endpoint: Any) -> str:
+    b = sanitize_endpoint_url(base_url).rstrip("/")
+    r = str(resource_endpoint or "/Final_Discharge_Effluent/").strip()
+    if not r.startswith("/"):
+        r = "/" + r
+    if not b:
+        return ""
+    if b.lower().endswith(r.rstrip("/").lower()):
+        return sanitize_endpoint_url(b + "/")
+    return sanitize_endpoint_url(f"{b}{r}")
+
+
+def sync_mappings_urls_with_settings(
+    mappings: List[Dict[str, Any]],
+    settings: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Synchronizes cached target_endpoint_url_* fields on mappings with the active
+    endpoint URLs configured in settings.json so that updating an endpoint URL
+    in Settings immediately takes effect across all existing mappings.
+    """
+    if not isinstance(mappings, list):
+        return False
+    if settings is None:
+        if os.path.exists(SETTINGS_FILE):
+            try:
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as sf:
+                    settings = json.load(sf)
+            except Exception:
+                settings = DEFAULT_SETTINGS
+        else:
+            settings = DEFAULT_SETTINGS
+
+    erp_cfg = settings.get("oracle_erp", {}) if isinstance(settings, dict) else {}
+    dev_cfg = settings.get("oracledev", {}) if isinstance(settings, dict) else {}
+    j5_cfg = settings.get("j5_endpoint", {}) if isinstance(settings, dict) else {}
+    j5dev_cfg = settings.get("j5dev_endpoint", {}) if isinstance(settings, dict) else {}
+
+    oracle_url = _build_oracle_config_url(
+        erp_cfg.get("base_url"),
+        erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+    )
+    oracle_util_url = _build_oracle_config_url(
+        erp_cfg.get("base_url"),
+        erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+    )
+    dev_url = _build_oracle_config_url(
+        dev_cfg.get("base_url"),
+        dev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+    )
+    dev_util_url = _build_oracle_config_url(
+        dev_cfg.get("base_url"),
+        dev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+    )
+    j5_url = sanitize_endpoint_url(
+        j5_cfg.get("url") or "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
+    )
+    j5dev_url = sanitize_endpoint_url(
+        j5dev_cfg.get("url") or "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=j5_pi_opslogbook"
+    )
+
+    def _resolve_primary(t_type: str) -> str:
+        tl = str(t_type or "oracle").strip().lower()
+        if tl in ("j5dev", "j5_dev", "jfdev", "octavedev", "octave_dev"):
+            return j5dev_url
+        if tl in ("j5", "octave"):
+            return j5_url
+        if tl in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
+            return dev_util_url
+        if tl in ("oracledev", "oracle_dev", "oracledev_effluent", "oracle_dev_effluent"):
+            return dev_url
+        if tl in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
+            return oracle_util_url
+        return oracle_url
+
+    changed = False
+    for m in mappings:
+        if not isinstance(m, dict):
+            continue
+        if oracle_url and m.get("target_endpoint_url_oracle") != oracle_url:
+            m["target_endpoint_url_oracle"] = oracle_url
+            changed = True
+        if oracle_util_url and m.get("target_endpoint_url_oracle_utility") != oracle_util_url:
+            m["target_endpoint_url_oracle_utility"] = oracle_util_url
+            changed = True
+        if dev_url and m.get("target_endpoint_url_dev") != dev_url:
+            m["target_endpoint_url_dev"] = dev_url
+            changed = True
+        if dev_util_url and m.get("target_endpoint_url_dev_utility") != dev_util_url:
+            m["target_endpoint_url_dev_utility"] = dev_util_url
+            changed = True
+        if j5_url and m.get("target_endpoint_url_j5") != j5_url:
+            m["target_endpoint_url_j5"] = j5_url
+            changed = True
+        if j5dev_url and m.get("target_endpoint_url_j5dev") != j5dev_url:
+            m["target_endpoint_url_j5dev"] = j5dev_url
+            changed = True
+
+        t_types = m.get("target_types") or ([m.get("target_type")] if m.get("target_type") else ["oracle"])
+        primary_type = t_types[0] if t_types else "oracle"
+        expected_primary = _resolve_primary(primary_type)
+        if expected_primary and m.get("target_endpoint_url") != expected_primary:
+            m["target_endpoint_url"] = expected_primary
+            changed = True
+
+    return changed
+
+
 def load_mappings() -> List[Dict[str, Any]]:
     ensure_config_dir()
     with _lock:
@@ -360,6 +481,7 @@ def load_mappings() -> List[Dict[str, Any]]:
         try:
             with open(MAPPINGS_FILE, "r", encoding="utf-8") as f:
                 mappings = json.load(f)
+                changed = False
                 for m in mappings:
                     if not m.get("target_types"):
                         tt = m.get("target_type")
@@ -368,9 +490,21 @@ def load_mappings() -> List[Dict[str, Any]]:
                         else:
                             url = str(m.get("target_endpoint_url") or "").lower()
                             m["target_types"] = ["j5"] if ("hxgnsmartcloud" in url or "tag=purchaseorder" in url) else ["oracle"]
+                        changed = True
                     for u_prop in MAPPING_URL_PROPERTIES:
                         if m.get(u_prop):
-                            m[u_prop] = sanitize_endpoint_url(m[u_prop])
+                            sanitized = sanitize_endpoint_url(m[u_prop])
+                            if sanitized != m[u_prop]:
+                                m[u_prop] = sanitized
+                                changed = True
+                if sync_mappings_urls_with_settings(mappings):
+                    changed = True
+                if changed:
+                    try:
+                        with open(MAPPINGS_FILE, "w", encoding="utf-8") as wf:
+                            json.dump(mappings, wf, indent=2)
+                    except Exception:
+                        pass
                 return mappings
         except Exception as e:
             print(f"Error loading mappings.json: {e}. Returning defaults.")
