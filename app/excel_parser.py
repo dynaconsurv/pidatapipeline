@@ -10,19 +10,23 @@ import re
 import csv
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from typing import Dict, Any, List, Optional, Tuple, Union
+
+TZ_UTC8 = timezone(timedelta(hours=8))
 
 
 def format_iso_zulu(val: Any, allow_empty: bool = False, fallback: Optional[str] = None) -> str:
-    """Format any date/time value into ISO 8601 Zulu UTC string (YYYY-MM-DDTHH:MM:SSZ)."""
+    """Format any date/time value into ISO 8601 string (YYYY-MM-DDTHH:MM:SSZ) in UTC+8 local clock time."""
     if val is None or str(val).strip() == "" or str(val).strip().lower() in ("none", "null"):
         if fallback is not None:
             return fallback
         if allow_empty:
             return ""
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return datetime.now(TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(val, datetime):
+        if val.tzinfo is not None:
+            val = val.astimezone(TZ_UTC8)
         return val.strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(val, date):
         return datetime(val.year, val.month, val.day).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -30,7 +34,6 @@ def format_iso_zulu(val: Any, allow_empty: bool = False, fallback: Optional[str]
     try:
         fval = float(val)
         if 20000 <= fval <= 100000:
-            from datetime import timedelta
             excel_epoch = datetime(1899, 12, 30)
             sec = round(fval * 86400)
             dt = excel_epoch + timedelta(seconds=sec)
@@ -44,11 +47,20 @@ def format_iso_zulu(val: Any, allow_empty: bool = False, fallback: Optional[str]
             return fallback
         if allow_empty:
             return ""
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return datetime.now(TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Common date string patterns
+    # If explicitly tagged with Z or timezone offset, convert to UTC+8
+    if s.endswith("Z") or "+" in s[10:] or "-" in s[10:]:
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(TZ_UTC8)
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
+
+    # Common date string patterns (naive local clock time in Excel)
     formats = [
-        "%Y-%m-%dT%H:%M:%SZ",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
         "%Y/%m/%d %H:%M:%S",
@@ -69,6 +81,8 @@ def format_iso_zulu(val: Any, allow_empty: bool = False, fallback: Optional[str]
     # Try ISO fromisoformat
     try:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(TZ_UTC8)
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         pass
@@ -584,7 +598,8 @@ def extract_standard_telemetry_row(
         "description": desc_val,
         "value": val_val,
         "uom": uom_val,
-        "quality": "Good"
+        "quality": "Good",
+        "_is_utc8_formatted": True
     }
 
     # Pass along any additional columns present in the raw row as extra fields

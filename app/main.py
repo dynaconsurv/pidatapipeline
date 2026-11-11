@@ -633,11 +633,25 @@ def preview_erp_payload():
                     },
                     "body": j5dev_payload
                 })
+            elif t_lower in ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production"):
+                res_path = oracledev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
+                target_url = (build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else None) or m.get("target_endpoint_url_dev_production") or res_path
+                target_url = sanitize_endpoint_url(target_url)
+                dev_payload = build_destination_payload("oracledev_production", sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": "Oracle Dev (Daily Production)",
+                    "target_endpoint": target_url,
+                    "http_method": oracledev_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Dev ({oracledev_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": dev_payload
+                })
             elif t_lower in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
-                target_url = m.get("target_endpoint_url_dev_utility")
-                if not target_url:
-                    res_path = oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
-                    target_url = build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else res_path
+                res_path = oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+                target_url = (build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else None) or m.get("target_endpoint_url_dev_utility") or res_path
                 target_url = sanitize_endpoint_url(target_url)
                 dev_payload = build_destination_payload("oracledev_utility", sample_attr, mapping_rule=m, received_at=now_iso)
                 previews.append({
@@ -669,11 +683,25 @@ def preview_erp_payload():
                     },
                     "body": dev_payload
                 })
+            elif t_lower in ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "production_daily_output"):
+                res_path = erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
+                target_url = (build_oracle_endpoint_url(base_url, res_path) if base_url else None) or m.get("target_endpoint_url_oracle_production") or res_path
+                target_url = sanitize_endpoint_url(target_url)
+                prod_payload = build_destination_payload("oracle_production", sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": "Oracle Prod (Daily Production)",
+                    "target_endpoint": target_url,
+                    "http_method": erp_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Prod ({erp_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": prod_payload
+                })
             elif t_lower in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
-                target_url = m.get("target_endpoint_url_oracle_utility")
-                if not target_url:
-                    res_path = erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
-                    target_url = build_oracle_endpoint_url(base_url, res_path) if base_url else res_path
+                res_path = erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+                target_url = (build_oracle_endpoint_url(base_url, res_path) if base_url else None) or m.get("target_endpoint_url_oracle_utility") or res_path
                 target_url = sanitize_endpoint_url(target_url)
                 prod_payload = build_destination_payload("oracle_utility", sample_attr, mapping_rule=m, received_at=now_iso)
                 previews.append({
@@ -983,6 +1011,10 @@ def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
     elif target_type in ("j5dev", "octavedev", "j5_dev"):
         client = J5Client(j5dev_cfg)
         target_endpoint_url = sanitize_endpoint_url(override_url or j5dev_cfg.get("url") or DEFAULT_J5_URL)
+    elif target_type in ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production"):
+        client = OracleERPCloudClient(oracledev_cfg)
+        def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or oracledev_cfg.get("base_url"))
     elif target_type in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
         client = OracleERPCloudClient(oracledev_cfg)
         def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
@@ -991,6 +1023,10 @@ def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
         client = OracleERPCloudClient(oracledev_cfg)
         def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
         target_endpoint_url = sanitize_endpoint_url(override_url or def_url or oracledev_cfg.get("base_url"))
+    elif target_type in ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "production_daily_output"):
+        client = OracleERPCloudClient(erp_cfg)
+        def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/")
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or erp_cfg.get("base_url"))
     elif target_type in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
         client = OracleERPCloudClient(erp_cfg)
         def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
@@ -1006,11 +1042,15 @@ def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
     bulk_deliveries_to_stage = []
 
     t_low = target_type.lower()
-    target_badge = "ORACLE_UTILITY" if "utility" in t_low and "dev" not in t_low else (
-        "ORACLEDEV_UTILITY" if "utility" in t_low and "dev" in t_low else (
-            "ORACLEDEV" if "dev" in t_low and "oracle" in t_low else (
+    target_badge = "ORACLE_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" not in t_low else (
+        "ORACLEDEV_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" in t_low else (
+            "ORACLE_UTILITY" if "utility" in t_low and "dev" not in t_low else (
+                "ORACLEDEV_UTILITY" if "utility" in t_low and "dev" in t_low else (
+                    "ORACLEDEV" if "dev" in t_low and "oracle" in t_low else (
                 "ORACLE" if "oracle" in t_low else (
                     "J5DEV" if "dev" in t_low else "J5"
+                        )
+                    )
                 )
             )
         )

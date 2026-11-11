@@ -34,11 +34,12 @@ def build_destination_payload(
     """
     mapping_rule = mapping_rule or {}
     skip_params = {str(p).strip().lower() for p in (skip_params or set()) if str(p).strip()}
+    already_utc8 = bool(source_attr.get("_is_utc8_formatted", False))
     now_iso = datetime.now(timezone.utc).isoformat()
     received_time = received_at or source_attr.get("received_at") or source_attr.get("timestamp") or source_attr.get("record_at") or source_attr.get("RECORD_AT") or now_iso
 
     t_clean = str(target_type).strip().lower()
-    if any(x in t_clean for x in ("oracledev", "dev_utility", "oracle_dev")):
+    if any(x in t_clean for x in ("oracledev", "dev_utility", "dev_production", "oracle_dev")):
         target_category = "oracle_dev"
         is_oracle = True
     elif any(x in t_clean for x in ("oracle", "ords", "erp")):
@@ -185,16 +186,16 @@ def build_destination_payload(
         # Apply transformation
         if transform == "receipt_time":
             if is_oracle:
-                payload[tgt_raw] = format_ords_timestamp(received_time)
+                payload[tgt_raw] = format_ords_timestamp(received_time, already_utc8=already_utc8)
             else:
-                payload[tgt_raw] = format_j5_timestamp(received_time)
+                payload[tgt_raw] = format_j5_timestamp(received_time, already_utc8=already_utc8)
         elif transform == "timestamp_zulu":
             if raw_v is None or str(raw_v).strip() == "":
                 continue
             if is_oracle:
-                payload[tgt_raw] = format_ords_timestamp(raw_v, allow_empty=True)
+                payload[tgt_raw] = format_ords_timestamp(raw_v, allow_empty=True, already_utc8=already_utc8)
             else:
-                payload[tgt_raw] = format_j5_timestamp(raw_v, allow_empty=True)
+                payload[tgt_raw] = format_j5_timestamp(raw_v, allow_empty=True, already_utc8=already_utc8)
         elif transform == "numeric_scaled":
             if raw_v is None or str(raw_v).strip() == "":
                 payload[tgt_raw] = "" if is_oracle else None
@@ -221,13 +222,13 @@ def build_destination_payload(
                 unmapped_candidates[str(ek).strip()] = ev
 
     for ak, av in source_attr.items():
-        if ak and ak != "extra_fields" and ak not in ("name", "target_flags", "disabled_target_flags"):
+        if ak and ak != "extra_fields" and ak not in ("name", "target_flags", "disabled_target_flags", "_is_utc8_formatted"):
             if str(ak).strip() not in unmapped_candidates:
                 unmapped_candidates[str(ak).strip()] = av
 
     for uk, uv in unmapped_candidates.items():
         uk_l = uk.lower()
-        if uk_l in skip_params:
+        if uk_l in skip_params or uk_l == "_is_utc8_formatted":
             continue
         if uk_l.replace("_", "") in ("testresult", "testresults"):
             continue
@@ -245,11 +246,11 @@ def build_destination_payload(
             if uk_l in ("record_at", "recorded_at") and (uv is None or str(uv).strip() == ""):
                 uv = received_time
             if is_oracle:
-                payload[uk] = format_ords_timestamp(uv, allow_empty=True)
+                payload[uk] = format_ords_timestamp(uv, allow_empty=True, already_utc8=already_utc8)
             else:
-                payload[uk] = format_j5_timestamp(uv, allow_empty=True)
+                payload[uk] = format_j5_timestamp(uv, allow_empty=True, already_utc8=already_utc8)
             if uk_l in ("record_at", "recorded_at") and payload.get(uk) is None:
-                payload[uk] = format_ords_timestamp(received_time) if is_oracle else format_j5_timestamp(received_time)
+                payload[uk] = format_ords_timestamp(received_time, already_utc8=already_utc8) if is_oracle else format_j5_timestamp(received_time, already_utc8=already_utc8)
         else:
             if uv is None:
                 payload[uk] = "" if is_oracle else None
@@ -260,7 +261,7 @@ def build_destination_payload(
 
     # Exclude TEST_RESULT / test_result from payload if present
     for pk in list(payload.keys()):
-        if pk.lower().replace("_", "") in ("testresult", "testresults"):
+        if pk.lower().replace("_", "") in ("testresult", "testresults") or pk == "_is_utc8_formatted":
             payload.pop(pk, None)
 
     # Deduplicate RECORD_AT: ensure only ONE canonical RECORD_AT is present
@@ -275,7 +276,7 @@ def build_destination_payload(
     if rec_val or is_oracle:
         for k in keys_to_clean:
             payload.pop(k, None)
-        payload["RECORD_AT"] = rec_val or format_ords_timestamp(received_time)
+        payload["RECORD_AT"] = rec_val or format_ords_timestamp(received_time, already_utc8=already_utc8)
 
     # Suppress duplicate internal alias keys
     if "tag" in payload or "TAG" in payload:

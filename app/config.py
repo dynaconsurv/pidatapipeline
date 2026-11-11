@@ -74,6 +74,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "bearer_token": "",
         "resource_endpoint": "/Final_Discharge_Effluent/",
         "utility_resource_endpoint": "/production_utilities_consumption/",
+        "daily_production_resource_endpoint": "/production_daily_output/",
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -94,6 +95,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "bearer_token": "",
         "resource_endpoint": "/Final_Discharge_Effluent/",
         "utility_resource_endpoint": "/production_utilities_consumption/",
+        "daily_production_resource_endpoint": "/production_daily_output/",
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -322,6 +324,8 @@ def load_settings() -> Dict[str, Any]:
                             sec["resource_endpoint"] = "/Final_Discharge_Effluent/"
                         if not sec.get("utility_resource_endpoint"):
                             sec["utility_resource_endpoint"] = "/production_utilities_consumption/"
+                        if not sec.get("daily_production_resource_endpoint"):
+                            sec["daily_production_resource_endpoint"] = "/production_daily_output/"
 
                 return data
         except Exception as e:
@@ -357,8 +361,10 @@ MAPPING_URL_PROPERTIES = (
     "target_endpoint_url",
     "target_endpoint_url_oracle",
     "target_endpoint_url_oracle_utility",
+    "target_endpoint_url_oracle_production",
     "target_endpoint_url_dev",
     "target_endpoint_url_dev_utility",
+    "target_endpoint_url_dev_production",
     "target_endpoint_url_j5",
     "target_endpoint_url_j5dev",
 )
@@ -369,8 +375,14 @@ def _build_oracle_config_url(base_url: Any, resource_endpoint: Any) -> str:
     r = str(resource_endpoint or "/Final_Discharge_Effluent/").strip()
     if not r.startswith("/"):
         r = "/" + r
+    if not r.endswith("/"):
+        r = r + "/"
     if not b:
         return ""
+    for seg in ("final_discharge_effluent", "production_utilities_consumption", "production_daily_output"):
+        if b.lower().endswith("/" + seg):
+            b = b[:-(len(seg) + 1)].rstrip("/")
+            break
     if b.lower().endswith(r.rstrip("/").lower()):
         return sanitize_endpoint_url(b + "/")
     return sanitize_endpoint_url(f"{b}{r}")
@@ -410,6 +422,10 @@ def sync_mappings_urls_with_settings(
         erp_cfg.get("base_url"),
         erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
     )
+    oracle_prod_data_url = _build_oracle_config_url(
+        erp_cfg.get("base_url"),
+        erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
+    )
     dev_url = _build_oracle_config_url(
         dev_cfg.get("base_url"),
         dev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
@@ -417,6 +433,10 @@ def sync_mappings_urls_with_settings(
     dev_util_url = _build_oracle_config_url(
         dev_cfg.get("base_url"),
         dev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+    )
+    dev_prod_data_url = _build_oracle_config_url(
+        dev_cfg.get("base_url"),
+        dev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
     )
     j5_url = sanitize_endpoint_url(
         j5_cfg.get("url") or "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
@@ -431,10 +451,14 @@ def sync_mappings_urls_with_settings(
             return j5dev_url
         if tl in ("j5", "octave"):
             return j5_url
+        if tl in ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production"):
+            return dev_prod_data_url
         if tl in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
             return dev_util_url
         if tl in ("oracledev", "oracle_dev", "oracledev_effluent", "oracle_dev_effluent"):
             return dev_url
+        if tl in ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "production_daily_output"):
+            return oracle_prod_data_url
         if tl in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
             return oracle_util_url
         return oracle_url
@@ -449,11 +473,17 @@ def sync_mappings_urls_with_settings(
         if oracle_util_url and m.get("target_endpoint_url_oracle_utility") != oracle_util_url:
             m["target_endpoint_url_oracle_utility"] = oracle_util_url
             changed = True
+        if oracle_prod_data_url and m.get("target_endpoint_url_oracle_production") != oracle_prod_data_url:
+            m["target_endpoint_url_oracle_production"] = oracle_prod_data_url
+            changed = True
         if dev_url and m.get("target_endpoint_url_dev") != dev_url:
             m["target_endpoint_url_dev"] = dev_url
             changed = True
         if dev_util_url and m.get("target_endpoint_url_dev_utility") != dev_util_url:
             m["target_endpoint_url_dev_utility"] = dev_util_url
+            changed = True
+        if dev_prod_data_url and m.get("target_endpoint_url_dev_production") != dev_prod_data_url:
+            m["target_endpoint_url_dev_production"] = dev_prod_data_url
             changed = True
         if j5_url and m.get("target_endpoint_url_j5") != j5_url:
             m["target_endpoint_url_j5"] = j5_url

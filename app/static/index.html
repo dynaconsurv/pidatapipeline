@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.7.2">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.7.3">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.2</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.3</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -696,8 +696,10 @@
             <label class="form-label" for="bulk-target-type">Target Destination</label>
             <select id="bulk-target-type" class="form-select">
               <option value="oracle_utility" selected>Oracle Cloud Prod &mdash; Utility Consumption (/production_utilities_consumption/)</option>
+              <option value="oracle_production">Oracle Cloud Prod &mdash; Daily Production Data (/production_daily_output/)</option>
               <option value="oracle">Oracle Cloud Prod &mdash; Effluent Discharge (/Final_Discharge_Effluent/)</option>
               <option value="oracledev_utility">Oracle Cloud Dev &mdash; Utility Consumption</option>
+              <option value="oracledev_production">Oracle Cloud Dev &mdash; Daily Production Data (/production_daily_output/)</option>
               <option value="oracledev">Oracle Cloud Dev &mdash; Effluent Discharge</option>
               <option value="j5">Octave Prod (j5)</option>
               <option value="j5dev">Octave Dev (j5dev)</option>
@@ -1775,6 +1777,11 @@
             <input type="text" id="setting-erp-utility-resource-endpoint" class="form-control form-control-mono" value="/production_utilities_consumption/">
             <div class="form-help">ORDS resource path for Utility consumption data.</div>
           </div>
+          <div class="form-group">
+            <label class="form-label" for="setting-erp-daily-prod-resource-endpoint">Daily Production Data Resource Path</label>
+            <input type="text" id="setting-erp-daily-prod-resource-endpoint" class="form-control form-control-mono" value="/production_daily_output/">
+            <div class="form-help">ORDS resource path for Daily Production data.</div>
+          </div>
 
           <div class="form-group">
             <label class="form-label" for="setting-erp-http-method">HTTP Method</label>
@@ -1893,6 +1900,11 @@
             <label class="form-label" for="setting-oracledev-utility-resource-endpoint">Utility Resource Path</label>
             <input type="text" id="setting-oracledev-utility-resource-endpoint" class="form-control form-control-mono" value="/production_utilities_consumption/">
             <div class="form-help">ORDS resource path for Utility consumption data in Dev.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="setting-oracledev-daily-prod-resource-endpoint">Daily Production Data Resource Path</label>
+            <input type="text" id="setting-oracledev-daily-prod-resource-endpoint" class="form-control form-control-mono" value="/production_daily_output/">
+            <div class="form-help">ORDS resource path for Daily Production data in Dev.</div>
           </div>
 
           <div class="form-group">
@@ -2606,6 +2618,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.7.2"></script>
+  <script src="/static/js/app.js?v=2.7.3"></script>
 </body>
 </html>

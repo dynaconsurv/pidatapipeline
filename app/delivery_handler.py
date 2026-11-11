@@ -68,8 +68,10 @@ def is_target_param_disabled(val: Any) -> bool:
 TARGET_PARAM_ALIASES: Dict[str, Tuple[str, ...]] = {
     "oracle": ("oracle", "oracle_erp", "oracleerp", "oracle_effluent", "oracleeffluent", "effluent"),
     "oracle_utility": ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"),
+    "oracle_production": ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "dailyproduction", "production_daily_output", "oracle_prod_production", "daily_output"),
     "oracledev": ("oracledev", "oracle_dev", "oracledev_effluent", "oracle_dev_effluent"),
     "oracledev_utility": ("oracledev_utility", "oracle_dev_utility", "dev_utility"),
+    "oracledev_production": ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production", "oracledev_daily_production", "dev_daily_output"),
     "j5": ("j5", "jf", "octave"),
     "j5dev": ("j5dev", "jfdev", "j5_dev", "jf_dev", "octavedev", "octave_dev"),
 }
@@ -148,6 +150,7 @@ def resolve_endpoint_and_env_targets(
 
     wants_oracle_effluent = False
     wants_oracle_utility = False
+    wants_oracle_production = False
     wants_octave = False
     custom_urls: Dict[str, str] = {}
 
@@ -156,6 +159,11 @@ def resolve_endpoint_and_env_targets(
             wants_oracle_utility = True
             if t.startswith(("http://", "https://")):
                 key = "oracledev_utility" if is_test else "oracle_utility"
+                custom_urls[key] = t
+        elif "production" in t or "daily" in t or "output" in t:
+            wants_oracle_production = True
+            if t.startswith(("http://", "https://")):
+                key = "oracledev_production" if is_test else "oracle_production"
                 custom_urls[key] = t
         elif "oracle" in t or "effluent" in t:
             wants_oracle_effluent = True
@@ -187,6 +195,14 @@ def resolve_endpoint_and_env_targets(
             enabled_targets.append("oracle_utility")
             disabled_targets.append("oracledev_utility")
 
+    if wants_oracle_production:
+        if is_test:
+            enabled_targets.append("oracledev_production")
+            disabled_targets.append("oracle_production")
+        else:
+            enabled_targets.append("oracle_production")
+            disabled_targets.append("oracledev_production")
+
     if wants_octave:
         if is_test:
             enabled_targets.append("j5dev")
@@ -196,7 +212,7 @@ def resolve_endpoint_and_env_targets(
             disabled_targets.append("j5dev")
 
     # When explicit Endpoint is provided, any other target not requested is explicitly disabled
-    all_possible = ["oracle", "oracle_utility", "oracledev", "oracledev_utility", "j5", "j5dev"]
+    all_possible = ["oracle", "oracle_utility", "oracle_production", "oracledev", "oracledev_utility", "oracledev_production", "j5", "j5dev"]
     for p in all_possible:
         if p not in enabled_targets and p not in disabled_targets:
             disabled_targets.append(p)
@@ -1002,7 +1018,7 @@ def parse_pi_notification_payload(
     return notification_name, event_type, target_path, attributes
 
 
-ALL_CANONICAL_TARGETS = ("oracle", "oracle_utility", "oracledev", "oracledev_utility", "j5", "j5dev")
+ALL_CANONICAL_TARGETS = ("oracle", "oracle_utility", "oracle_production", "oracledev", "oracledev_utility", "oracledev_production", "j5", "j5dev")
 
 
 def get_requested_targets_from_attr(attr: Optional[Dict[str, Any]]) -> List[str]:
@@ -1073,14 +1089,18 @@ def ensure_j5_mapping_for_attribute(
     base_url = (erp_cfg.get("base_url") or "").rstrip("/")
     res_ep = (erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/").strip()
     util_res_ep = (erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/").strip()
+    prod_data_res_ep = (erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/").strip()
     default_oracle_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_oracle") or (build_oracle_endpoint_url(base_url, res_ep) if base_url else "")))
     default_oracle_util_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_oracle_utility") or (build_oracle_endpoint_url(base_url, util_res_ep) if base_url else "")))
+    default_oracle_prod_data_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_oracle_production") or (build_oracle_endpoint_url(base_url, prod_data_res_ep) if base_url else "")))
 
     dev_base_url = (oracledev_cfg.get("base_url") or "").rstrip("/")
     dev_res_ep = (oracledev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/").strip()
     dev_util_res_ep = (oracledev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/").strip()
+    dev_prod_data_res_ep = (oracledev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/").strip()
     default_dev_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_dev") or (build_oracle_endpoint_url(dev_base_url, dev_res_ep) if dev_base_url else "")))
     default_dev_util_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_dev_utility") or (build_oracle_endpoint_url(dev_base_url, dev_util_res_ep) if dev_base_url else "")))
+    default_dev_prod_data_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_dev_production") or (build_oracle_endpoint_url(dev_base_url, dev_prod_data_res_ep) if dev_base_url else "")))
 
     default_j5_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_j5") or j5_cfg.get("url") or DEFAULT_J5_URL).strip())
     default_j5dev_url = sanitize_endpoint_url(str(attr.get("target_endpoint_url_j5dev") or j5dev_cfg.get("url") or DEFAULT_J5_URL).strip())
@@ -1091,6 +1111,10 @@ def ensure_j5_mapping_for_attribute(
             return default_j5_url
         elif tgt_l == "j5dev":
             return default_j5dev_url
+        elif tgt_l in ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "production_daily_output"):
+            return default_oracle_prod_data_url
+        elif tgt_l in ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production"):
+            return default_dev_prod_data_url
         elif tgt_l in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
             return default_oracle_util_url
         elif tgt_l in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
@@ -1154,11 +1178,17 @@ def ensure_j5_mapping_for_attribute(
             if default_oracle_util_url and m.get("target_endpoint_url_oracle_utility") != default_oracle_util_url:
                 m["target_endpoint_url_oracle_utility"] = default_oracle_util_url
                 updated = True
+            if default_oracle_prod_data_url and m.get("target_endpoint_url_oracle_production") != default_oracle_prod_data_url:
+                m["target_endpoint_url_oracle_production"] = default_oracle_prod_data_url
+                updated = True
             if default_dev_url and m.get("target_endpoint_url_dev") != default_dev_url:
                 m["target_endpoint_url_dev"] = default_dev_url
                 updated = True
             if default_dev_util_url and m.get("target_endpoint_url_dev_utility") != default_dev_util_url:
                 m["target_endpoint_url_dev_utility"] = default_dev_util_url
+                updated = True
+            if default_dev_prod_data_url and m.get("target_endpoint_url_dev_production") != default_dev_prod_data_url:
+                m["target_endpoint_url_dev_production"] = default_dev_prod_data_url
                 updated = True
             if default_j5_url and m.get("target_endpoint_url_j5") != default_j5_url:
                 m["target_endpoint_url_j5"] = default_j5_url
@@ -1199,8 +1229,10 @@ def ensure_j5_mapping_for_attribute(
         "target_endpoint_url": primary_url,
         "target_endpoint_url_oracle": default_oracle_url,
         "target_endpoint_url_oracle_utility": default_oracle_util_url,
+        "target_endpoint_url_oracle_production": default_oracle_prod_data_url,
         "target_endpoint_url_dev": default_dev_url,
         "target_endpoint_url_dev_utility": default_dev_util_url,
+        "target_endpoint_url_dev_production": default_dev_prod_data_url,
         "target_endpoint_url_j5": default_j5_url,
         "target_endpoint_url_j5dev": default_j5dev_url,
         "tag": attr_tag,
@@ -1643,6 +1675,50 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                     else:
                         all_succeeded = False
 
+                elif t_lower in ("oracledev_production", "oracle_dev_production", "dev_production", "dev_daily_production", "oracledev_daily_production", "dev_daily_output"):
+                    if not is_retry and (t_lower in disabled_targets or attr.get("oracledev_production") is False or attr.get("oracledev") is False):
+                        continue
+                    prod_def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), oracledev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/")
+                    if not oracledev_cfg.get("enabled", False) and not attr.get("oracledev_production") and not attr.get("oracledev"):
+                        item_results.append({
+                            "target_type": "oracledev_production",
+                            "attribute_name": attr_name,
+                            "target_endpoint": attr.get("target_endpoint_url_dev_production") or prod_def_url or m.get("target_endpoint_url_dev_production") or oracledev_cfg.get("base_url"),
+                            "status": "PENDING_SETUP",
+                            "http_code": None,
+                            "payload": {},
+                            "response": None,
+                            "error": "Oracle Dev Daily Production integration is disabled in settings.",
+                            "message": "Oracle Dev Daily Production integration is disabled in settings."
+                        })
+                        is_pending_setup = True
+                        all_succeeded = False
+                        continue
+
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_dev_production") or prod_def_url or m.get("target_endpoint_url_dev_production") or None)
+                    dev_ords_payload = build_destination_payload("oracledev_production", source_attr=attr, mapping_rule=m, received_at=received_time, skip_params=skip_params_set)
+                    pub_res = oracledev_client.publish_data(dev_ords_payload, target_endpoint=target_url)
+
+                    item_results.append({
+                        "target_type": "oracledev_production",
+                        "attribute_name": attr_name,
+                        "target_endpoint": pub_res.get("target_endpoint"),
+                        "status": pub_res.get("status"),
+                        "http_code": pub_res.get("http_code"),
+                        "payload": dev_ords_payload,
+                        "response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "message": pub_res.get("message")
+                    })
+
+                    if pub_res.get("status") == "SUCCESS":
+                        any_succeeded = True
+                    elif pub_res.get("status") == "PENDING_SETUP":
+                        is_pending_setup = True
+                        all_succeeded = False
+                    else:
+                        all_succeeded = False
+
                 elif t_lower in ("oracledev_utility", "oracle_dev_utility", "dev_utility"):
                     if not is_retry and (t_lower in disabled_targets or attr.get("oracledev_utility") is False or attr.get("oracledev") is False):
                         continue
@@ -1720,6 +1796,49 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
                         "status": pub_res.get("status"),
                         "http_code": pub_res.get("http_code"),
                         "payload": dev_ords_payload,
+                        "response": pub_res.get("response_body"),
+                        "error": pub_res.get("error_detail"),
+                        "message": pub_res.get("message")
+                    })
+
+                    if pub_res.get("status") == "SUCCESS":
+                        any_succeeded = True
+                    elif pub_res.get("status") == "PENDING_SETUP":
+                        is_pending_setup = True
+                        all_succeeded = False
+                    else:
+                        all_succeeded = False
+
+                elif t_lower in ("oracle_production", "oracleproduction", "oracle_daily_production", "daily_production", "dailyproduction", "production_daily_output", "oracle_prod_production", "daily_output"):
+                    if not is_retry and (t_lower in disabled_targets or attr.get("oracle_production") is False or attr.get("oracle") is False):
+                        continue
+                    prod_def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/")
+                    if not erp_cfg.get("enabled", False) and not attr.get("oracle_production") and not attr.get("oracle"):
+                        item_results.append({
+                            "target_type": "oracle_production",
+                            "attribute_name": attr_name,
+                            "target_endpoint": attr.get("target_endpoint_url_oracle_production") or prod_def_url or m.get("target_endpoint_url_oracle_production") or erp_cfg.get("base_url"),
+                            "status": "PENDING_SETUP",
+                            "http_code": None,
+                            "payload": {},
+                            "response": None,
+                            "error": "Oracle ERP Daily Production integration is disabled in settings.",
+                            "message": "Oracle ERP Daily Production integration is disabled in settings."
+                        })
+                        is_pending_setup = True
+                        all_succeeded = False
+                        continue
+
+                    target_url = sanitize_endpoint_url(attr.get("target_endpoint_url_oracle_production") or prod_def_url or m.get("target_endpoint_url_oracle_production") or None)
+                    pub_res = erp_client.publish_data(ords_payload, target_endpoint=target_url)
+
+                    item_results.append({
+                        "target_type": "oracle_production",
+                        "attribute_name": attr_name,
+                        "target_endpoint": pub_res.get("target_endpoint"),
+                        "status": pub_res.get("status"),
+                        "http_code": pub_res.get("http_code"),
+                        "payload": ords_payload,
                         "response": pub_res.get("response_body"),
                         "error": pub_res.get("error_detail"),
                         "message": pub_res.get("message")
@@ -1845,8 +1964,10 @@ def dispatch_delivery_to_oracle(delivery_id: str, is_retry: bool = False, retry_
     label_map = {
         "ORACLE": "ORACLE PROD",
         "ORACLE_UTILITY": "ORACLE PROD (UTILITY)",
+        "ORACLE_PRODUCTION": "ORACLE PROD (DAILY PRODUCTION)",
         "ORACLEDEV": "ORACLE DEV",
         "ORACLEDEV_UTILITY": "ORACLE DEV (UTILITY)",
+        "ORACLEDEV_PRODUCTION": "ORACLE DEV (DAILY PRODUCTION)",
         "J5": "OCTAVE",
         "J5DEV": "OCTAVE DEV"
     }

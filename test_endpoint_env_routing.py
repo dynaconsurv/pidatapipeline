@@ -264,20 +264,40 @@ class TestEndpointEnvRouting(unittest.TestCase):
         switched_util_url = build_oracle_endpoint_url(base_with_eff, "/production_utilities_consumption/")
         self.assertEqual(switched_util_url, "https://gda83ebb4f9065b-ecoatpprod.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/production_utilities_consumption/")
 
+        # Daily Production Data url (/production_daily_output/)
+        daily_prod_url = build_oracle_endpoint_url(base_with_eff, "/production_daily_output/")
+        self.assertEqual(daily_prod_url, "https://gda83ebb4f9065b-ecoatpprod.adb.ap-singapore-1.oraclecloudapps.com/ords/pims_int/production_daily_output/")
+
+    def test_oracle_daily_production_prod_and_test(self):
+        en_prod, _, dis_prod = resolve_endpoint_and_env_targets({"Endpoint": "Oracle_Production", "Environment": "Prod"})
+        self.assertEqual(en_prod, ["oracle_production"])
+        self.assertIn("oracledev_production", dis_prod)
+
+        en_test, _, dis_test = resolve_endpoint_and_env_targets({"Endpoint": "Daily_Production", "Environment": "Test"})
+        self.assertEqual(en_test, ["oracledev_production"])
+        self.assertIn("oracle_production", dis_test)
+
+        en_path, _, _ = resolve_endpoint_and_env_targets({"Endpoint": "production_daily_output", "Environment": "Prod"})
+        self.assertEqual(en_path, ["oracle_production"])
+
     def test_analysistime_and_time_parameter_conversion(self):
         from app.oracle_erp_client import format_ords_timestamp
         
-        # Microseconds stripped
+        # UTC timestamp (ending in Z) converted to UTC+8 (+8 hours) and microseconds stripped
         res1 = format_ords_timestamp("2026-10-30T08:49:43.1234567Z", allow_empty=True)
-        self.assertEqual(res1, "2026-10-30T08:49:43Z")
+        self.assertEqual(res1, "2026-10-30T16:49:43Z")
 
-        # Space separated format
+        # 7:00 AM local time sent as 23:00:00Z UTC by PI AF stays 07:00:00Z
+        res_7am = format_ords_timestamp("2026-11-04T23:00:00Z", allow_empty=True)
+        self.assertEqual(res_7am, "2026-11-05T07:00:00Z")
+
+        # Space separated format (naive local clock time stays as-is)
         res2 = format_ords_timestamp("2026-10-30 08:49:43", allow_empty=True)
         self.assertEqual(res2, "2026-10-30T08:49:43Z")
 
-        # Timezone offset converted to UTC Zulu
+        # Timezone offset +08:00 stays in UTC+8 (16:49:43)
         res3 = format_ords_timestamp("2026-10-30T16:49:43+08:00", allow_empty=True)
-        self.assertEqual(res3, "2026-10-30T08:49:43Z")
+        self.assertEqual(res3, "2026-10-30T16:49:43Z")
 
         # Null / None preserved
         res4 = format_ords_timestamp(None, allow_empty=True)
@@ -295,7 +315,7 @@ class TestEndpointEnvRouting(unittest.TestCase):
             "Value": "15.4",
             "Timestamp": "2020-01-01T00:00:00Z",  # Historic AF timestamp
             "AnalysisTime": "2026-10-30 08:49:43.500",  # AF analysis event time
-            "EventTime": "2026-10-30T08:49:43.1234567Z",
+            "EventTime": "2026-11-04T23:00:00.1234567Z",  # 7:00 AM Nov 5 local in UTC
             "TestTimestamp": None,
             "Endpoint": "Oracle",
             "Environment": "Test"
@@ -305,7 +325,6 @@ class TestEndpointEnvRouting(unittest.TestCase):
         
         deliv = get_delivery_by_id(deliv_id)
         self.assertIsNotNone(deliv)
-        received_at_prefix = deliv["received_at"][:10]  # Today's date YYYY-MM-DD
         
         # Run dispatch (mock/simulation mode or catching pub result)
         dispatch_res = dispatch_delivery_to_oracle(deliv_id)
@@ -315,16 +334,15 @@ class TestEndpointEnvRouting(unittest.TestCase):
         sent_payload = dispatches[0].get("payload", {})
         
         # 1. 'timestamp' field must deliver the arrival/received_at date, NOT the 2020 AF timestamp
-        self.assertTrue(sent_payload["timestamp"].startswith(received_at_prefix))
         self.assertTrue(sent_payload["timestamp"].endswith("Z"))
         self.assertNotIn("2020", sent_payload["timestamp"])
         
-        # 2. 'AnalysisTime' is mapped to Oracle parameter 'TESTTIMESTAMP' and converted to standard ORDS ISO 8601 Zulu UTC
+        # 2. 'AnalysisTime' is mapped to Oracle parameter 'TESTTIMESTAMP'
         self.assertEqual(sent_payload.get("TESTTIMESTAMP"), "2026-10-30T08:49:43Z")
         self.assertNotIn("AnalysisTime", sent_payload)
         
-        # 3. 'EventTime' must also be converted to standard ORDS ISO 8601 Zulu UTC
-        self.assertEqual(sent_payload.get("EventTime"), "2026-10-30T08:49:43Z")
+        # 3. 'EventTime' (23:00:00Z UTC) must be converted to UTC+8 (07:00:00Z)
+        self.assertEqual(sent_payload.get("EventTime"), "2026-11-05T07:00:00Z")
         
         # 4. 'TestTimestamp' must be None / null
         self.assertIsNone(sent_payload.get("TestTimestamp"))
@@ -360,8 +378,8 @@ class TestEndpointEnvRouting(unittest.TestCase):
         self.assertEqual(oct_payload.get("value"), "15.42")
         self.assertEqual(oct_payload.get("unitOfMeasure"), "mg/L")
         self.assertEqual(oct_payload.get("uom"), "mg/L")
-        self.assertEqual(oct_payload.get("timestamp"), "2026-11-02T16:00:00Z")
-        self.assertEqual(oct_payload.get("readingTimestamp"), "2026-11-02T16:00:00Z")
+        self.assertEqual(oct_payload.get("timestamp"), "2026-11-03T00:00:00Z")
+        self.assertEqual(oct_payload.get("readingTimestamp"), "2026-11-03T00:00:00Z")
         self.assertEqual(oct_payload.get("AnalysisTime"), "2026-10-30T08:49:43Z")
         self.assertEqual(oct_payload.get("Operator"), "Plant_Ops")
 

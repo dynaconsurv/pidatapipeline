@@ -10,48 +10,50 @@ Implements:
 """
 import base64
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple
 import requests
 
+TZ_UTC8 = timezone(timedelta(hours=8))
 
-def format_ords_timestamp(ts: Any, allow_empty: bool = False) -> Optional[str]:
+
+def format_ords_timestamp(ts: Any, allow_empty: bool = False, already_utc8: bool = False) -> Optional[str]:
     """
-    Format timestamp to Oracle ORDS standard ISO 8601 Zulu UTC: YYYY-MM-DDTHH:MM:SSZ
+    Format timestamp to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ) in UTC+8 local clock time.
+    Converts incoming UTC timestamps (ending in Z / +00:00 or UTC datetime objects) to UTC+8
+    so that e.g. 7:00 AM local time (sent as 23:00:00Z UTC by PI AF) stays 07:00:00Z.
     Strips fractional microseconds which cause Oracle DATE column parsing issues.
     If allow_empty is True, None or empty/null values return None.
     """
     if ts is None:
-        return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return None if allow_empty else datetime.now(TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, datetime):
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if ts.tzinfo is not None:
+            ts = ts.astimezone(TZ_UTC8)
+        return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, (int, float)):
         val = float(ts)
         if 20000 <= val <= 100000:
-            from datetime import timedelta
-            excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+            excel_epoch = datetime(1899, 12, 30, tzinfo=TZ_UTC8)
             sec = round(val * 86400)
             return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
         if val > 1e11:
             val = val / 1000.0
-        return datetime.fromtimestamp(val, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return datetime.fromtimestamp(val, tz=TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
     if isinstance(ts, str):
         s = ts.strip().strip('"').strip("'")
         if not s or s.lower() in ("null", "none"):
-            return None if allow_empty else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return None if allow_empty else datetime.now(TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             fnum = float(s)
             if 20000 <= fnum <= 100000:
-                from datetime import timedelta
-                excel_epoch = datetime(1899, 12, 30, tzinfo=timezone.utc)
+                excel_epoch = datetime(1899, 12, 30, tzinfo=TZ_UTC8)
                 sec = round(fnum * 86400)
                 return (excel_epoch + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
             if s.isdigit() and len(s) >= 10:
                 if fnum > 1e11:
                     fnum = fnum / 1000.0
-                return datetime.fromtimestamp(fnum, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                return datetime.fromtimestamp(fnum, tz=TZ_UTC8).strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             pass
         try:
@@ -72,9 +74,9 @@ def format_ords_timestamp(ts: Any, allow_empty: bool = False) -> Optional[str]:
                 else:
                     clean_s = f"{date_time_part}.{rest[:6]}"
             dt = datetime.fromisoformat(clean_s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if dt.tzinfo is not None and not already_utc8:
+                dt = dt.astimezone(TZ_UTC8)
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         except Exception:
             for fmt in (
                 "%Y-%m-%d %H:%M:%S",
@@ -88,7 +90,6 @@ def format_ords_timestamp(ts: Any, allow_empty: bool = False) -> Optional[str]:
             ):
                 try:
                     dt = datetime.strptime(s.split(".")[0], fmt)
-                    dt = dt.replace(tzinfo=timezone.utc)
                     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
                 except Exception:
                     continue
@@ -138,6 +139,7 @@ def sanitize_endpoint_url(url: Optional[str]) -> str:
 KNOWN_ORDS_RESOURCE_SEGMENTS = (
     "final_discharge_effluent",
     "production_utilities_consumption",
+    "production_daily_output",
 )
 
 

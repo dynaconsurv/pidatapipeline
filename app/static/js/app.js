@@ -23,7 +23,7 @@ function sanitizeEndpointUrl(url) {
 }
 window.sanitizeEndpointUrl = sanitizeEndpointUrl;
 
-const KNOWN_ORDS_RESOURCES = ["final_discharge_effluent", "production_utilities_consumption"];
+const KNOWN_ORDS_RESOURCES = ["final_discharge_effluent", "production_utilities_consumption", "production_daily_output"];
 
 function buildOracleEndpointUrl(baseUrl, resourceEndpoint) {
   let base = (baseUrl || "").trim().replace(/\/+$/, "");
@@ -681,6 +681,8 @@ function getDeliveryEndpoints(deliv) {
       const u = String(t).toUpperCase();
       if (u === "J5DEV" || u.includes("J5_DEV") || u.includes("OCTAVEDEV") || u.includes("OCTAVE DEV")) eps.add("J5DEV");
       else if (u === "J5" || u.includes("OCTAVE")) eps.add("J5");
+      else if (u === "ORACLEDEV_PRODUCTION" || (u.includes("DEV") && (u.includes("PRODUCTION") || u.includes("DAILY")))) eps.add("ORACLEDEV_PRODUCTION");
+      else if (u === "ORACLE_PRODUCTION" || u.includes("PRODUCTION") || u.includes("DAILY_OUTPUT")) eps.add("ORACLE_PRODUCTION");
       else if (u === "ORACLEDEV_UTILITY" || (u.includes("DEV") && u.includes("UTILITY"))) eps.add("ORACLEDEV_UTILITY");
       else if (u === "ORACLE_UTILITY" || u.includes("UTILITY")) eps.add("ORACLE_UTILITY");
       else if (u === "ORACLEDEV" || u.includes("ORACLE DEV") || u.includes("ORACLE_DEV")) eps.add("ORACLEDEV");
@@ -696,6 +698,8 @@ function getDeliveryEndpoints(deliv) {
       const ep = String(d.target_endpoint || "").toLowerCase();
       if (tt === "J5DEV" || tt.includes("OCTAVEDEV")) eps.add("J5DEV");
       else if (tt === "J5" || tt.includes("OCTAVE") || ep.includes("hxgnsmartcloud") || ep.includes("purchaseorder") || ep.includes("j5_pi_opslogbook")) eps.add("J5");
+      else if (tt === "ORACLEDEV_PRODUCTION" || (ep.includes("dev") && ep.includes("production_daily_output"))) eps.add("ORACLEDEV_PRODUCTION");
+      else if (tt === "ORACLE_PRODUCTION" || ep.includes("production_daily_output")) eps.add("ORACLE_PRODUCTION");
       else if (tt === "ORACLEDEV_UTILITY" || (ep.includes("dev") && ep.includes("util"))) eps.add("ORACLEDEV_UTILITY");
       else if (tt === "ORACLE_UTILITY" || ep.includes("util")) eps.add("ORACLE_UTILITY");
       else if (tt === "ORACLEDEV" || ep.includes("dev")) eps.add("ORACLEDEV");
@@ -709,6 +713,8 @@ function getDeliveryEndpoints(deliv) {
   if (epUrl) {
     if (epUrl.includes("dev") && (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder") || epUrl.includes("j5_pi_opslogbook"))) eps.add("J5DEV");
     else if (epUrl.includes("hxgnsmartcloud") || epUrl.includes("purchaseorder") || epUrl.includes("j5_pi_opslogbook")) eps.add("J5");
+    else if (epUrl.includes("dev") && epUrl.includes("production_daily_output")) eps.add("ORACLEDEV_PRODUCTION");
+    else if (epUrl.includes("production_daily_output")) eps.add("ORACLE_PRODUCTION");
     else if (epUrl.includes("dev") && epUrl.includes("util")) eps.add("ORACLEDEV_UTILITY");
     else if (epUrl.includes("util")) eps.add("ORACLE_UTILITY");
     else if (epUrl.includes("dev")) eps.add("ORACLEDEV");
@@ -722,10 +728,12 @@ function getDeliveryEndpoints(deliv) {
       const disFlags = (a.disabled_target_flags || []).map(f => String(f).toLowerCase());
       if (a.j5dev && !disFlags.includes("j5dev") && a.j5dev !== false) eps.add("J5DEV");
       if (a.j5 && !disFlags.includes("j5") && a.j5 !== false) eps.add("J5");
+      if ((a.oracledev_production || (a.oracledev && a.production)) && !disFlags.includes("oracledev_production") && a.oracledev_production !== false) eps.add("ORACLEDEV_PRODUCTION");
+      if ((a.oracle_production || (a.oracle && a.production)) && !disFlags.includes("oracle_production") && a.oracle_production !== false) eps.add("ORACLE_PRODUCTION");
       if ((a.oracledev_utility || (a.oracledev && a.utility)) && !disFlags.includes("oracledev_utility") && a.oracledev_utility !== false) eps.add("ORACLEDEV_UTILITY");
       if ((a.oracle_utility || (a.oracle && a.utility)) && !disFlags.includes("oracle_utility") && a.oracle_utility !== false) eps.add("ORACLE_UTILITY");
-      if (a.oracledev && !disFlags.includes("oracledev") && a.oracledev !== false && !a.oracledev_utility) eps.add("ORACLEDEV");
-      if (a.oracle && !disFlags.includes("oracle") && a.oracle !== false && !a.oracle_utility) eps.add("ORACLE");
+      if (a.oracledev && !disFlags.includes("oracledev") && a.oracledev !== false && !a.oracledev_utility && !a.oracledev_production) eps.add("ORACLEDEV");
+      if (a.oracle && !disFlags.includes("oracle") && a.oracle !== false && !a.oracle_utility && !a.oracle_production) eps.add("ORACLE");
 
       if (eps.size === 0 && Array.isArray(currentMappings) && currentMappings.length > 0) {
         const m = currentMappings.find(cm =>
@@ -741,6 +749,8 @@ function getDeliveryEndpoints(deliv) {
             const mtU = String(mt).toUpperCase();
             if (mtU === "J5DEV" || mtU.includes("OCTAVEDEV")) eps.add("J5DEV");
             else if (mtU === "J5" || mtU.includes("OCTAVE")) eps.add("J5");
+            else if (mtU === "ORACLEDEV_PRODUCTION" || (mtU.includes("DEV") && (mtU.includes("PRODUCTION") || mtU.includes("DAILY")))) eps.add("ORACLEDEV_PRODUCTION");
+            else if (mtU === "ORACLE_PRODUCTION" || mtU.includes("PRODUCTION") || mtU.includes("DAILY_OUTPUT")) eps.add("ORACLE_PRODUCTION");
             else if (mtU === "ORACLEDEV_UTILITY" || (mtU.includes("DEV") && mtU.includes("UTIL"))) eps.add("ORACLEDEV_UTILITY");
             else if (mtU === "ORACLE_UTILITY" || mtU.includes("UTIL")) eps.add("ORACLE_UTILITY");
             else if (mtU === "ORACLEDEV" || mtU.includes("ORACLE DEV")) eps.add("ORACLEDEV");
@@ -756,7 +766,9 @@ function getDeliveryEndpoints(deliv) {
     const rawEp = String(deliv.raw_payload.Endpoint || deliv.raw_payload.endpoint || deliv.raw_payload.target_endpoint || "").toLowerCase();
     const rawEnv = String(deliv.raw_payload.Environment || deliv.raw_payload.environment || deliv.raw_payload.env || "prod").toLowerCase();
     const isTest = (rawEnv === "test" || rawEnv === "dev" || rawEnv === "development" || rawEnv === "tst");
-    if (rawEp.includes("utility")) {
+    if (rawEp.includes("production") || rawEp.includes("daily")) {
+      eps.add(isTest ? "ORACLEDEV_PRODUCTION" : "ORACLE_PRODUCTION");
+    } else if (rawEp.includes("utility")) {
       eps.add(isTest ? "ORACLEDEV_UTILITY" : "ORACLE_UTILITY");
     } else if (rawEp.includes("oracle") || rawEp.includes("effluent")) {
       eps.add(isTest ? "ORACLEDEV" : "ORACLE");
@@ -2048,7 +2060,11 @@ async function showOracleResponseModal(deliveryId) {
 
           let badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod</span>`;
           const ttLow = String(it.target_type || '').toLowerCase();
-          if (ttLow.includes('oracledev_utility') || (ttLow.includes('dev') && ttLow.includes('util'))) {
+          if (ttLow.includes('oracledev_production') || (ttLow.includes('dev') && (ttLow.includes('production') || ttLow.includes('daily')))) {
+            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Daily Production)</span>`;
+          } else if (ttLow.includes('oracle_production') || ttLow.includes('production') || ttLow.includes('daily')) {
+            badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Daily Production)</span>`;
+          } else if (ttLow.includes('oracledev_utility') || (ttLow.includes('dev') && ttLow.includes('util'))) {
             badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Utility)</span>`;
           } else if (ttLow.includes('oracle_utility') || ttLow.includes('util')) {
             badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
@@ -3859,6 +3875,8 @@ async function loadSettingsIntoForm() {
     document.getElementById("setting-erp-resource-endpoint").value = erp.resource_endpoint || "/Final_Discharge_Effluent/";
     const erpUtilResEl = document.getElementById("setting-erp-utility-resource-endpoint");
     if (erpUtilResEl) erpUtilResEl.value = erp.utility_resource_endpoint || "/production_utilities_consumption/";
+    const erpDailyProdResEl = document.getElementById("setting-erp-daily-prod-resource-endpoint");
+    if (erpDailyProdResEl) erpDailyProdResEl.value = erp.daily_production_resource_endpoint || "/production_daily_output/";
     document.getElementById("setting-erp-http-method").value = erp.http_method || "POST";
     document.getElementById("setting-erp-dry-run").checked = !!erp.dry_run;
 
@@ -3891,6 +3909,8 @@ async function loadSettingsIntoForm() {
     if (devResEl) devResEl.value = dev.resource_endpoint || "/Final_Discharge_Effluent/";
     const devUtilResEl = document.getElementById("setting-oracledev-utility-resource-endpoint");
     if (devUtilResEl) devUtilResEl.value = dev.utility_resource_endpoint || "/production_utilities_consumption/";
+    const devDailyProdResEl = document.getElementById("setting-oracledev-daily-prod-resource-endpoint");
+    if (devDailyProdResEl) devDailyProdResEl.value = dev.daily_production_resource_endpoint || "/production_daily_output/";
     if (devMethodEl) devMethodEl.value = dev.http_method || "POST";
     if (devDryEl) devDryEl.checked = !!dev.dry_run;
 
@@ -4433,6 +4453,7 @@ function collectSettingsFromForm() {
       bearer_token: document.getElementById("setting-erp-bearer-token").value.trim(),
       resource_endpoint: document.getElementById("setting-erp-resource-endpoint").value.trim() || "/Final_Discharge_Effluent/",
       utility_resource_endpoint: document.getElementById("setting-erp-utility-resource-endpoint") ? document.getElementById("setting-erp-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
+      daily_production_resource_endpoint: document.getElementById("setting-erp-daily-prod-resource-endpoint") ? document.getElementById("setting-erp-daily-prod-resource-endpoint").value.trim() : "/production_daily_output/",
       http_method: document.getElementById("setting-erp-http-method").value,
       dry_run: document.getElementById("setting-erp-dry-run").checked,
       custom_headers: {
@@ -4454,6 +4475,7 @@ function collectSettingsFromForm() {
       bearer_token: document.getElementById("setting-oracledev-bearer-token") ? document.getElementById("setting-oracledev-bearer-token").value.trim() : "",
       resource_endpoint: document.getElementById("setting-oracledev-resource-endpoint") ? document.getElementById("setting-oracledev-resource-endpoint").value.trim() : "/Final_Discharge_Effluent/",
       utility_resource_endpoint: document.getElementById("setting-oracledev-utility-resource-endpoint") ? document.getElementById("setting-oracledev-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
+      daily_production_resource_endpoint: document.getElementById("setting-oracledev-daily-prod-resource-endpoint") ? document.getElementById("setting-oracledev-daily-prod-resource-endpoint").value.trim() : "/production_daily_output/",
       http_method: document.getElementById("setting-oracledev-http-method") ? document.getElementById("setting-oracledev-http-method").value : "POST",
       dry_run: document.getElementById("setting-oracledev-dry-run") ? document.getElementById("setting-oracledev-dry-run").checked : false,
       custom_headers: {
