@@ -25,12 +25,61 @@ window.sanitizeEndpointUrl = sanitizeEndpointUrl;
 
 const KNOWN_ORDS_RESOURCES = ["final_discharge_effluent", "production_utilities_consumption", "production_daily_output"];
 
+function getAllOrdsResourceSegments() {
+  const segs = [...KNOWN_ORDS_RESOURCES];
+  if (typeof currentSettings === "object" && currentSettings) {
+    for (const secKey of ["oracle_erp", "oracledev"]) {
+      const sec = currentSettings[secKey];
+      if (sec && Array.isArray(sec.custom_endpoints)) {
+        for (const ce of sec.custom_endpoints) {
+          const p = String(ce?.path || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+          if (p && !segs.includes(p)) segs.push(p);
+        }
+      }
+    }
+  }
+  return segs;
+}
+
+function getUnifiedCustomOracleEndpoints(settingsObj = null) {
+  const s = settingsObj || currentSettings || {};
+  const prodList = Array.isArray(s.oracle_erp?.custom_endpoints) ? s.oracle_erp.custom_endpoints : [];
+  const devList = Array.isArray(s.oracledev?.custom_endpoints) ? s.oracledev.custom_endpoints : [];
+  const map = new Map();
+  for (const item of prodList) {
+    if (!item || !item.key) continue;
+    const k = String(item.key).trim().toLowerCase();
+    map.set(k, {
+      key: k,
+      label: item.label || k.replace(/_/g, " "),
+      prod_path: item.path || `/${k}/`,
+      dev_path: item.path || `/${k}/`
+    });
+  }
+  for (const item of devList) {
+    if (!item || !item.key) continue;
+    const k = String(item.key).trim().toLowerCase();
+    if (map.has(k)) {
+      map.get(k).dev_path = item.path || map.get(k).dev_path;
+      if (!map.get(k).label && item.label) map.get(k).label = item.label;
+    } else {
+      map.set(k, {
+        key: k,
+        label: item.label || k.replace(/_/g, " "),
+        prod_path: item.path || `/${k}/`,
+        dev_path: item.path || `/${k}/`
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
 function buildOracleEndpointUrl(baseUrl, resourceEndpoint) {
   let base = (baseUrl || "").trim().replace(/\/+$/, "");
   const res = (resourceEndpoint || "").trim().replace(/^\/+|\/+$/g, "");
   if (!base) return res ? `/${res}/` : "/";
   if (res) {
-    for (const kr of KNOWN_ORDS_RESOURCES) {
+    for (const kr of getAllOrdsResourceSegments()) {
       if (base.toLowerCase().endsWith("/" + kr)) {
         base = base.substring(0, base.length - (kr.length + 1)).replace(/\/+$/, "");
         break;
@@ -685,6 +734,8 @@ function getDeliveryEndpoints(deliv) {
       else if (u === "ORACLE_PRODUCTION" || u.includes("PRODUCTION") || u.includes("DAILY_OUTPUT")) eps.add("ORACLE_PRODUCTION");
       else if (u === "ORACLEDEV_UTILITY" || (u.includes("DEV") && u.includes("UTILITY"))) eps.add("ORACLEDEV_UTILITY");
       else if (u === "ORACLE_UTILITY" || u.includes("UTILITY")) eps.add("ORACLE_UTILITY");
+      else if (u.startsWith("ORACLEDEV_") && u !== "ORACLEDEV_EFFLUENT") eps.add(u);
+      else if (u.startsWith("ORACLE_") && u !== "ORACLE_ERP" && u !== "ORACLE_EFFLUENT" && u !== "ORACLE_DEV") eps.add(u);
       else if (u === "ORACLEDEV" || u.includes("ORACLE DEV") || u.includes("ORACLE_DEV")) eps.add("ORACLEDEV");
       else if (u.includes("ORACLE")) eps.add("ORACLE");
     }
@@ -956,17 +1007,32 @@ function renderDeliveryRowHtml(deliv) {
   const eventType = escapeHtml(deliv.event_type || "Update");
   const targetPath = escapeHtml(deliv.target_path || "--");
   const eps = getDeliveryEndpoints(deliv);
+  const customEps = getUnifiedCustomOracleEndpoints();
   const endpointBadges = eps.map(ep => {
     if (ep === "J5") {
       return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> Octave</span>`;
     } else if (ep === "J5DEV") {
       return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(147, 51, 234, 0.12); color: #7e22ce; border: 1px solid rgba(147, 51, 234, 0.3);"><span class="badge-dot" style="background:#9333ea;"></span> Octave Dev</span>`;
+    } else if (ep === "ORACLEDEV_PRODUCTION") {
+      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev (Daily Prod)</span>`;
+    } else if (ep === "ORACLE_PRODUCTION") {
+      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (Daily Prod)</span>`;
     } else if (ep === "ORACLEDEV_UTILITY") {
       return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev (Utility)</span>`;
-    } else if (ep === "ORACLEDEV") {
-      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev</span>`;
     } else if (ep === "ORACLE_UTILITY") {
       return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
+    } else if (ep.startsWith("ORACLEDEV_")) {
+      const ckey = ep.substring("ORACLEDEV_".length).toLowerCase();
+      const ce = customEps.find(x => x.key === ckey);
+      const lbl = ce ? ce.label : ckey;
+      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev (${escapeHtml(lbl)})</span>`;
+    } else if (ep.startsWith("ORACLE_")) {
+      const ckey = ep.substring("ORACLE_".length).toLowerCase();
+      const ce = customEps.find(x => x.key === ckey);
+      const lbl = ce ? ce.label : ckey;
+      return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (${escapeHtml(lbl)})</span>`;
+    } else if (ep === "ORACLEDEV") {
+      return `<span class="badge badge-pending" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Dev</span>`;
     } else {
       return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod</span>`;
     }
@@ -3914,6 +3980,8 @@ async function loadSettingsIntoForm() {
     if (devMethodEl) devMethodEl.value = dev.http_method || "POST";
     if (devDryEl) devDryEl.checked = !!dev.dry_run;
 
+    renderCustomOracleEndpointsInSettings();
+
     // J5 Inbound Message Settings (Octave)
     const j5 = currentSettings.j5_endpoint || {};
     const j5EnabledEl = document.getElementById("setting-j5-enabled");
@@ -4422,6 +4490,233 @@ function handleOracleDevAuthChange() {
 }
 window.handleOracleDevAuthChange = handleOracleDevAuthChange;
 
+function normalizeOracleResourcePathJs(rawPath) {
+  let p = String(rawPath || "").trim();
+  if (!p) return "/";
+  if (!p.startsWith("/")) p = "/" + p;
+  if (!p.endsWith("/")) p = p + "/";
+  return p;
+}
+
+function normalizeOracleEndpointKeyJs(rawVal) {
+  let s = String(rawVal || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+  s = s.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  for (const prefix of ["oracledev_", "oracle_dev_", "oracle_", "dev_"]) {
+    if (s.startsWith(prefix) && s.length > prefix.length) {
+      s = s.substring(prefix.length);
+    }
+  }
+  return s;
+}
+
+function renderCustomOracleEndpointsInSettings() {
+  const prodContainer = document.getElementById("erp-custom-endpoints-list");
+  const devContainer = document.getElementById("oracledev-custom-endpoints-list");
+  const customEps = getUnifiedCustomOracleEndpoints();
+
+  if (prodContainer) {
+    prodContainer.innerHTML = customEps.map(ce => `
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label class="form-label" style="margin-bottom: 0;">
+            ${escapeHtml(ce.label)} Resource Path
+            <span class="badge badge-info" style="font-size: 9px; padding: 1px 5px; margin-left: 4px;">Custom</span>
+          </label>
+          <button type="button" class="btn btn-outline btn-sm" style="color: var(--danger, #dc2626); border: none; padding: 0 4px; font-size: 11px; line-height: 1;" onclick="handleRemoveCustomOracleEndpoint('${escapeHtml(ce.key)}')" title="Remove from both Oracle Prod & Oracle Dev">✕ Remove</button>
+        </div>
+        <input type="text" class="form-control form-control-mono custom-oracle-ep-input-prod" data-ep-key="${escapeHtml(ce.key)}" data-ep-label="${escapeHtml(ce.label)}" value="${escapeHtml(ce.prod_path)}" oninput="handleCustomOracleEpPathInput('prod', '${escapeHtml(ce.key)}', this.value)">
+        <div class="form-help">PI AF Endpoint: <code>${escapeHtml(ce.label)}</code> or <code>${escapeHtml(ce.key)}</code> (<code>Environment=Prod</code>)</div>
+      </div>
+    `).join("");
+  }
+
+  if (devContainer) {
+    devContainer.innerHTML = customEps.map(ce => `
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label class="form-label" style="margin-bottom: 0;">
+            ${escapeHtml(ce.label)} Resource Path
+            <span class="badge badge-pending" style="font-size: 9px; padding: 1px 5px; margin-left: 4px;">Custom</span>
+          </label>
+          <button type="button" class="btn btn-outline btn-sm" style="color: var(--danger, #dc2626); border: none; padding: 0 4px; font-size: 11px; line-height: 1;" onclick="handleRemoveCustomOracleEndpoint('${escapeHtml(ce.key)}')" title="Remove from both Oracle Prod & Oracle Dev">✕ Remove</button>
+        </div>
+        <input type="text" class="form-control form-control-mono custom-oracle-ep-input-dev" data-ep-key="${escapeHtml(ce.key)}" data-ep-label="${escapeHtml(ce.label)}" value="${escapeHtml(ce.dev_path)}" oninput="handleCustomOracleEpPathInput('dev', '${escapeHtml(ce.key)}', this.value)">
+        <div class="form-help">PI AF Endpoint: <code>${escapeHtml(ce.label)}</code> or <code>${escapeHtml(ce.key)}</code> (<code>Environment=Test</code>)</div>
+      </div>
+    `).join("");
+  }
+
+  syncCustomOracleEndpointsToBulkUploadDropdown(customEps);
+}
+window.renderCustomOracleEndpointsInSettings = renderCustomOracleEndpointsInSettings;
+
+function syncCustomOracleEndpointsToBulkUploadDropdown(customEps) {
+  const sel = document.getElementById("bulk-target-type");
+  if (!sel) return;
+  const previousVal = sel.value;
+
+  // Remove previously injected dynamic options
+  sel.querySelectorAll("option[data-custom-oracle-ep='true']").forEach(opt => opt.remove());
+
+  const prodAfterEl = sel.querySelector("option[value='oracle']");
+  const devAfterEl = sel.querySelector("option[value='oracledev']");
+
+  for (const ce of customEps) {
+    const prodOpt = document.createElement("option");
+    prodOpt.value = `oracle_${ce.key}`;
+    prodOpt.dataset.customOracleEp = "true";
+    prodOpt.textContent = `Oracle Cloud Prod — ${ce.label} (${ce.prod_path})`;
+    if (prodAfterEl && prodAfterEl.parentNode) {
+      prodAfterEl.parentNode.insertBefore(prodOpt, prodAfterEl.nextSibling);
+    } else {
+      sel.appendChild(prodOpt);
+    }
+
+    const devOpt = document.createElement("option");
+    devOpt.value = `oracledev_${ce.key}`;
+    devOpt.dataset.customOracleEp = "true";
+    devOpt.textContent = `Oracle Cloud Dev — ${ce.label} (${ce.dev_path})`;
+    if (devAfterEl && devAfterEl.parentNode) {
+      devAfterEl.parentNode.insertBefore(devOpt, devAfterEl.nextSibling);
+    } else {
+      sel.appendChild(devOpt);
+    }
+  }
+
+  if (previousVal && Array.from(sel.options).some(o => o.value === previousVal)) {
+    sel.value = previousVal;
+  }
+}
+
+function handleAutoSuggestOraclePath(env, labelVal) {
+  const pathInput = document.getElementById(`new-oracle-ep-path-${env}`);
+  if (!pathInput || pathInput.dataset.userEdited === "true") return;
+  const slug = normalizeOracleEndpointKeyJs(labelVal);
+  pathInput.value = slug ? `/${slug}/` : "";
+}
+window.handleAutoSuggestOraclePath = handleAutoSuggestOraclePath;
+
+function handleCustomOracleEpPathInput(env, key, newVal) {
+  if (!currentSettings) return;
+  const secKey = env === "dev" ? "oracledev" : "oracle_erp";
+  if (!currentSettings[secKey]) currentSettings[secKey] = {};
+  if (!Array.isArray(currentSettings[secKey].custom_endpoints)) {
+    currentSettings[secKey].custom_endpoints = [];
+  }
+  const item = currentSettings[secKey].custom_endpoints.find(x => x.key === key);
+  if (item) {
+    item.path = newVal.trim();
+  }
+}
+window.handleCustomOracleEpPathInput = handleCustomOracleEpPathInput;
+
+async function handleAddCustomOracleEndpoint(sourceEnv) {
+  const labelInput = document.getElementById(`new-oracle-ep-label-${sourceEnv}`);
+  const pathInput = document.getElementById(`new-oracle-ep-path-${sourceEnv}`);
+  const rawLabel = (labelInput?.value || "").trim();
+  const rawPath = (pathInput?.value || "").trim();
+
+  if (!rawLabel && !rawPath) {
+    showToast("Please enter an Endpoint Name (e.g. 'Steam Boiler Output') and ORDS Resource Path.", "warning");
+    labelInput?.focus();
+    return;
+  }
+
+  const key = normalizeOracleEndpointKeyJs(rawPath || rawLabel);
+  if (!key) {
+    showToast("Invalid endpoint name or resource path.", "warning");
+    return;
+  }
+
+  const builtinKeys = new Set([
+    "effluent", "final_discharge_effluent",
+    "utility", "utilities", "production_utilities_consumption",
+    "production", "daily_production", "daily_production_data", "production_daily_output"
+  ]);
+  if (builtinKeys.has(key)) {
+    showToast(`'${rawLabel || rawPath}' is already one of the built-in Oracle endpoints above.`, "info");
+    return;
+  }
+
+  const finalLabel = rawLabel || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const finalPath = normalizeOracleResourcePathJs(rawPath || `/${key}/`);
+
+  if (!currentSettings) currentSettings = collectSettingsFromForm();
+  if (!currentSettings.oracle_erp) currentSettings.oracle_erp = {};
+  if (!currentSettings.oracledev) currentSettings.oracledev = {};
+  if (!Array.isArray(currentSettings.oracle_erp.custom_endpoints)) currentSettings.oracle_erp.custom_endpoints = [];
+  if (!Array.isArray(currentSettings.oracledev.custom_endpoints)) currentSettings.oracledev.custom_endpoints = [];
+
+  // Sync current DOM edits before adding
+  const currentDomSettings = collectSettingsFromForm();
+  currentSettings.oracle_erp.custom_endpoints = currentDomSettings.oracle_erp.custom_endpoints;
+  currentSettings.oracledev.custom_endpoints = currentDomSettings.oracledev.custom_endpoints;
+
+  const existingProd = currentSettings.oracle_erp.custom_endpoints.find(x => x.key === key);
+  if (existingProd) {
+    existingProd.label = finalLabel;
+    existingProd.path = finalPath;
+  } else {
+    currentSettings.oracle_erp.custom_endpoints.push({ key, label: finalLabel, path: finalPath });
+  }
+
+  const existingDev = currentSettings.oracledev.custom_endpoints.find(x => x.key === key);
+  if (existingDev) {
+    existingDev.label = finalLabel;
+    existingDev.path = finalPath;
+  } else {
+    currentSettings.oracledev.custom_endpoints.push({ key, label: finalLabel, path: finalPath });
+  }
+
+  if (labelInput) labelInput.value = "";
+  if (pathInput) {
+    pathInput.value = "";
+    delete pathInput.dataset.userEdited;
+  }
+
+  renderCustomOracleEndpointsInSettings();
+  await handleSaveSettings();
+  showToast(`Added "${finalLabel}" (${finalPath}) to both Oracle Prod and Oracle Dev!`, "success");
+}
+window.handleAddCustomOracleEndpoint = handleAddCustomOracleEndpoint;
+
+async function handleRemoveCustomOracleEndpoint(key) {
+  if (!key) return;
+  const customEps = getUnifiedCustomOracleEndpoints();
+  const target = customEps.find(x => x.key === key);
+  const label = target ? target.label : key;
+  if (!confirm(`Remove custom Oracle endpoint "${label}" from both Oracle Prod and Oracle Dev?`)) {
+    return;
+  }
+
+  const currentDomSettings = collectSettingsFromForm();
+  if (currentSettings?.oracle_erp) {
+    currentSettings.oracle_erp.custom_endpoints = (currentDomSettings.oracle_erp.custom_endpoints || []).filter(x => x.key !== key);
+  }
+  if (currentSettings?.oracledev) {
+    currentSettings.oracledev.custom_endpoints = (currentDomSettings.oracledev.custom_endpoints || []).filter(x => x.key !== key);
+  }
+
+  renderCustomOracleEndpointsInSettings();
+  await handleSaveSettings();
+  showToast(`Removed "${label}" from Oracle Prod and Oracle Dev.`, "info");
+}
+window.handleRemoveCustomOracleEndpoint = handleRemoveCustomOracleEndpoint;
+
+function collectCustomOracleEndpointsFromDom(env) {
+  const inputs = document.querySelectorAll(`.custom-oracle-ep-input-${env}`);
+  const list = [];
+  inputs.forEach(inp => {
+    const key = (inp.dataset.epKey || "").trim();
+    const label = (inp.dataset.epLabel || key).trim();
+    const path = normalizeOracleResourcePathJs(inp.value);
+    if (key) {
+      list.push({ key, label, path });
+    }
+  });
+  return list;
+}
+
 function collectSettingsFromForm() {
   return {
     pi_web_api: {
@@ -4454,6 +4749,7 @@ function collectSettingsFromForm() {
       resource_endpoint: document.getElementById("setting-erp-resource-endpoint").value.trim() || "/Final_Discharge_Effluent/",
       utility_resource_endpoint: document.getElementById("setting-erp-utility-resource-endpoint") ? document.getElementById("setting-erp-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
       daily_production_resource_endpoint: document.getElementById("setting-erp-daily-prod-resource-endpoint") ? document.getElementById("setting-erp-daily-prod-resource-endpoint").value.trim() : "/production_daily_output/",
+      custom_endpoints: collectCustomOracleEndpointsFromDom("prod"),
       http_method: document.getElementById("setting-erp-http-method").value,
       dry_run: document.getElementById("setting-erp-dry-run").checked,
       custom_headers: {
@@ -4476,6 +4772,7 @@ function collectSettingsFromForm() {
       resource_endpoint: document.getElementById("setting-oracledev-resource-endpoint") ? document.getElementById("setting-oracledev-resource-endpoint").value.trim() : "/Final_Discharge_Effluent/",
       utility_resource_endpoint: document.getElementById("setting-oracledev-utility-resource-endpoint") ? document.getElementById("setting-oracledev-utility-resource-endpoint").value.trim() : "/production_utilities_consumption/",
       daily_production_resource_endpoint: document.getElementById("setting-oracledev-daily-prod-resource-endpoint") ? document.getElementById("setting-oracledev-daily-prod-resource-endpoint").value.trim() : "/production_daily_output/",
+      custom_endpoints: collectCustomOracleEndpointsFromDom("dev"),
       http_method: document.getElementById("setting-oracledev-http-method") ? document.getElementById("setting-oracledev-http-method").value : "POST",
       dry_run: document.getElementById("setting-oracledev-dry-run") ? document.getElementById("setting-oracledev-dry-run").checked : false,
       custom_headers: {

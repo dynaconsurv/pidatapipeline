@@ -154,9 +154,14 @@ def build_oracle_endpoint_url(base_url: Optional[str], resource_endpoint: Option
         return f"/{res}/" if res else "/"
 
     if res:
-        # If res is provided, strip any known trailing resource segment from base to avoid appending resource onto resource
-        for seg in KNOWN_ORDS_RESOURCE_SEGMENTS:
-            if base.lower().endswith("/" + seg):
+        # If res is provided, strip any known or custom trailing resource segment from base
+        try:
+            from .config import get_all_oracle_resource_segments
+            all_segments = get_all_oracle_resource_segments()
+        except Exception:
+            all_segments = list(KNOWN_ORDS_RESOURCE_SEGMENTS)
+        for seg in all_segments:
+            if seg and base.lower().endswith("/" + seg.lower()):
                 base = base[:-(len(seg) + 1)].rstrip("/")
                 break
         res_lower = res.lower()

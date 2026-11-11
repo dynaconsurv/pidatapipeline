@@ -522,6 +522,82 @@ class TestEndpointEnvRouting(unittest.TestCase):
             save_settings(orig_settings)
             save_mappings(orig_mappings)
 
+    def test_dynamic_custom_oracle_endpoints_prod_and_dev(self):
+        """
+        Verify that adding a custom Oracle endpoint adds it to both Prod and Dev,
+        routes PI AF Endpoint + Environment (Prod / Test) to the custom Prod/Dev URLs,
+        and dispatches to the correct ORDS resource path.
+        """
+        import json
+        from unittest.mock import patch
+        from app.config import load_settings, save_settings, load_mappings, save_mappings, get_oracle_custom_endpoints
+        from app.delivery_handler import process_incoming_delivery, dispatch_delivery_to_oracle
+
+        orig_settings = load_settings()
+        orig_mappings = load_mappings()
+        try:
+            updated_settings = json.loads(json.dumps(orig_settings))
+            updated_settings.setdefault("oracle_erp", {})["enabled"] = True
+            updated_settings["oracle_erp"]["base_url"] = "https://prod-ords.example.com/ords/pims_int"
+            updated_settings["oracle_erp"]["custom_endpoints"] = [
+                {"key": "steam_boiler_output", "label": "Steam Boiler Output", "path": "/steam_boiler_output/"}
+            ]
+            updated_settings.setdefault("oracledev", {})["enabled"] = True
+            updated_settings["oracledev"]["base_url"] = "https://dev-ords.example.com/ords/pims_int"
+            updated_settings["oracledev"]["custom_endpoints"] = []
+            updated_settings.setdefault("pipeline", {})["auto_dispatch"] = False
+            save_settings(updated_settings)
+
+            # 1. Verify adding to oracle_erp automatically synced to oracledev as well
+            reloaded = load_settings()
+            self.assertEqual(len(reloaded["oracle_erp"]["custom_endpoints"]), 1)
+            self.assertEqual(len(reloaded["oracledev"]["custom_endpoints"]), 1)
+            self.assertEqual(reloaded["oracledev"]["custom_endpoints"][0]["key"], "steam_boiler_output")
+            self.assertEqual(reloaded["oracledev"]["custom_endpoints"][0]["path"], "/steam_boiler_output/")
+
+            custom_eps = get_oracle_custom_endpoints(reloaded)
+            self.assertEqual(len(custom_eps), 1)
+            self.assertEqual(custom_eps[0]["prod_target"], "oracle_steam_boiler_output")
+            self.assertEqual(custom_eps[0]["dev_target"], "oracledev_steam_boiler_output")
+
+            # 2. Verify PI AF Endpoint + Environment routing for Prod and Test
+            en_prod, _, dis_prod = resolve_endpoint_and_env_targets({"Endpoint": "Steam Boiler Output", "Environment": "Prod"})
+            self.assertEqual(en_prod, ["oracle_steam_boiler_output"])
+            self.assertIn("oracledev_steam_boiler_output", dis_prod)
+
+            en_dev, _, dis_dev = resolve_endpoint_and_env_targets({"Endpoint": "steam_boiler_output", "Environment": "Test"})
+            self.assertEqual(en_dev, ["oracledev_steam_boiler_output"])
+            self.assertIn("oracle_steam_boiler_output", dis_dev)
+
+            # 3. Verify end-to-end dispatch to Dev custom endpoint
+            payload_dev = {
+                "Tagname": "BOILER_01.STEAM_FLOW",
+                "Value": "42.5",
+                "Endpoint": "Steam Boiler Output",
+                "Environment": "Test"
+            }
+            expected_dev_url = "https://dev-ords.example.com/ords/pims_int/steam_boiler_output/"
+            with patch("app.oracle_erp_client.OracleERPCloudClient.publish_data") as mock_ora:
+                mock_ora.return_value = {
+                    "status": "SUCCESS",
+                    "http_code": 201,
+                    "target_endpoint": expected_dev_url,
+                    "response_body": {"status": "created"},
+                    "error_detail": None,
+                    "message": "Created"
+                }
+                res = process_incoming_delivery(payload_dev, client_ip="10.60.2.20")
+                dispatch_res = dispatch_delivery_to_oracle(res["delivery_id"])
+                self.assertTrue(mock_ora.called)
+                called_kwargs = mock_ora.call_args.kwargs
+                self.assertEqual(called_kwargs.get("target_endpoint"), expected_dev_url)
+                dispatches = dispatch_res.get("dispatches", [])
+                self.assertEqual(len(dispatches), 1)
+                self.assertEqual(dispatches[0].get("target_type"), "oracledev_steam_boiler_output")
+        finally:
+            save_settings(orig_settings)
+            save_mappings(orig_mappings)
+
 
 if __name__ == "__main__":
     unittest.main()

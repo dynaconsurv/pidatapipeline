@@ -75,6 +75,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "resource_endpoint": "/Final_Discharge_Effluent/",
         "utility_resource_endpoint": "/production_utilities_consumption/",
         "daily_production_resource_endpoint": "/production_daily_output/",
+        "custom_endpoints": [],
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -96,6 +97,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "resource_endpoint": "/Final_Discharge_Effluent/",
         "utility_resource_endpoint": "/production_utilities_consumption/",
         "daily_production_resource_endpoint": "/production_daily_output/",
+        "custom_endpoints": [],
         "http_method": "POST",
         "custom_headers": {
             "Content-Type": "application/json",
@@ -326,6 +328,10 @@ def load_settings() -> Dict[str, Any]:
                             sec["utility_resource_endpoint"] = "/production_utilities_consumption/"
                         if not sec.get("daily_production_resource_endpoint"):
                             sec["daily_production_resource_endpoint"] = "/production_daily_output/"
+                        if not isinstance(sec.get("custom_endpoints"), list):
+                            sec["custom_endpoints"] = []
+
+                sync_oracle_custom_endpoints(data)
 
                 return data
         except Exception as e:
@@ -333,8 +339,165 @@ def load_settings() -> Dict[str, Any]:
             return DEFAULT_SETTINGS
 
 
+def normalize_oracle_endpoint_key(raw_key: Any) -> str:
+    """
+    Normalizes an Oracle endpoint key/name/path into a clean lowercase slug
+    (e.g. 'Boiler Steam Output' or '/boiler_steam_output/' -> 'boiler_steam_output').
+    """
+    import re
+    s = str(raw_key or "").strip().strip("/").lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s).strip("_")
+    for prefix in ("oracledev_", "oracle_dev_", "oracle_", "dev_"):
+        if s.startswith(prefix) and len(s) > len(prefix):
+            s = s[len(prefix):]
+    return s
+
+
+def normalize_oracle_resource_path(raw_path: Any) -> str:
+    """
+    Normalizes an ORDS resource path so it starts and ends with '/'.
+    """
+    p = str(raw_path or "").strip()
+    if not p:
+        return "/"
+    if not p.startswith("/"):
+        p = "/" + p
+    if not p.endswith("/"):
+        p = p + "/"
+    return p
+
+
+BUILTIN_ORACLE_ENDPOINT_KEYS = frozenset({
+    "effluent",
+    "final_discharge_effluent",
+    "utility",
+    "utilities",
+    "production_utilities_consumption",
+    "production",
+    "daily_production",
+    "daily_production_data",
+    "production_daily_output",
+})
+
+
+def sync_oracle_custom_endpoints(settings: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    Ensures custom_endpoints in oracle_erp (Prod) and oracledev (Dev) are synchronized
+    so that any custom endpoint added is present in both Prod and Dev.
+    Returns a unified list of custom endpoint descriptors:
+      [{"key": k, "label": label, "prod_path": p_path, "dev_path": d_path,
+        "prod_target": f"oracle_{k}", "dev_target": f"oracledev_{k}"}]
+    """
+    if not isinstance(settings, dict):
+        return []
+    erp_sec = settings.setdefault("oracle_erp", {})
+    dev_sec = settings.setdefault("oracledev", {})
+    raw_prod = erp_sec.get("custom_endpoints") if isinstance(erp_sec.get("custom_endpoints"), list) else []
+    raw_dev = dev_sec.get("custom_endpoints") if isinstance(dev_sec.get("custom_endpoints"), list) else []
+
+    merged: Dict[str, Dict[str, str]] = {}
+    order: List[str] = []
+
+    for item in raw_prod:
+        if not isinstance(item, dict):
+            continue
+        raw_k = item.get("key") or item.get("path") or item.get("label") or item.get("name")
+        key = normalize_oracle_endpoint_key(raw_k)
+        if not key or key in BUILTIN_ORACLE_ENDPOINT_KEYS:
+            continue
+        label = str(item.get("label") or item.get("name") or key.replace("_", " ").title()).strip()
+        path = normalize_oracle_resource_path(item.get("path") or item.get("resource_endpoint") or f"/{key}/")
+        if key not in merged:
+            order.append(key)
+            merged[key] = {"key": key, "label": label, "prod_path": path, "dev_path": path}
+        else:
+            merged[key]["label"] = label or merged[key]["label"]
+            merged[key]["prod_path"] = path
+
+    for item in raw_dev:
+        if not isinstance(item, dict):
+            continue
+        raw_k = item.get("key") or item.get("path") or item.get("label") or item.get("name")
+        key = normalize_oracle_endpoint_key(raw_k)
+        if not key or key in BUILTIN_ORACLE_ENDPOINT_KEYS:
+            continue
+        label = str(item.get("label") or item.get("name") or key.replace("_", " ").title()).strip()
+        path = normalize_oracle_resource_path(item.get("path") or item.get("resource_endpoint") or f"/{key}/")
+        if key not in merged:
+            order.append(key)
+            merged[key] = {"key": key, "label": label, "prod_path": path, "dev_path": path}
+        else:
+            if not merged[key].get("label"):
+                merged[key]["label"] = label
+            merged[key]["dev_path"] = path
+
+    prod_list: List[Dict[str, str]] = []
+    dev_list: List[Dict[str, str]] = []
+    unified: List[Dict[str, str]] = []
+    for k in order:
+        entry = merged[k]
+        prod_list.append({"key": k, "label": entry["label"], "path": entry["prod_path"]})
+        dev_list.append({"key": k, "label": entry["label"], "path": entry["dev_path"]})
+        unified.append({
+            "key": k,
+            "label": entry["label"],
+            "prod_path": entry["prod_path"],
+            "dev_path": entry["dev_path"],
+            "prod_target": f"oracle_{k}",
+            "dev_target": f"oracledev_{k}",
+        })
+
+    erp_sec["custom_endpoints"] = prod_list
+    dev_sec["custom_endpoints"] = dev_list
+    return unified
+
+
+def get_oracle_custom_endpoints(settings: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    """
+    Returns the synchronized list of custom Oracle endpoints across Prod & Dev.
+    """
+    if settings is None:
+        settings = load_settings()
+    return sync_oracle_custom_endpoints(settings)
+
+
+def get_all_oracle_resource_segments(settings: Optional[Dict[str, Any]] = None) -> List[str]:
+    """
+    Returns all known and custom ORDS resource path segments (lowercase, stripped of '/')
+    so URL builders can cleanly replace trailing resource segments on base URLs.
+    """
+    segs = [
+        "final_discharge_effluent",
+        "production_utilities_consumption",
+        "production_daily_output",
+    ]
+    if settings is None:
+        try:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as sf:
+                    settings = json.load(sf)
+        except Exception:
+            settings = None
+
+    if isinstance(settings, dict):
+        for sec_name in ("oracle_erp", "oracledev"):
+            sec = settings.get(sec_name)
+            if isinstance(sec, dict):
+                for field in ("resource_endpoint", "utility_resource_endpoint", "daily_production_resource_endpoint"):
+                    val = str(sec.get(field) or "").strip().strip("/").lower()
+                    if val and val not in segs:
+                        segs.append(val)
+                for ce in (sec.get("custom_endpoints") or []):
+                    if isinstance(ce, dict):
+                        cpath = str(ce.get("path") or "").strip().strip("/").lower()
+                        if cpath and cpath not in segs:
+                            segs.append(cpath)
+    return segs
+
+
 def save_settings(settings: Dict[str, Any]) -> None:
     ensure_config_dir()
+    sync_oracle_custom_endpoints(settings)
     for sec_key in ("oracle_erp", "oracledev"):
         sec = settings.get(sec_key)
         if isinstance(sec, dict) and sec.get("base_url"):
@@ -370,7 +533,7 @@ MAPPING_URL_PROPERTIES = (
 )
 
 
-def _build_oracle_config_url(base_url: Any, resource_endpoint: Any) -> str:
+def _build_oracle_config_url(base_url: Any, resource_endpoint: Any, known_segments: Optional[List[str]] = None) -> str:
     b = sanitize_endpoint_url(base_url).rstrip("/")
     r = str(resource_endpoint or "/Final_Discharge_Effluent/").strip()
     if not r.startswith("/"):
@@ -379,8 +542,9 @@ def _build_oracle_config_url(base_url: Any, resource_endpoint: Any) -> str:
         r = r + "/"
     if not b:
         return ""
-    for seg in ("final_discharge_effluent", "production_utilities_consumption", "production_daily_output"):
-        if b.lower().endswith("/" + seg):
+    segs = known_segments or ("final_discharge_effluent", "production_utilities_consumption", "production_daily_output")
+    for seg in segs:
+        if seg and b.lower().endswith("/" + seg.lower()):
             b = b[:-(len(seg) + 1)].rstrip("/")
             break
     if b.lower().endswith(r.rstrip("/").lower()):
@@ -409,6 +573,9 @@ def sync_mappings_urls_with_settings(
         else:
             settings = DEFAULT_SETTINGS
 
+    custom_eps = sync_oracle_custom_endpoints(settings)
+    all_segs = get_all_oracle_resource_segments(settings)
+
     erp_cfg = settings.get("oracle_erp", {}) if isinstance(settings, dict) else {}
     dev_cfg = settings.get("oracledev", {}) if isinstance(settings, dict) else {}
     j5_cfg = settings.get("j5_endpoint", {}) if isinstance(settings, dict) else {}
@@ -416,28 +583,42 @@ def sync_mappings_urls_with_settings(
 
     oracle_url = _build_oracle_config_url(
         erp_cfg.get("base_url"),
-        erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+        erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/",
+        all_segs
     )
     oracle_util_url = _build_oracle_config_url(
         erp_cfg.get("base_url"),
-        erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+        erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/",
+        all_segs
     )
     oracle_prod_data_url = _build_oracle_config_url(
         erp_cfg.get("base_url"),
-        erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
+        erp_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/",
+        all_segs
     )
     dev_url = _build_oracle_config_url(
         dev_cfg.get("base_url"),
-        dev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/"
+        dev_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/",
+        all_segs
     )
     dev_util_url = _build_oracle_config_url(
         dev_cfg.get("base_url"),
-        dev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/"
+        dev_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/",
+        all_segs
     )
     dev_prod_data_url = _build_oracle_config_url(
         dev_cfg.get("base_url"),
-        dev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/"
+        dev_cfg.get("daily_production_resource_endpoint") or "/production_daily_output/",
+        all_segs
     )
+
+    custom_prod_urls: Dict[str, str] = {}
+    custom_dev_urls: Dict[str, str] = {}
+    for ce in custom_eps:
+        ckey = ce["key"]
+        custom_prod_urls[ckey] = _build_oracle_config_url(erp_cfg.get("base_url"), ce["prod_path"], all_segs)
+        custom_dev_urls[ckey] = _build_oracle_config_url(dev_cfg.get("base_url"), ce["dev_path"], all_segs)
+
     j5_url = sanitize_endpoint_url(
         j5_cfg.get("url") or "https://dataflow-inbound-message-prd-ase1.eam.hxgnsmartcloud.com/api/message?tag=purchaseorder"
     )
@@ -461,6 +642,14 @@ def sync_mappings_urls_with_settings(
             return oracle_prod_data_url
         if tl in ("oracle_utility", "oracleutility", "utility", "oracle_prod_utility"):
             return oracle_util_url
+        if tl.startswith("oracledev_"):
+            ck = tl[len("oracledev_"):]
+            if ck in custom_dev_urls:
+                return custom_dev_urls[ck]
+        if tl.startswith("oracle_"):
+            ck = tl[len("oracle_"):]
+            if ck in custom_prod_urls:
+                return custom_prod_urls[ck]
         return oracle_url
 
     changed = False
@@ -485,6 +674,16 @@ def sync_mappings_urls_with_settings(
         if dev_prod_data_url and m.get("target_endpoint_url_dev_production") != dev_prod_data_url:
             m["target_endpoint_url_dev_production"] = dev_prod_data_url
             changed = True
+        for ckey, cp_url in custom_prod_urls.items():
+            prop = f"target_endpoint_url_oracle_{ckey}"
+            if cp_url and m.get(prop) != cp_url:
+                m[prop] = cp_url
+                changed = True
+        for ckey, cd_url in custom_dev_urls.items():
+            prop = f"target_endpoint_url_dev_{ckey}"
+            if cd_url and m.get(prop) != cd_url:
+                m[prop] = cd_url
+                changed = True
         if j5_url and m.get("target_endpoint_url_j5") != j5_url:
             m["target_endpoint_url_j5"] = j5_url
             changed = True

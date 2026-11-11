@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.config import (
     load_settings, save_settings, load_mappings, save_mappings,
     load_field_mappings, save_field_mappings,
+    get_oracle_custom_endpoints,
     DEFAULT_ORACLE_FIELD_MAPPINGS, DEFAULT_OCTAVE_FIELD_MAPPINGS
 )
 from app.field_mapper import build_destination_payload
@@ -521,7 +522,7 @@ def test_mapping_endpoint(data: Dict[str, Any]):
         client = J5Client(j5dev_config)
         result = client.test_connection(test_url=endpoint_url)
         return result
-    elif target_type in ("oracledev", "oracle_dev"):
+    elif target_type in ("oracledev", "oracle_dev") or target_type.startswith("oracledev_"):
         config = dict(stored.get("oracledev", {}))
         if not config.get("client_id") or config.get("auth_type") in ("none", "no_auth", "open"):
             config["auth_type"] = "none"
@@ -706,6 +707,46 @@ def preview_erp_payload():
                 prod_payload = build_destination_payload("oracle_utility", sample_attr, mapping_rule=m, received_at=now_iso)
                 previews.append({
                     "target_type": "Oracle Prod (Utility)",
+                    "target_endpoint": target_url,
+                    "http_method": erp_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Prod ({erp_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": prod_payload
+                })
+            elif t_lower.startswith("oracledev_"):
+                ckey = t_lower[len("oracledev_"):]
+                custom_eps = get_oracle_custom_endpoints(settings)
+                ce_match = next((ce for ce in custom_eps if ce["key"] == ckey), None)
+                res_path = ce_match["dev_path"] if ce_match else f"/{ckey}/"
+                lbl = ce_match["label"] if ce_match else ckey
+                target_url = (build_oracle_endpoint_url(dev_base_url, res_path) if dev_base_url else None) or m.get(f"target_endpoint_url_dev_{ckey}") or res_path
+                target_url = sanitize_endpoint_url(target_url)
+                dev_payload = build_destination_payload(t_lower, sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": f"Oracle Dev ({lbl})",
+                    "target_endpoint": target_url,
+                    "http_method": oracledev_cfg.get("http_method", "POST"),
+                    "auth_type": f"Oracle Dev ({oracledev_cfg.get('auth_type', 'none')})",
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "body": dev_payload
+                })
+            elif t_lower.startswith("oracle_"):
+                ckey = t_lower[len("oracle_"):]
+                custom_eps = get_oracle_custom_endpoints(settings)
+                ce_match = next((ce for ce in custom_eps if ce["key"] == ckey), None)
+                res_path = ce_match["prod_path"] if ce_match else f"/{ckey}/"
+                lbl = ce_match["label"] if ce_match else ckey
+                target_url = (build_oracle_endpoint_url(base_url, res_path) if base_url else None) or m.get(f"target_endpoint_url_oracle_{ckey}") or res_path
+                target_url = sanitize_endpoint_url(target_url)
+                prod_payload = build_destination_payload(t_lower, sample_attr, mapping_rule=m, received_at=now_iso)
+                previews.append({
+                    "target_type": f"Oracle Prod ({lbl})",
                     "target_endpoint": target_url,
                     "http_method": erp_cfg.get("http_method", "POST"),
                     "auth_type": f"Oracle Prod ({erp_cfg.get('auth_type', 'none')})",
@@ -1031,6 +1072,22 @@ def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
         client = OracleERPCloudClient(erp_cfg)
         def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("utility_resource_endpoint") or "/production_utilities_consumption/")
         target_endpoint_url = sanitize_endpoint_url(override_url or def_url or erp_cfg.get("base_url"))
+    elif target_type.startswith("oracledev_"):
+        ckey = target_type[len("oracledev_"):]
+        custom_eps = get_oracle_custom_endpoints(settings)
+        ce_match = next((ce for ce in custom_eps if ce["key"] == ckey), None)
+        res_path = ce_match["dev_path"] if ce_match else f"/{ckey}/"
+        client = OracleERPCloudClient(oracledev_cfg)
+        def_url = build_oracle_endpoint_url(oracledev_cfg.get("base_url"), res_path)
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or oracledev_cfg.get("base_url"))
+    elif target_type.startswith("oracle_"):
+        ckey = target_type[len("oracle_"):]
+        custom_eps = get_oracle_custom_endpoints(settings)
+        ce_match = next((ce for ce in custom_eps if ce["key"] == ckey), None)
+        res_path = ce_match["prod_path"] if ce_match else f"/{ckey}/"
+        client = OracleERPCloudClient(erp_cfg)
+        def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), res_path)
+        target_endpoint_url = sanitize_endpoint_url(override_url or def_url or erp_cfg.get("base_url"))
     else:
         client = OracleERPCloudClient(erp_cfg)
         def_url = build_oracle_endpoint_url(erp_cfg.get("base_url"), erp_cfg.get("resource_endpoint") or "/Final_Discharge_Effluent/")
@@ -1042,19 +1099,24 @@ def bulk_upload_dispatch_chunk(data: Dict[str, Any]):
     bulk_deliveries_to_stage = []
 
     t_low = target_type.lower()
-    target_badge = "ORACLE_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" not in t_low else (
-        "ORACLEDEV_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" in t_low else (
-            "ORACLE_UTILITY" if "utility" in t_low and "dev" not in t_low else (
-                "ORACLEDEV_UTILITY" if "utility" in t_low and "dev" in t_low else (
-                    "ORACLEDEV" if "dev" in t_low and "oracle" in t_low else (
-                "ORACLE" if "oracle" in t_low else (
-                    "J5DEV" if "dev" in t_low else "J5"
+    if t_low.startswith("oracledev_") and t_low not in ("oracledev_effluent", "oracle_dev_effluent"):
+        target_badge = t_low.upper()
+    elif t_low.startswith("oracle_") and t_low not in ("oracle_erp", "oracle_effluent", "oracle_dev", "oracle_dev_effluent"):
+        target_badge = t_low.upper()
+    else:
+        target_badge = "ORACLE_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" not in t_low else (
+            "ORACLEDEV_PRODUCTION" if ("production" in t_low or "daily" in t_low) and "dev" in t_low else (
+                "ORACLE_UTILITY" if "utility" in t_low and "dev" not in t_low else (
+                    "ORACLEDEV_UTILITY" if "utility" in t_low and "dev" in t_low else (
+                        "ORACLEDEV" if "dev" in t_low and "oracle" in t_low else (
+                    "ORACLE" if "oracle" in t_low else (
+                        "J5DEV" if "dev" in t_low else "J5"
+                            )
                         )
                     )
                 )
             )
         )
-    )
 
     for row in rows:
         try:

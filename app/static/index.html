@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.7.3">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.7.4">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.3</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.4</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -1783,6 +1783,31 @@
             <div class="form-help">ORDS resource path for Daily Production data.</div>
           </div>
 
+          <!-- Dynamic Custom Oracle Endpoints (Prod) -->
+          <div id="erp-custom-endpoints-list" style="display: contents;"></div>
+
+          <div class="form-group full-width" style="background: var(--bg-subtle); border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px; margin-top: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+              <div>
+                <span style="font-size: 12px; font-weight: 600; color: var(--ink-primary);">+ Add Dynamic Oracle Resource Endpoint</span>
+                <span style="font-size: 11px; color: var(--ink-secondary); margin-left: 6px;">(Automatically added to both <strong>Oracle Prod</strong> &amp; <strong>Oracle Dev</strong>)</span>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end;">
+              <div>
+                <label class="form-label" style="font-size: 11px; margin-bottom: 3px;" for="new-oracle-ep-label-prod">Endpoint Name / Label</label>
+                <input type="text" id="new-oracle-ep-label-prod" class="form-control form-control-sm" placeholder="e.g. Steam Boiler Output" oninput="handleAutoSuggestOraclePath('prod', this.value)">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 11px; margin-bottom: 3px;" for="new-oracle-ep-path-prod">ORDS Resource Path</label>
+                <input type="text" id="new-oracle-ep-path-prod" class="form-control form-control-sm form-control-mono" placeholder="e.g. /steam_boiler_output/" oninput="this.dataset.userEdited='true'">
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" style="height: 32px; white-space: nowrap;" onclick="handleAddCustomOracleEndpoint('prod')">
+                + Add to Prod &amp; Dev
+              </button>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="form-label" for="setting-erp-http-method">HTTP Method</label>
             <select id="setting-erp-http-method" class="form-control">
@@ -1905,6 +1930,31 @@
             <label class="form-label" for="setting-oracledev-daily-prod-resource-endpoint">Daily Production Data Resource Path</label>
             <input type="text" id="setting-oracledev-daily-prod-resource-endpoint" class="form-control form-control-mono" value="/production_daily_output/">
             <div class="form-help">ORDS resource path for Daily Production data in Dev.</div>
+          </div>
+
+          <!-- Dynamic Custom Oracle Endpoints (Dev) -->
+          <div id="oracledev-custom-endpoints-list" style="display: contents;"></div>
+
+          <div class="form-group full-width" style="background: var(--bg-subtle); border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px; margin-top: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+              <div>
+                <span style="font-size: 12px; font-weight: 600; color: var(--ink-primary);">+ Add Dynamic Oracle Resource Endpoint</span>
+                <span style="font-size: 11px; color: var(--ink-secondary); margin-left: 6px;">(Automatically added to both <strong>Oracle Prod</strong> &amp; <strong>Oracle Dev</strong>)</span>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end;">
+              <div>
+                <label class="form-label" style="font-size: 11px; margin-bottom: 3px;" for="new-oracle-ep-label-dev">Endpoint Name / Label</label>
+                <input type="text" id="new-oracle-ep-label-dev" class="form-control form-control-sm" placeholder="e.g. Steam Boiler Output" oninput="handleAutoSuggestOraclePath('dev', this.value)">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 11px; margin-bottom: 3px;" for="new-oracle-ep-path-dev">ORDS Resource Path</label>
+                <input type="text" id="new-oracle-ep-path-dev" class="form-control form-control-sm form-control-mono" placeholder="e.g. /steam_boiler_output/" oninput="this.dataset.userEdited='true'">
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" style="height: 32px; white-space: nowrap;" onclick="handleAddCustomOracleEndpoint('dev')">
+                + Add to Prod &amp; Dev
+              </button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -2618,6 +2668,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.7.3"></script>
+  <script src="/static/js/app.js?v=2.7.4"></script>
 </body>
 </html>
