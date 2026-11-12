@@ -542,8 +542,17 @@ def extract_direct_telemetry_record(
         ""
     )
 
-    # Timestamp extraction
+    # Timestamp extraction (prioritize SourceTime / AnalysisTime from PI AF)
     ts_val = (
+        lower_map.get("sourcetime") or
+        lower_map.get("source_time") or
+        lower_map.get("record_at") or
+        lower_map.get("recorded_at") or
+        lower_map.get("analysistime") or
+        lower_map.get("analysis_time") or
+        lower_map.get("event time") or
+        lower_map.get("eventtime") or
+        lower_map.get("event_time") or
         lower_map.get("timestamp") or
         lower_map.get("time") or
         lower_map.get("starttime") or
@@ -810,7 +819,7 @@ def parse_pi_notification_payload(
                             val = raw_val
 
                         uom = item.get("UOM") or item.get("uom") or (raw_val.get("UOM") if isinstance(raw_val, dict) else "") or ""
-                        ts = item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
+                        ts = item.get("SourceTime") or item.get("sourcetime") or item.get("AnalysisTime") or item.get("Event Time") or item.get("Timestamp") or item.get("timestamp") or item.get("Time") or item.get("time") or now_iso
                         quality = item.get("Quality") or item.get("quality") or (raw_val.get("Quality") if isinstance(raw_val, dict) else "Good") or "Good"
                         item_flags, item_urls, item_dis = extract_target_flags_and_urls(item, fallback_env=top_env)
                         item_extra = extract_extra_parameters(item)

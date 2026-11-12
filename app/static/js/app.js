@@ -1911,18 +1911,17 @@ async function showOracleResponseModal(deliveryId) {
             const targetBadgeDot = isJ5Dev ? "#0891b2" : "#6366f1";
 
             const payloadEntries = [
-              { label: "Tag / Key", val: payload.tag || payload.messageTag || "--" },
-              { label: "Reading Value", val: payload.value ?? payload.readingValue ?? "--" },
-              { label: "Timestamp", val: payload.timestamp || "--" },
-              { label: "Description", val: payload.description || "--" },
-              { label: "UOM", val: payload.uom || "--" },
+              { label: "Tag / Key", val: payload.tag || payload.Tagname || payload.TAG || payload.messageTag || "--" },
+              { label: "Reading Value", val: payload.value ?? payload.Value ?? payload.readingValue ?? "--" },
+              { label: "Description", val: payload.description || payload.Description || "--" },
+              { label: "UOM", val: payload.uom || payload.UOM || "--" },
               { label: "Limit", val: (payload.limit !== undefined && payload.limit !== null && payload.limit !== "") ? payload.limit : "--" },
               { label: "Results", val: payload.results || "--" }
             ];
 
-            const standardJ5Keys = new Set(['tag', 'messageTag', 'value', 'readingValue', 'timestamp', 'description', 'uom', 'limit', 'results']);
+            const standardJ5Keys = new Set(['tag', 'messageTag', 'value', 'readingValue', 'timestamp', 'readingTimestamp', 'description', 'uom', 'limit', 'results']);
             Object.keys(payload).forEach(k => {
-              if (!standardJ5Keys.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
+              if (!standardJ5Keys.has(k) && k.toLowerCase() !== 'timestamp' && k.toLowerCase() !== 'readingtimestamp' && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
                 payloadEntries.push({ label: k, val: payload[k] });
               }
             });
@@ -2037,25 +2036,27 @@ async function showOracleResponseModal(deliveryId) {
             return kn === "hilimit" || kn === "highlimit" || kn === "lolimit" || kn === "lowlimit";
           });
 
-          const fields = [
-            { key: "tag", label: "Tag / Meter ID" },
-            { key: "description", label: "Description" },
-            { key: "value", label: "Reading Value" },
-            { key: "uom", label: "Unit of Measure (UOM)" }
-          ];
-
-          if ((payload.limit !== undefined && payload.limit !== null && String(payload.limit).trim() !== "") || !hasSpecificLimitInPayload) {
-            fields.push({ key: "limit", label: "Operating Limit" });
-          }
-
-          fields.push(
-            { key: "results", label: "Analysis Results" },
-            { key: "timestamp", label: "Timestamp (UTC Zulu)" }
+          const hasUpperVariant = (lowerKey) => Object.keys(payload).some(
+            k => k !== lowerKey && k.toLowerCase() === lowerKey && payload[k] !== undefined && payload[k] !== null && String(payload[k]).trim() !== ""
           );
 
-          const standardOracleKeys = new Set(["tag", "description", "value", "uom", "limit", "results", "timestamp"]);
+          const fields = [];
+          if (!hasUpperVariant("tag")) fields.push({ key: "tag", label: "Tag / Meter ID" });
+          if (!hasUpperVariant("description")) fields.push({ key: "description", label: "Description" });
+          if (!hasUpperVariant("value")) fields.push({ key: "value", label: "Reading Value" });
+          if (!hasUpperVariant("uom")) fields.push({ key: "uom", label: "Unit of Measure (UOM)" });
+
+          if ((payload.limit !== undefined && payload.limit !== null && String(payload.limit).trim() !== "") || !hasSpecificLimitInPayload) {
+            if (!hasUpperVariant("limit")) fields.push({ key: "limit", label: "Operating Limit" });
+          }
+
+          if (!hasUpperVariant("results")) {
+            fields.push({ key: "results", label: "Analysis Results" });
+          }
+
+          const standardOracleKeys = new Set(["tag", "description", "value", "uom", "limit", "results", "timestamp", "readingTimestamp"]);
           Object.keys(payload).forEach(k => {
-            if (!standardOracleKeys.has(k) && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
+            if (!standardOracleKeys.has(k) && k.toLowerCase() !== "timestamp" && k.toLowerCase() !== "readingtimestamp" && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
               fields.push({ key: k, label: k });
             }
           });

@@ -7,7 +7,7 @@ import json
 import os
 import threading
 import urllib.parse
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
 def sanitize_endpoint_url(url: Any) -> str:
@@ -755,19 +755,11 @@ FIELD_MAPPINGS_FILE = os.path.join(CONFIG_DIR, "field_mappings.json")
 
 DEFAULT_ORACLE_FIELD_MAPPINGS: List[Dict[str, Any]] = [
     {
-        "id": "ora-ts",
-        "source": "timestamp",
-        "target": "timestamp",
-        "transform": "receipt_time",
-        "description": "Delivery receipt arrival timestamp (UTC Zulu)",
-        "enabled": True
-    },
-    {
         "id": "ora-analysis-time",
-        "source": "AnalysisTime",
-        "target": "TESTTIMESTAMP",
+        "source": "sourcetime",
+        "target": "RECORD_AT",
         "transform": "timestamp_zulu",
-        "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+        "description": "PI AF SourceTime event timestamp formatted to UTC+8",
         "enabled": True
     },
     {
@@ -918,27 +910,11 @@ DEFAULT_OCTAVE_FIELD_MAPPINGS: List[Dict[str, Any]] = [
         "enabled": True
     },
     {
-        "id": "oct-ts",
-        "source": "timestamp",
-        "target": "timestamp",
-        "transform": "receipt_time",
-        "description": "Delivery receipt timestamp (UTC Zulu)",
-        "enabled": True
-    },
-    {
-        "id": "oct-reading-ts",
-        "source": "timestamp",
-        "target": "readingTimestamp",
-        "transform": "receipt_time",
-        "description": "Reading timestamp (UTC Zulu)",
-        "enabled": True
-    },
-    {
         "id": "oct-analysistime",
         "source": "AnalysisTime",
         "target": "AnalysisTime",
         "transform": "timestamp_zulu",
-        "description": "PI AF analysis event timestamp formatted to UTC Zulu",
+        "description": "PI AF analysis event timestamp formatted to UTC+8",
         "enabled": True
     }
 ]
@@ -948,6 +924,45 @@ DEFAULT_ORACLE_PROD_FIELD_MAPPINGS = DEFAULT_ORACLE_FIELD_MAPPINGS
 DEFAULT_ORACLE_DEV_FIELD_MAPPINGS = [dict(x) for x in DEFAULT_ORACLE_FIELD_MAPPINGS]
 DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS = DEFAULT_OCTAVE_FIELD_MAPPINGS
 DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS = [dict(x) for x in DEFAULT_OCTAVE_FIELD_MAPPINGS]
+
+
+def _sanitize_field_mapping_list(lst: Any, is_oracle: bool = False) -> Tuple[List[Dict[str, Any]], bool]:
+    """
+    Removes deprecated 'timestamp' target parameter from Oracle and Octave field mappings
+    and ensures RECORD_AT maps from 'sourcetime' with 'timestamp_zulu' transform rather than receipt_time.
+    Returns (cleaned_list, was_modified).
+    """
+    if not isinstance(lst, list):
+        return [], False
+    cleaned: List[Dict[str, Any]] = []
+    modified = False
+    for item in lst:
+        if not isinstance(item, dict):
+            continue
+        tgt = str(item.get("target") or "").strip()
+        src = str(item.get("source") or "").strip()
+        item_id = str(item.get("id") or "").strip().lower()
+        if tgt.lower() in ("timestamp", "readingtimestamp") or item_id in ("ora-ts", "oct-ts", "oct-reading-ts"):
+            if tgt.lower() in ("timestamp", "readingtimestamp"):
+                modified = True
+                continue
+        entry = dict(item)
+        if is_oracle and item_id == "ora-analysis-time" and tgt.upper() == "TESTTIMESTAMP":
+            entry["source"] = "sourcetime"
+            entry["target"] = "RECORD_AT"
+            entry["transform"] = "timestamp_zulu"
+            tgt = "RECORD_AT"
+            src = "sourcetime"
+            modified = True
+        if tgt.lower() in ("record_at", "recorded_at"):
+            if entry.get("transform") == "receipt_time":
+                entry["transform"] = "timestamp_zulu"
+                modified = True
+            if src.lower() in ("timestamp", "received_at", "record_at", "recorded_at"):
+                entry["source"] = "sourcetime"
+                modified = True
+        cleaned.append(entry)
+    return cleaned, modified
 
 
 def load_field_mappings() -> Dict[str, List[Dict[str, Any]]]:
@@ -989,6 +1004,11 @@ def load_field_mappings() -> Dict[str, List[Dict[str, Any]]]:
         oct_prod = data.get("octave_prod") if data.get("octave_prod") is not None else (data.get("octave") if data.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_PROD_FIELD_MAPPINGS])
         oct_dev = data.get("octave_dev") if data.get("octave_dev") is not None else (data.get("octave") if data.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS])
 
+        ora_prod, m1 = _sanitize_field_mapping_list(ora_prod, is_oracle=True)
+        ora_dev, m2 = _sanitize_field_mapping_list(ora_dev, is_oracle=True)
+        oct_prod, m3 = _sanitize_field_mapping_list(oct_prod, is_oracle=False)
+        oct_dev, m4 = _sanitize_field_mapping_list(oct_dev, is_oracle=False)
+
         result = {
             "oracle_prod": ora_prod,
             "oracle_dev": ora_dev,
@@ -998,6 +1018,12 @@ def load_field_mappings() -> Dict[str, List[Dict[str, Any]]]:
             "oracle": ora_prod,
             "octave": oct_prod
         }
+        if (m1 or m2 or m3 or m4) and os.path.exists(FIELD_MAPPINGS_FILE):
+            try:
+                with open(FIELD_MAPPINGS_FILE, "w", encoding="utf-8") as wf:
+                    json.dump(result, wf, indent=2)
+            except Exception:
+                pass
         return result
 
 
@@ -1031,6 +1057,12 @@ def save_field_mappings(mappings_dict: Dict[str, List[Dict[str, Any]]]) -> None:
     oct_dev = mappings_dict.get("octave_dev")
     if oct_dev is None:
         oct_dev = existing.get("octave_dev") if existing.get("octave_dev") is not None else (mappings_dict.get("octave") if mappings_dict.get("octave") is not None else [dict(x) for x in DEFAULT_OCTAVE_DEV_FIELD_MAPPINGS])
+
+    ora_prod, _ = _sanitize_field_mapping_list(ora_prod, is_oracle=True)
+    ora_dev, _ = _sanitize_field_mapping_list(ora_dev, is_oracle=True)
+    oct_prod, _ = _sanitize_field_mapping_list(oct_prod, is_oracle=False)
+    oct_dev, _ = _sanitize_field_mapping_list(oct_dev, is_oracle=False)
+
     to_save = {
         "oracle_prod": ora_prod,
         "oracle_dev": ora_dev,

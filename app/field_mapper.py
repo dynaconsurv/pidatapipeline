@@ -127,11 +127,23 @@ def build_destination_payload(
         if k is not None and k != "extra_fields":
             lower_sources[str(k).strip().lower()] = v
 
+    # Resolve SourceTime from PI AF payload for RECORD_AT (prioritize sourcetime over receipt time)
+    source_time_val = None
+    for st_key in ("sourcetime", "source_time", "record_at", "recorded_at", "analysistime", "analysis_time", "event time", "eventtime", "event_time"):
+        cand = lower_sources.get(st_key)
+        if cand is not None and str(cand).strip() != "":
+            source_time_val = cand
+            break
+    record_time = source_time_val or source_attr.get("timestamp") or received_time
+
     # Synthesized standard values take precedence for standard keys
     lower_sources["timestamp"] = received_time
     lower_sources["received_at"] = received_time
-    lower_sources["record_at"] = lower_sources.get("record_at") or received_time
-    lower_sources["recorded_at"] = lower_sources.get("recorded_at") or received_time
+    if source_time_val is not None:
+        lower_sources["sourcetime"] = source_time_val
+        lower_sources["source_time"] = source_time_val
+    lower_sources["record_at"] = record_time
+    lower_sources["recorded_at"] = record_time
     lower_sources["tag"] = tag_val
     lower_sources["meter_tag"] = tag_val
     lower_sources["description"] = desc_val
@@ -156,14 +168,22 @@ def build_destination_payload(
         transform = str(m.get("transform") or "string").strip().lower()
         if not src_raw or not tgt_raw:
             continue
-        if tgt_raw.lower().replace("_", "") in ("testresult", "testresults"):
+        tgt_l = tgt_raw.lower()
+        if tgt_l.replace("_", "") in ("testresult", "testresults"):
+            continue
+        if tgt_l in ("timestamp", "readingtimestamp"):
             continue
 
         src_l = src_raw.lower()
         consumed_source_keys.add(src_l)
 
         # Look up value
-        if src_l in lower_sources and lower_sources[src_l] is not None and str(lower_sources[src_l]).strip() != "":
+        if tgt_l in ("record_at", "recorded_at"):
+            raw_v = source_time_val or lower_sources.get(src_l) or record_time
+            consumed_source_keys.update({"sourcetime", "source_time", "record_at", "recorded_at"})
+            if transform == "receipt_time":
+                transform = "timestamp_zulu"
+        elif src_l in lower_sources and lower_sources[src_l] is not None and str(lower_sources[src_l]).strip() != "":
             raw_v = lower_sources[src_l]
         elif "value" in src_l:
             # Fallback: check any parameter containing 'value' in lower_sources
@@ -172,16 +192,14 @@ def build_destination_payload(
                 if "value" in lk and lv is not None and str(lv).strip() != "":
                     raw_v = lv
                     break
-        elif src_l in ("record_at", "recorded_at") or tgt_raw.lower() in ("record_at", "recorded_at"):
-            raw_v = lower_sources.get(src_l) or received_time
         elif src_l in lower_sources:
             raw_v = lower_sources[src_l]
         else:
             # Not provided in incoming payload
             raw_v = None
 
-        if tgt_raw.lower() in ("record_at", "recorded_at") and (raw_v is None or str(raw_v).strip() == ""):
-            raw_v = received_time
+        if tgt_l in ("record_at", "recorded_at") and (raw_v is None or str(raw_v).strip() == ""):
+            raw_v = record_time
 
         # Apply transformation
         if transform == "receipt_time":
@@ -213,6 +231,9 @@ def build_destination_payload(
     if not is_oracle and "sourceSystem" not in payload:
         payload["sourceSystem"] = "AVEVA_PI_NOTIFICATION"
 
+    if is_oracle:
+        consumed_source_keys.update({"sourcetime", "source_time", "record_at", "recorded_at"})
+
     # 6. Forward unmapped extra fields
     # Loop over extra_fields and source_attr
     unmapped_candidates: Dict[str, Any] = {}
@@ -230,6 +251,8 @@ def build_destination_payload(
         uk_l = uk.lower()
         if uk_l in skip_params or uk_l == "_is_utc8_formatted":
             continue
+        if uk_l in ("timestamp", "readingtimestamp", "received_at"):
+            continue
         if uk_l.replace("_", "") in ("testresult", "testresults"):
             continue
         if is_oracle and uk_l == "quality":
@@ -244,13 +267,13 @@ def build_destination_payload(
         # Convert timestamp format if key contains 'time'
         if "time" in uk_l or "date" in uk_l or uk_l.endswith("_at") or uk_l.startswith("record"):
             if uk_l in ("record_at", "recorded_at") and (uv is None or str(uv).strip() == ""):
-                uv = received_time
+                uv = record_time
             if is_oracle:
                 payload[uk] = format_ords_timestamp(uv, allow_empty=True, already_utc8=already_utc8)
             else:
                 payload[uk] = format_j5_timestamp(uv, allow_empty=True, already_utc8=already_utc8)
             if uk_l in ("record_at", "recorded_at") and payload.get(uk) is None:
-                payload[uk] = format_ords_timestamp(received_time, already_utc8=already_utc8) if is_oracle else format_j5_timestamp(received_time, already_utc8=already_utc8)
+                payload[uk] = format_ords_timestamp(record_time, already_utc8=already_utc8) if is_oracle else format_j5_timestamp(record_time, already_utc8=already_utc8)
         else:
             if uv is None:
                 payload[uk] = "" if is_oracle else None
@@ -259,9 +282,10 @@ def build_destination_payload(
             else:
                 payload[uk] = str(uv)
 
-    # Exclude TEST_RESULT / test_result from payload if present
+    # Exclude TEST_RESULT / test_result and timestamp from payload if present
     for pk in list(payload.keys()):
-        if pk.lower().replace("_", "") in ("testresult", "testresults") or pk == "_is_utc8_formatted":
+        pk_l = pk.lower()
+        if pk_l.replace("_", "") in ("testresult", "testresults") or pk == "_is_utc8_formatted" or pk_l in ("timestamp", "readingtimestamp"):
             payload.pop(pk, None)
 
     # Deduplicate RECORD_AT: ensure only ONE canonical RECORD_AT is present
@@ -276,7 +300,7 @@ def build_destination_payload(
     if rec_val or is_oracle:
         for k in keys_to_clean:
             payload.pop(k, None)
-        payload["RECORD_AT"] = rec_val or format_ords_timestamp(received_time, already_utc8=already_utc8)
+        payload["RECORD_AT"] = rec_val or format_ords_timestamp(record_time, already_utc8=already_utc8)
 
     # Suppress duplicate internal alias keys
     if "tag" in payload or "TAG" in payload:

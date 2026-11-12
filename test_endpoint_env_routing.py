@@ -309,12 +309,11 @@ class TestEndpointEnvRouting(unittest.TestCase):
         from app.delivery_handler import process_incoming_delivery, dispatch_delivery_to_oracle
         from app.storage import get_delivery_by_id
         
-        # Simulate incoming PI notification with AnalysisTime and custom EventTime
+        # Simulate incoming PI notification with SourceTime, AnalysisTime, and custom EventTime
         incoming_payload = {
             "Tagname": "SC4025.Ammoniacal Nitrogen",
             "Value": "15.4",
-            "Timestamp": "2020-01-01T00:00:00Z",  # Historic AF timestamp
-            "AnalysisTime": "2026-10-30 08:49:43.500",  # AF analysis event time
+            "SourceTime": "2026-10-30 08:49:43.500",  # PI AF SourceTime
             "EventTime": "2026-11-04T23:00:00.1234567Z",  # 7:00 AM Nov 5 local in UTC
             "TestTimestamp": None,
             "Endpoint": "Oracle",
@@ -333,13 +332,12 @@ class TestEndpointEnvRouting(unittest.TestCase):
         
         sent_payload = dispatches[0].get("payload", {})
         
-        # 1. 'timestamp' field must deliver the arrival/received_at date, NOT the 2020 AF timestamp
-        self.assertTrue(sent_payload["timestamp"].endswith("Z"))
-        self.assertNotIn("2020", sent_payload["timestamp"])
+        # 1. 'timestamp' parameter must NOT be sent
+        self.assertNotIn("timestamp", sent_payload)
         
-        # 2. 'AnalysisTime' is mapped to Oracle parameter 'TESTTIMESTAMP'
-        self.assertEqual(sent_payload.get("TESTTIMESTAMP"), "2026-10-30T08:49:43Z")
-        self.assertNotIn("AnalysisTime", sent_payload)
+        # 2. 'SourceTime' is mapped to Oracle parameter 'RECORD_AT'
+        self.assertEqual(sent_payload.get("RECORD_AT"), "2026-10-30T08:49:43Z")
+        self.assertNotIn("SourceTime", sent_payload)
         
         # 3. 'EventTime' (23:00:00Z UTC) must be converted to UTC+8 (07:00:00Z)
         self.assertEqual(sent_payload.get("EventTime"), "2026-11-05T07:00:00Z")
@@ -370,7 +368,7 @@ class TestEndpointEnvRouting(unittest.TestCase):
             received_at="2026-11-02T16:00:00Z"
         )
         
-        # Verify Octave default mappings
+        # Verify Octave default mappings (timestamp & readingTimestamp excluded)
         self.assertEqual(oct_payload.get("sourceSystem"), "AVEVA_PI_NOTIFICATION")
         self.assertEqual(oct_payload.get("messageTag"), "SC4025.Ammoniacal Nitrogen")
         self.assertEqual(oct_payload.get("tag"), "SC4025.Ammoniacal Nitrogen")
@@ -378,8 +376,8 @@ class TestEndpointEnvRouting(unittest.TestCase):
         self.assertEqual(oct_payload.get("value"), "15.42")
         self.assertEqual(oct_payload.get("unitOfMeasure"), "mg/L")
         self.assertEqual(oct_payload.get("uom"), "mg/L")
-        self.assertEqual(oct_payload.get("timestamp"), "2026-11-03T00:00:00Z")
-        self.assertEqual(oct_payload.get("readingTimestamp"), "2026-11-03T00:00:00Z")
+        self.assertNotIn("timestamp", oct_payload)
+        self.assertNotIn("readingTimestamp", oct_payload)
         self.assertEqual(oct_payload.get("AnalysisTime"), "2026-10-30T08:49:43Z")
         self.assertEqual(oct_payload.get("Operator"), "Plant_Ops")
 
