@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AVEVA PI → Oracle ERP Cloud Pipeline</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2.7.5">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.7.6">
 </head>
 <body>
 
@@ -15,7 +15,7 @@
         <span class="brand-title">PI Data Pipeline</span>
         <span class="brand-divider">/</span>
         <span class="brand-pipeline-path">AVEVA PI → Oracle ERP</span>
-        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.5</span>
+        <span id="app-header-version" style="margin-left: 8px; font-size: 11px; font-family: var(--font-mono); color: var(--ink-secondary); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius); border: 1px solid var(--border);">v2.7.6</span>
       </div>
 
       <!-- Navigation Tabs -->
@@ -531,8 +531,14 @@
               <label for="history-filter-endpoint" style="font-size: 11px; font-weight: 500; color: var(--ink-secondary); white-space: nowrap;">Endpoint:</label>
               <select id="history-filter-endpoint" class="form-control" style="width: auto; height: 30px; font-size: 11px; padding: 2px 24px 2px 8px;">
                 <option value="ALL">All Endpoints</option>
-                <option value="ORACLE">Oracle Prod</option>
-                <option value="ORACLEDEV">Oracle Dev</option>
+                <option value="ORACLE_ALL">Oracle Prod (All)</option>
+                <option value="ORACLE">Oracle Prod (Effluent)</option>
+                <option value="ORACLE_UTILITY">Oracle Prod (Utility)</option>
+                <option value="ORACLE_PRODUCTION">Oracle Prod (Daily Prod)</option>
+                <option value="ORACLEDEV_ALL">Oracle Dev (All)</option>
+                <option value="ORACLEDEV">Oracle Dev (Effluent)</option>
+                <option value="ORACLEDEV_UTILITY">Oracle Dev (Utility)</option>
+                <option value="ORACLEDEV_PRODUCTION">Oracle Dev (Daily Prod)</option>
                 <option value="J5">Octave</option>
                 <option value="J5DEV">Octave Dev</option>
               </select>
@@ -2668,6 +2674,6 @@
     AVEVA PI Notifications (Push) → JSON Staging → Oracle ERP Cloud Data Pipeline
   </footer>
 
-  <script src="/static/js/app.js?v=2.7.5"></script>
+  <script src="/static/js/app.js?v=2.7.6"></script>
 </body>
 </html>

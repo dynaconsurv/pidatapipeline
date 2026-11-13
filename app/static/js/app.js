@@ -753,6 +753,8 @@ function getDeliveryEndpoints(deliv) {
       else if (tt === "ORACLE_PRODUCTION" || ep.includes("production_daily_output")) eps.add("ORACLE_PRODUCTION");
       else if (tt === "ORACLEDEV_UTILITY" || (ep.includes("dev") && ep.includes("util"))) eps.add("ORACLEDEV_UTILITY");
       else if (tt === "ORACLE_UTILITY" || ep.includes("util")) eps.add("ORACLE_UTILITY");
+      else if (tt.startsWith("ORACLEDEV_") && tt !== "ORACLEDEV_EFFLUENT") eps.add(tt);
+      else if (tt.startsWith("ORACLE_") && tt !== "ORACLE_ERP" && tt !== "ORACLE_EFFLUENT" && tt !== "ORACLE_DEV") eps.add(tt);
       else if (tt === "ORACLEDEV" || ep.includes("dev")) eps.add("ORACLEDEV");
       else if (tt === "ORACLE" || ep.includes("oracle") || ep.includes("/ords/")) eps.add("ORACLE");
     }
@@ -768,8 +770,20 @@ function getDeliveryEndpoints(deliv) {
     else if (epUrl.includes("production_daily_output")) eps.add("ORACLE_PRODUCTION");
     else if (epUrl.includes("dev") && epUrl.includes("util")) eps.add("ORACLEDEV_UTILITY");
     else if (epUrl.includes("util")) eps.add("ORACLE_UTILITY");
-    else if (epUrl.includes("dev")) eps.add("ORACLEDEV");
-    else if (epUrl.includes("oracle") || epUrl.includes("/ords/")) eps.add("ORACLE");
+    else {
+      let matchedCustomUrl = false;
+      for (const ce of getUnifiedCustomOracleEndpoints()) {
+        const cleanPath = String(ce.prod_path || ce.dev_path || ce.key || "").replace(/^\/+|\/+$/g, "").toLowerCase();
+        if (cleanPath && epUrl.includes(cleanPath)) {
+          eps.add(epUrl.includes("dev") ? `ORACLEDEV_${ce.key.toUpperCase()}` : `ORACLE_${ce.key.toUpperCase()}`);
+          matchedCustomUrl = true;
+        }
+      }
+      if (!matchedCustomUrl) {
+        if (epUrl.includes("dev")) eps.add("ORACLEDEV");
+        else if (epUrl.includes("oracle") || epUrl.includes("/ords/")) eps.add("ORACLE");
+      }
+    }
     if (eps.size > 0) return Array.from(eps);
   }
 
@@ -783,6 +797,15 @@ function getDeliveryEndpoints(deliv) {
       if ((a.oracle_production || (a.oracle && a.production)) && !disFlags.includes("oracle_production") && a.oracle_production !== false) eps.add("ORACLE_PRODUCTION");
       if ((a.oracledev_utility || (a.oracledev && a.utility)) && !disFlags.includes("oracledev_utility") && a.oracledev_utility !== false) eps.add("ORACLEDEV_UTILITY");
       if ((a.oracle_utility || (a.oracle && a.utility)) && !disFlags.includes("oracle_utility") && a.oracle_utility !== false) eps.add("ORACLE_UTILITY");
+      if (a.target_flags && Array.isArray(a.target_flags)) {
+        for (const tf of a.target_flags) {
+          const tfLow = String(tf).toLowerCase();
+          if (disFlags.includes(tfLow)) continue;
+          const tfU = tfLow.toUpperCase();
+          if (tfU.startsWith("ORACLEDEV_") && tfU !== "ORACLEDEV_EFFLUENT") eps.add(tfU);
+          else if (tfU.startsWith("ORACLE_") && tfU !== "ORACLE_EFFLUENT" && tfU !== "ORACLE_DEV") eps.add(tfU);
+        }
+      }
       if (a.oracledev && !disFlags.includes("oracledev") && a.oracledev !== false && !a.oracledev_utility && !a.oracledev_production) eps.add("ORACLEDEV");
       if (a.oracle && !disFlags.includes("oracle") && a.oracle !== false && !a.oracle_utility && !a.oracle_production) eps.add("ORACLE");
 
@@ -804,6 +827,8 @@ function getDeliveryEndpoints(deliv) {
             else if (mtU === "ORACLE_PRODUCTION" || mtU.includes("PRODUCTION") || mtU.includes("DAILY_OUTPUT")) eps.add("ORACLE_PRODUCTION");
             else if (mtU === "ORACLEDEV_UTILITY" || (mtU.includes("DEV") && mtU.includes("UTIL"))) eps.add("ORACLEDEV_UTILITY");
             else if (mtU === "ORACLE_UTILITY" || mtU.includes("UTIL")) eps.add("ORACLE_UTILITY");
+            else if (mtU.startsWith("ORACLEDEV_") && mtU !== "ORACLEDEV_EFFLUENT") eps.add(mtU);
+            else if (mtU.startsWith("ORACLE_") && mtU !== "ORACLE_ERP" && mtU !== "ORACLE_EFFLUENT" && mtU !== "ORACLE_DEV") eps.add(mtU);
             else if (mtU === "ORACLEDEV" || mtU.includes("ORACLE DEV")) eps.add("ORACLEDEV");
             else eps.add("ORACLE");
           }
@@ -817,12 +842,23 @@ function getDeliveryEndpoints(deliv) {
     const rawEp = String(deliv.raw_payload.Endpoint || deliv.raw_payload.endpoint || deliv.raw_payload.target_endpoint || "").toLowerCase();
     const rawEnv = String(deliv.raw_payload.Environment || deliv.raw_payload.environment || deliv.raw_payload.env || "prod").toLowerCase();
     const isTest = (rawEnv === "test" || rawEnv === "dev" || rawEnv === "development" || rawEnv === "tst");
-    if (rawEp.includes("production") || rawEp.includes("daily")) {
-      eps.add(isTest ? "ORACLEDEV_PRODUCTION" : "ORACLE_PRODUCTION");
-    } else if (rawEp.includes("utility")) {
-      eps.add(isTest ? "ORACLEDEV_UTILITY" : "ORACLE_UTILITY");
-    } else if (rawEp.includes("oracle") || rawEp.includes("effluent")) {
-      eps.add(isTest ? "ORACLEDEV" : "ORACLE");
+    let matchedCustomRaw = false;
+    for (const ce of getUnifiedCustomOracleEndpoints()) {
+      const kLow = String(ce.key || "").toLowerCase();
+      const lblLow = String(ce.label || "").toLowerCase();
+      if ((kLow && rawEp.includes(kLow)) || (lblLow && rawEp.includes(lblLow))) {
+        eps.add(isTest ? `ORACLEDEV_${ce.key.toUpperCase()}` : `ORACLE_${ce.key.toUpperCase()}`);
+        matchedCustomRaw = true;
+      }
+    }
+    if (!matchedCustomRaw) {
+      if (rawEp.includes("production") || rawEp.includes("daily")) {
+        eps.add(isTest ? "ORACLEDEV_PRODUCTION" : "ORACLE_PRODUCTION");
+      } else if (rawEp.includes("utility")) {
+        eps.add(isTest ? "ORACLEDEV_UTILITY" : "ORACLE_UTILITY");
+      } else if (rawEp.includes("oracle") || rawEp.includes("effluent")) {
+        eps.add(isTest ? "ORACLEDEV" : "ORACLE");
+      }
     }
     if (rawEp.includes("octave") || rawEp.includes("j5") || rawEp.includes("jf")) {
       eps.add(isTest ? "J5DEV" : "J5");
@@ -1257,6 +1293,7 @@ async function loadHistoryDeliveries(resetPage = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     historyAllDeliveries = Array.isArray(data) ? data : [];
+    syncCustomOracleEndpointsToHistoryFilterDropdown(getUnifiedCustomOracleEndpoints());
     populateHistoryAttributeOptions();
     applyHistoryFilterAndRender();
   } catch (err) {
@@ -1350,8 +1387,24 @@ function getDeliverySearchText(deliv) {
   parts.push(deliv.oracle_status || "");
   const eps = getDeliveryEndpoints(deliv);
   parts.push(...eps);
-  if (eps.includes("ORACLE")) parts.push("oracle prod erp");
-  if (eps.includes("J5")) parts.push("j5 hexagon smart cloud purchaseorder");
+  if (eps.includes("ORACLE")) parts.push("oracle prod erp effluent");
+  if (eps.includes("ORACLE_UTILITY")) parts.push("oracle prod (utility) utilities consumption");
+  if (eps.includes("ORACLE_PRODUCTION")) parts.push("oracle prod (daily prod) daily production output");
+  if (eps.includes("ORACLEDEV")) parts.push("oracle dev erp effluent");
+  if (eps.includes("ORACLEDEV_UTILITY")) parts.push("oracle dev (utility) utilities consumption");
+  if (eps.includes("ORACLEDEV_PRODUCTION")) parts.push("oracle dev (daily prod) daily production output");
+  if (eps.includes("J5")) parts.push("j5 octave hexagon smart cloud purchaseorder");
+  if (eps.includes("J5DEV")) parts.push("j5dev octave dev hexagon smart cloud");
+  for (const epCode of eps) {
+    if (epCode.startsWith("ORACLE_") || epCode.startsWith("ORACLEDEV_")) {
+      const isDev = epCode.startsWith("ORACLEDEV_");
+      const ckey = epCode.replace(/^ORACLE(DEV)?_/i, "").toLowerCase();
+      const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+      if (customInfo) {
+        parts.push(`oracle ${isDev ? "dev" : "prod"} (${customInfo.label}) ${customInfo.prod_path || ""}`);
+      }
+    }
+  }
 
   if (deliv.oracle_dispatch) {
     parts.push(deliv.oracle_dispatch.target_endpoint || "");
@@ -1469,10 +1522,17 @@ function applyHistoryFilterAndRender() {
       }
     }
 
-    // 2. Endpoint Filter (Oracle / J5)
+    // 2. Endpoint Filter (Oracle / Oracle Dev / Utility / Daily Prod / Custom / Octave)
     if (historyEndpointFilter !== "ALL") {
       const endpoints = getDeliveryEndpoints(deliv);
-      if (!endpoints.includes(historyEndpointFilter.toUpperCase())) {
+      const filterUpper = historyEndpointFilter.toUpperCase();
+      if (filterUpper === "ORACLE_ALL") {
+        const hasAnyOracleProd = endpoints.some(ep => ep === "ORACLE" || (ep.startsWith("ORACLE_") && !ep.startsWith("ORACLEDEV")));
+        if (!hasAnyOracleProd) return false;
+      } else if (filterUpper === "ORACLEDEV_ALL") {
+        const hasAnyOracleDev = endpoints.some(ep => ep === "ORACLEDEV" || ep.startsWith("ORACLEDEV_"));
+        if (!hasAnyOracleDev) return false;
+      } else if (!endpoints.includes(filterUpper)) {
         return false;
       }
     }
@@ -2127,15 +2187,26 @@ async function showOracleResponseModal(deliveryId) {
 
           let badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod</span>`;
           const ttLow = String(it.target_type || '').toLowerCase();
+          const isDevTarget = ttLow.includes('oracledev') || ttLow.includes('dev');
           if (ttLow.includes('oracledev_production') || (ttLow.includes('dev') && (ttLow.includes('production') || ttLow.includes('daily')))) {
-            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Daily Production)</span>`;
+            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Daily Prod)</span>`;
           } else if (ttLow.includes('oracle_production') || ttLow.includes('production') || ttLow.includes('daily')) {
-            badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Daily Production)</span>`;
+            badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Daily Prod)</span>`;
           } else if (ttLow.includes('oracledev_utility') || (ttLow.includes('dev') && ttLow.includes('util'))) {
             badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (Utility)</span>`;
           } else if (ttLow.includes('oracle_utility') || ttLow.includes('util')) {
             badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
-          } else if (ttLow.includes('oracledev') || ttLow.includes('dev')) {
+          } else if (ttLow.startsWith('oracledev_')) {
+            const ckey = ttLow.replace(/^oracledev_/, '');
+            const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+            const customLbl = customInfo ? customInfo.label : ckey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev (${escapeHtml(customLbl)})</span>`;
+          } else if (ttLow.startsWith('oracle_')) {
+            const ckey = ttLow.replace(/^oracle_/, '');
+            const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+            const customLbl = customInfo ? customInfo.label : ckey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            badgeHtml = `<span class="badge badge-info" style="font-size: 10px; padding: 2px 7px;"><span class="badge-dot"></span> Oracle Prod (${escapeHtml(customLbl)})</span>`;
+          } else if (isDevTarget) {
             badgeHtml = `<span class="badge" style="font-size: 10px; padding: 2px 7px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background: #f59e0b;"></span> Oracle Dev</span>`;
           }
 
@@ -2156,7 +2227,7 @@ async function showOracleResponseModal(deliveryId) {
                     <tr>
                       <th style="width: 140px;">Property</th>
                       <th>Sent Payload (PI &rarr; Pipeline)</th>
-                      <th>Echoed by Oracle Prod</th>
+                      <th>Echoed by ${isDevTarget ? 'Oracle Dev' : 'Oracle Prod'}</th>
                       <th style="width: 130px; text-align: right;">Status</th>
                     </tr>
                   </thead>
@@ -2180,10 +2251,17 @@ async function showOracleResponseModal(deliveryId) {
 
     // 4. Meta & Buttons
     if (metaEl) {
-      const hasJ5 = itemsToRender.some(it => it.target_type === 'j5' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
-      const hasOracle = itemsToRender.some(it => it.target_type !== 'j5' && (!it.target_endpoint || !it.target_endpoint.toLowerCase().includes('hxgnsmartcloud')));
-      let sysLabel = "Oracle Prod REST API";
-      if (hasJ5 && hasOracle) sysLabel = "Oracle Prod & Octave Cloud";
+      const hasJ5 = itemsToRender.some(it => {
+        const t = String(it.target_type || '').toLowerCase();
+        return t === 'j5' || t === 'j5dev' || (it.target_endpoint && it.target_endpoint.toLowerCase().includes('hxgnsmartcloud'));
+      });
+      const hasOracle = itemsToRender.some(it => {
+        const t = String(it.target_type || '').toLowerCase();
+        return t !== 'j5' && t !== 'j5dev' && (!it.target_endpoint || !it.target_endpoint.toLowerCase().includes('hxgnsmartcloud'));
+      });
+      const hasDevOracle = itemsToRender.some(it => String(it.target_type || '').toLowerCase().includes('oracledev'));
+      let sysLabel = hasDevOracle ? "Oracle Dev REST API" : "Oracle Prod REST API";
+      if (hasJ5 && hasOracle) sysLabel = "Oracle & Octave Cloud";
       else if (hasJ5) sysLabel = "Hexagon J5 Cloud Inbound API (Basic Auth)";
       metaEl.innerHTML = `Dispatched via <strong>${escapeHtml(sysLabel)}</strong> · HTTP Code: <strong>${httpCode}</strong>`;
     }
@@ -2556,11 +2634,13 @@ function renderMappingsTable() {
 
   // Compute counts for environment filter buttons
   let cntOracle = 0, cntOracleDev = 0, cntOctave = 0, cntOctaveDev = 0;
+  const isOracleProdType = (t) => t === 'oracle' || (t.startsWith('oracle_') && t !== 'oracle_dev');
+  const isOracleDevType = (t) => t === 'oracledev' || t === 'oracle_dev' || t.startsWith('oracledev_');
   currentMappings.forEach(m => {
     const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : (m.target_type ? [m.target_type] : ['oracle']);
     const ttLower = tt.map(t => String(t).toLowerCase());
-    if (ttLower.includes('oracle')) cntOracle++;
-    if (ttLower.includes('oracledev') || ttLower.includes('oracle_dev')) cntOracleDev++;
+    if (ttLower.some(isOracleProdType)) cntOracle++;
+    if (ttLower.some(isOracleDevType)) cntOracleDev++;
     if (ttLower.includes('j5') || ttLower.includes('octave')) cntOctave++;
     if (ttLower.includes('j5dev') || ttLower.includes('octavedev') || ttLower.includes('j5_dev')) cntOctaveDev++;
   });
@@ -2580,13 +2660,12 @@ function renderMappingsTable() {
   if (activeMappingsFilter === 'oracle') {
     filtered = currentMappings.filter(m => {
       const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
-      return tt.map(t => String(t).toLowerCase()).includes('oracle');
+      return tt.map(t => String(t).toLowerCase()).some(isOracleProdType);
     });
   } else if (activeMappingsFilter === 'oracledev') {
     filtered = currentMappings.filter(m => {
       const tt = (m.target_types && m.target_types.length > 0) ? m.target_types : [m.target_type || 'oracle'];
-      const ttLower = tt.map(t => String(t).toLowerCase());
-      return ttLower.includes('oracledev') || ttLower.includes('oracle_dev');
+      return tt.map(t => String(t).toLowerCase()).some(isOracleDevType);
     });
   } else if (activeMappingsFilter === 'octave') {
     filtered = currentMappings.filter(m => {
@@ -2613,12 +2692,25 @@ function renderMappingsTable() {
     return;
   }
 
-  const defaultOracleUrl = (currentSettings?.oracle_erp?.base_url)
-    ? buildOracleEndpointUrl(currentSettings.oracle_erp.base_url, currentSettings?.oracle_erp?.resource_endpoint)
-    : '--';
-  const defaultDevUrl = (currentSettings?.oracledev?.base_url)
-    ? buildOracleEndpointUrl(currentSettings.oracledev.base_url, currentSettings?.oracledev?.resource_endpoint)
-    : '--';
+  const resolveOracleMappingUrl = (ttLower, m) => {
+    const isDev = isOracleDevType(ttLower);
+    const cfg = isDev ? currentSettings?.oracledev : currentSettings?.oracle_erp;
+    const baseUrl = cfg?.base_url || '';
+    let resPath = cfg?.resource_endpoint || '/Final_Discharge_Effluent/';
+    if (ttLower.includes('production') || ttLower.includes('daily')) {
+      resPath = cfg?.daily_production_resource_endpoint || '/production_daily_output/';
+    } else if (ttLower.includes('utility')) {
+      resPath = cfg?.utility_resource_endpoint || '/production_utilities_consumption/';
+    } else if (ttLower.startsWith('oracle_') || ttLower.startsWith('oracledev_')) {
+      const ckey = ttLower.replace(/^oracle(dev)?_/, '');
+      const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+      if (customInfo) {
+        resPath = (isDev ? customInfo.dev_path : customInfo.prod_path) || `/${ckey}/`;
+      }
+    }
+    const built = baseUrl ? buildOracleEndpointUrl(baseUrl, resPath) : '';
+    return built || (isDev ? m.target_endpoint_url_dev : (m.target_endpoint_url_oracle || m.target_endpoint_url)) || '--';
+  };
   const defaultJ5Url = currentSettings?.j5_endpoint?.url || '--';
   const defaultJ5DevUrl = currentSettings?.j5dev_endpoint?.url || '--';
 
@@ -2640,30 +2732,50 @@ function renderMappingsTable() {
 
     // Render target badges
     const targetBadges = targetTypes.map(tt => {
-      const ttLower = tt.toLowerCase();
+      const ttLower = String(tt).toLowerCase();
       if (ttLower === 'j5' || ttLower === 'octave') {
         return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.12); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.3);"><span class="badge-dot" style="background:#6366f1;"></span> Octave</span>`;
       } else if (ttLower === 'j5dev' || ttLower === 'octavedev' || ttLower === 'j5_dev') {
         return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(147, 51, 234, 0.12); color: #7e22ce; border: 1px solid rgba(147, 51, 234, 0.3);"><span class="badge-dot" style="background:#9333ea;"></span> Octave Dev</span>`;
+      } else if (ttLower === 'oracledev_production') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev (Daily Prod)</span>`;
+      } else if (ttLower === 'oracle_production') {
+        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (Daily Prod)</span>`;
+      } else if (ttLower === 'oracledev_utility') {
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev (Utility)</span>`;
+      } else if (ttLower === 'oracle_utility') {
+        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (Utility)</span>`;
+      } else if (ttLower.startsWith('oracledev_') && ttLower !== 'oracle_dev') {
+        const ckey = ttLower.replace(/^oracledev_/, '');
+        const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+        const customLbl = customInfo ? customInfo.label : ckey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev (${escapeHtml(customLbl)})</span>`;
+      } else if (ttLower.startsWith('oracle_') && ttLower !== 'oracle_dev') {
+        const ckey = ttLower.replace(/^oracle_/, '');
+        const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+        const customLbl = customInfo ? customInfo.label : ckey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod (${escapeHtml(customLbl)})</span>`;
       } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
         return `<span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3);"><span class="badge-dot" style="background:#f59e0b;"></span> Oracle Dev</span>`;
       } else {
-        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle</span>`;
+        return `<span class="badge badge-info" style="font-size: 10px; padding: 1px 6px;"><span class="badge-dot"></span> Oracle Prod</span>`;
       }
     }).join(" ");
 
     // Build URL display lines
     const urlLines = [];
-    if (targetTypes.includes('oracle')) {
-      const u = (defaultOracleUrl !== '--' ? defaultOracleUrl : null) || m.target_endpoint_url_oracle || (targetTypes[0] === 'oracle' ? m.target_endpoint_url : null) || defaultOracleUrl;
+    const prodOracleType = targetTypes.map(t => String(t).toLowerCase()).find(isOracleProdType);
+    if (prodOracleType) {
+      const u = resolveOracleMappingUrl(prodOracleType, m);
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: var(--ink-secondary);">ORACLE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
-    if (targetTypes.includes('oracledev')) {
-      const u = (defaultDevUrl !== '--' ? defaultDevUrl : null) || m.target_endpoint_url_dev || defaultDevUrl;
+    const devOracleType = targetTypes.map(t => String(t).toLowerCase()).find(isOracleDevType);
+    if (devOracleType) {
+      const u = resolveOracleMappingUrl(devOracleType, m);
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #d97706;">DEV:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     if (targetTypes.includes('j5') || targetTypes.includes('octave')) {
-      const u = (defaultJ5Url !== '--' ? defaultJ5Url : null) || m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !targetTypes.includes('oracle') ? m.target_endpoint_url : null) || defaultJ5Url;
+      const u = (defaultJ5Url !== '--' ? defaultJ5Url : null) || m.target_endpoint_url_j5 || (targetTypes.includes('j5') && !prodOracleType ? m.target_endpoint_url : null) || defaultJ5Url;
       urlLines.push(`<div><span style="font-size: 9px; font-weight: 600; color: #4f46e5;">OCTAVE:</span> <span class="path-code" style="font-size: 10px; display: inline-block;" title="${escapeHtml(u)}">${escapeHtml(u)}</span></div>`);
     }
     if (targetTypes.includes('j5dev') || targetTypes.includes('octavedev')) {
@@ -2841,14 +2953,17 @@ function openMappingModal(mapping = null, index = -1) {
     const chkJ5 = document.getElementById("modal-target-j5");
     const chkJ5Dev = document.getElementById("modal-target-j5dev");
 
-    if (chkOracle) chkOracle.checked = targetTypes.includes("oracle");
-    if (chkDev) chkDev.checked = targetTypes.includes("oracledev");
-    if (chkJ5) chkJ5.checked = targetTypes.includes("j5") || targetTypes.includes("octave");
-    if (chkJ5Dev) chkJ5Dev.checked = targetTypes.includes("j5dev") || targetTypes.includes("octavedev") || targetTypes.includes("j5_dev");
+    const ttLowerList = targetTypes.map(t => String(t).toLowerCase());
+    const hasOracleProd = ttLowerList.some(t => t === "oracle" || (t.startsWith("oracle_") && t !== "oracle_dev"));
+    const hasOracleDev = ttLowerList.some(t => t === "oracledev" || t === "oracle_dev" || t.startsWith("oracledev_"));
+    if (chkOracle) chkOracle.checked = hasOracleProd;
+    if (chkDev) chkDev.checked = hasOracleDev;
+    if (chkJ5) chkJ5.checked = ttLowerList.includes("j5") || ttLowerList.includes("octave");
+    if (chkJ5Dev) chkJ5Dev.checked = ttLowerList.includes("j5dev") || ttLowerList.includes("octavedev") || ttLowerList.includes("j5_dev");
 
-    document.getElementById("modal-target-endpoint-url").value = sanitizeEndpointUrl(defaultOrdsUrl || mapping.target_endpoint_url_oracle || (targetTypes.includes("oracle") ? mapping.target_endpoint_url : ""));
-    document.getElementById("modal-target-endpoint-url-dev").value = sanitizeEndpointUrl(defaultDevOrdsUrl || mapping.target_endpoint_url_dev);
-    document.getElementById("modal-target-endpoint-url-j5").value = sanitizeEndpointUrl(defaultJ5Url || mapping.target_endpoint_url_j5 || (targetTypes.includes("j5") && !targetTypes.includes("oracle") ? mapping.target_endpoint_url : ""));
+    document.getElementById("modal-target-endpoint-url").value = sanitizeEndpointUrl(mapping.target_endpoint_url_oracle || (hasOracleProd ? mapping.target_endpoint_url : "") || defaultOrdsUrl);
+    document.getElementById("modal-target-endpoint-url-dev").value = sanitizeEndpointUrl(mapping.target_endpoint_url_dev || (hasOracleDev ? mapping.target_endpoint_url : "") || defaultDevOrdsUrl);
+    document.getElementById("modal-target-endpoint-url-j5").value = sanitizeEndpointUrl(defaultJ5Url || mapping.target_endpoint_url_j5 || (ttLowerList.includes("j5") && !hasOracleProd ? mapping.target_endpoint_url : ""));
     document.getElementById("modal-target-endpoint-url-j5dev").value = sanitizeEndpointUrl(defaultJ5DevUrl || mapping.target_endpoint_url_j5dev);
 
     handleModalTargetEndpointsChange();
@@ -2989,7 +3104,7 @@ async function testTableEndpoint(idx) {
   const targetTypes = m.target_types || (m.target_type ? [m.target_type] : ['oracle']);
   showToast(`Testing ${targetTypes.length} endpoint(s) for "${m.attribute_name}"...`, "info");
   for (const tt of targetTypes) {
-    const ttLower = tt.toLowerCase();
+    const ttLower = String(tt).toLowerCase();
     let url = "";
     let label = "Oracle";
     if (ttLower === 'j5' || ttLower === 'octave') {
@@ -2998,12 +3113,44 @@ async function testTableEndpoint(idx) {
     } else if (ttLower === 'j5dev' || ttLower === 'octavedev' || ttLower === 'j5_dev') {
       url = currentSettings?.j5dev_endpoint?.url || m.target_endpoint_url_j5dev;
       label = "Octave Dev";
-    } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev') {
-      url = sanitizeEndpointUrl(buildOracleEndpointUrl(currentSettings?.oracledev?.base_url, currentSettings?.oracledev?.resource_endpoint) || m.target_endpoint_url_dev);
+    } else if (ttLower === 'oracledev' || ttLower === 'oracle_dev' || ttLower.startsWith('oracledev_')) {
+      const cfg = currentSettings?.oracledev;
+      let resPath = cfg?.resource_endpoint || '/Final_Discharge_Effluent/';
       label = "Oracle Dev";
+      if (ttLower.includes('production') || ttLower.includes('daily')) {
+        resPath = cfg?.daily_production_resource_endpoint || '/production_daily_output/';
+        label = "Oracle Dev (Daily Prod)";
+      } else if (ttLower.includes('utility')) {
+        resPath = cfg?.utility_resource_endpoint || '/production_utilities_consumption/';
+        label = "Oracle Dev (Utility)";
+      } else if (ttLower.startsWith('oracledev_') && ttLower !== 'oracle_dev') {
+        const ckey = ttLower.replace(/^oracledev_/, '');
+        const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+        if (customInfo) {
+          resPath = customInfo.dev_path || `/${ckey}/`;
+          label = `Oracle Dev (${customInfo.label})`;
+        }
+      }
+      url = sanitizeEndpointUrl(buildOracleEndpointUrl(cfg?.base_url, resPath) || m.target_endpoint_url_dev);
     } else {
-      url = sanitizeEndpointUrl(buildOracleEndpointUrl(currentSettings?.oracle_erp?.base_url, m.resource_endpoint || currentSettings?.oracle_erp?.resource_endpoint) || m.target_endpoint_url_oracle || m.target_endpoint_url);
+      const cfg = currentSettings?.oracle_erp;
+      let resPath = m.resource_endpoint || cfg?.resource_endpoint || '/Final_Discharge_Effluent/';
       label = "Oracle Prod";
+      if (ttLower.includes('production') || ttLower.includes('daily')) {
+        resPath = cfg?.daily_production_resource_endpoint || '/production_daily_output/';
+        label = "Oracle Prod (Daily Prod)";
+      } else if (ttLower.includes('utility')) {
+        resPath = cfg?.utility_resource_endpoint || '/production_utilities_consumption/';
+        label = "Oracle Prod (Utility)";
+      } else if (ttLower.startsWith('oracle_')) {
+        const ckey = ttLower.replace(/^oracle_/, '');
+        const customInfo = getUnifiedCustomOracleEndpoints().find(x => x.key === ckey);
+        if (customInfo) {
+          resPath = customInfo.prod_path || `/${ckey}/`;
+          label = `Oracle Prod (${customInfo.label})`;
+        }
+      }
+      url = sanitizeEndpointUrl(buildOracleEndpointUrl(cfg?.base_url, resPath) || m.target_endpoint_url_oracle || m.target_endpoint_url);
     }
 
     if (!url) {
@@ -3047,9 +3194,13 @@ function handleSaveMappingModal(e) {
   const existing = editIdx >= 0 ? (currentMappings[editIdx] || {}) : {};
   const isPush = (getActiveIngestionMode() !== "pull");
   
+  const existingTypes = Array.isArray(existing.target_types) ? existing.target_types.map(t => String(t).toLowerCase()) : (existing.target_type ? [String(existing.target_type).toLowerCase()] : []);
+  const existingOracleProdType = existingTypes.find(t => t === "oracle" || (t.startsWith("oracle_") && t !== "oracle_dev")) || "oracle";
+  const existingOracleDevType = existingTypes.find(t => t === "oracledev" || t === "oracle_dev" || t.startsWith("oracledev_")) || "oracledev";
+
   const targetTypes = [];
-  if (document.getElementById("modal-target-oracle")?.checked) targetTypes.push("oracle");
-  if (document.getElementById("modal-target-oracledev")?.checked) targetTypes.push("oracledev");
+  if (document.getElementById("modal-target-oracle")?.checked) targetTypes.push(existingOracleProdType);
+  if (document.getElementById("modal-target-oracledev")?.checked) targetTypes.push(existingOracleDevType === "oracle_dev" ? "oracledev" : existingOracleDevType);
   if (document.getElementById("modal-target-j5")?.checked) targetTypes.push("j5");
   if (document.getElementById("modal-target-j5dev")?.checked) targetTypes.push("j5dev");
 
@@ -3091,8 +3242,10 @@ function handleSaveMappingModal(e) {
 
   // Primary URL for backward compatibility
   let primaryTargetUrl = urlOracle;
-  if (!primaryTargetUrl || !targetTypes.includes("oracle")) {
-    if (targetTypes.includes("oracledev")) primaryTargetUrl = urlDev;
+  const hasSavedOracleProd = targetTypes.some(t => t === "oracle" || (t.startsWith("oracle_") && t !== "oracle_dev"));
+  const hasSavedOracleDev = targetTypes.some(t => t === "oracledev" || t.startsWith("oracledev_"));
+  if (!primaryTargetUrl || !hasSavedOracleProd) {
+    if (hasSavedOracleDev) primaryTargetUrl = urlDev;
     else if (targetTypes.includes("j5")) primaryTargetUrl = urlJ5;
     else primaryTargetUrl = urlJ5Dev;
   }
@@ -4548,8 +4701,49 @@ function renderCustomOracleEndpointsInSettings() {
   }
 
   syncCustomOracleEndpointsToBulkUploadDropdown(customEps);
+  syncCustomOracleEndpointsToHistoryFilterDropdown(customEps);
 }
 window.renderCustomOracleEndpointsInSettings = renderCustomOracleEndpointsInSettings;
+
+function syncCustomOracleEndpointsToHistoryFilterDropdown(customEps) {
+  const sel = document.getElementById("history-filter-endpoint");
+  if (!sel) return;
+  const previousVal = sel.value;
+
+  sel.querySelectorAll("option[data-custom-oracle-ep='true']").forEach(opt => opt.remove());
+
+  const prodAfterEl = sel.querySelector("option[value='ORACLE_PRODUCTION']") || sel.querySelector("option[value='ORACLE']");
+  const devAfterEl = sel.querySelector("option[value='ORACLEDEV_PRODUCTION']") || sel.querySelector("option[value='ORACLEDEV']");
+
+  for (const ce of customEps) {
+    const keyUpper = String(ce.key || "").toUpperCase();
+    if (!keyUpper) continue;
+
+    const prodOpt = document.createElement("option");
+    prodOpt.value = `ORACLE_${keyUpper}`;
+    prodOpt.dataset.customOracleEp = "true";
+    prodOpt.textContent = `Oracle Prod (${ce.label})`;
+    if (prodAfterEl && prodAfterEl.parentNode) {
+      prodAfterEl.parentNode.insertBefore(prodOpt, prodAfterEl.nextSibling);
+    } else {
+      sel.appendChild(prodOpt);
+    }
+
+    const devOpt = document.createElement("option");
+    devOpt.value = `ORACLEDEV_${keyUpper}`;
+    devOpt.dataset.customOracleEp = "true";
+    devOpt.textContent = `Oracle Dev (${ce.label})`;
+    if (devAfterEl && devAfterEl.parentNode) {
+      devAfterEl.parentNode.insertBefore(devOpt, devAfterEl.nextSibling);
+    } else {
+      sel.appendChild(devOpt);
+    }
+  }
+
+  if (previousVal && Array.from(sel.options).some(o => o.value === previousVal)) {
+    sel.value = previousVal;
+  }
+}
 
 function syncCustomOracleEndpointsToBulkUploadDropdown(customEps) {
   const sel = document.getElementById("bulk-target-type");
