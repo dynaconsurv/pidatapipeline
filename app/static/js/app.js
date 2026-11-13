@@ -347,6 +347,9 @@ function initHistory() {
   // Pagination controls
   document.getElementById("history-btn-prev")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage - 1));
   document.getElementById("history-btn-next")?.addEventListener("click", () => changeHistoryPage(historyCurrentPage + 1));
+
+  // Populate endpoint filter options dynamically
+  populateHistoryEndpointOptions();
 }
 
 async function loadDashboardData() {
@@ -1278,7 +1281,15 @@ async function loadHistoryDeliveries(resetPage = false) {
     historyCurrentPage = 1;
   }
 
-  // Ensure attribute mappings are loaded for accurate endpoint resolution
+  // Ensure settings and attribute mappings are loaded for accurate endpoint resolution & dynamic dropdowns
+  if (!currentSettings) {
+    try {
+      const setRes = await fetch("/api/settings");
+      if (setRes.ok) {
+        currentSettings = await setRes.json();
+      }
+    } catch (e) {}
+  }
   if (!currentMappings || currentMappings.length === 0) {
     try {
       const mapRes = await fetch("/api/mappings");
@@ -1293,7 +1304,7 @@ async function loadHistoryDeliveries(resetPage = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     historyAllDeliveries = Array.isArray(data) ? data : [];
-    syncCustomOracleEndpointsToHistoryFilterDropdown(getUnifiedCustomOracleEndpoints());
+    populateHistoryEndpointOptions();
     populateHistoryAttributeOptions();
     applyHistoryFilterAndRender();
   } catch (err) {
@@ -4705,44 +4716,111 @@ function renderCustomOracleEndpointsInSettings() {
 }
 window.renderCustomOracleEndpointsInSettings = renderCustomOracleEndpointsInSettings;
 
-function syncCustomOracleEndpointsToHistoryFilterDropdown(customEps) {
+function populateHistoryEndpointOptions(customEpsOverride = null) {
   const sel = document.getElementById("history-filter-endpoint");
   if (!sel) return;
-  const previousVal = sel.value;
+  const previousVal = (sel.value || historyEndpointFilter || "ALL").toUpperCase();
 
-  sel.querySelectorAll("option[data-custom-oracle-ep='true']").forEach(opt => opt.remove());
-
-  const prodAfterEl = sel.querySelector("option[value='ORACLE_PRODUCTION']") || sel.querySelector("option[value='ORACLE']");
-  const devAfterEl = sel.querySelector("option[value='ORACLEDEV_PRODUCTION']") || sel.querySelector("option[value='ORACLEDEV']");
-
+  // 1. Gather configured custom Oracle endpoints from Settings
+  const customEps = Array.isArray(customEpsOverride)
+    ? customEpsOverride
+    : getUnifiedCustomOracleEndpoints();
+  const customMap = new Map();
   for (const ce of customEps) {
-    const keyUpper = String(ce.key || "").toUpperCase();
-    if (!keyUpper) continue;
+    const k = String(ce.key || "").trim().toLowerCase();
+    if (k) customMap.set(k, ce.label || k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+  }
 
-    const prodOpt = document.createElement("option");
-    prodOpt.value = `ORACLE_${keyUpper}`;
-    prodOpt.dataset.customOracleEp = "true";
-    prodOpt.textContent = `Oracle Prod (${ce.label})`;
-    if (prodAfterEl && prodAfterEl.parentNode) {
-      prodAfterEl.parentNode.insertBefore(prodOpt, prodAfterEl.nextSibling);
-    } else {
-      sel.appendChild(prodOpt);
-    }
+  // 2. Scan historical deliveries to count deliveries per endpoint and discover any extra custom endpoints
+  const counts = {};
+  let totalCount = 0;
+  let oracleProdTotal = 0;
+  let oracleDevTotal = 0;
 
-    const devOpt = document.createElement("option");
-    devOpt.value = `ORACLEDEV_${keyUpper}`;
-    devOpt.dataset.customOracleEp = "true";
-    devOpt.textContent = `Oracle Dev (${ce.label})`;
-    if (devAfterEl && devAfterEl.parentNode) {
-      devAfterEl.parentNode.insertBefore(devOpt, devAfterEl.nextSibling);
-    } else {
-      sel.appendChild(devOpt);
+  if (Array.isArray(historyAllDeliveries)) {
+    totalCount = historyAllDeliveries.length;
+    for (const deliv of historyAllDeliveries) {
+      const eps = getDeliveryEndpoints(deliv);
+      let countedProd = false;
+      let countedDev = false;
+      for (const ep of eps) {
+        const epU = String(ep).toUpperCase();
+        counts[epU] = (counts[epU] || 0) + 1;
+
+        if (epU === "ORACLE" || (epU.startsWith("ORACLE_") && !epU.startsWith("ORACLEDEV"))) {
+          countedProd = true;
+          if (epU !== "ORACLE" && epU !== "ORACLE_UTILITY" && epU !== "ORACLE_PRODUCTION") {
+            const ckey = epU.replace(/^ORACLE_/, "").toLowerCase();
+            if (ckey && !customMap.has(ckey)) {
+              customMap.set(ckey, ckey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+            }
+          }
+        } else if (epU === "ORACLEDEV" || epU.startsWith("ORACLEDEV_")) {
+          countedDev = true;
+          if (epU !== "ORACLEDEV" && epU !== "ORACLEDEV_UTILITY" && epU !== "ORACLEDEV_PRODUCTION") {
+            const ckey = epU.replace(/^ORACLEDEV_/, "").toLowerCase();
+            if (ckey && !customMap.has(ckey)) {
+              customMap.set(ckey, ckey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+            }
+          }
+        }
+      }
+      if (countedProd) oracleProdTotal++;
+      if (countedDev) oracleDevTotal++;
     }
   }
 
-  if (previousVal && Array.from(sel.options).some(o => o.value === previousVal)) {
+  // 3. Build dynamic endpoint option list (Configured Built-ins + Dynamic Custom Endpoints + Octave)
+  const prodOptions = [
+    { value: "ORACLE_ALL", label: "Oracle Prod (All)", count: oracleProdTotal },
+    { value: "ORACLE", label: "Oracle Prod (Effluent)", count: counts["ORACLE"] || 0 },
+    { value: "ORACLE_UTILITY", label: "Oracle Prod (Utility)", count: counts["ORACLE_UTILITY"] || 0 },
+    { value: "ORACLE_PRODUCTION", label: "Oracle Prod (Daily Prod)", count: counts["ORACLE_PRODUCTION"] || 0 }
+  ];
+  const devOptions = [
+    { value: "ORACLEDEV_ALL", label: "Oracle Dev (All)", count: oracleDevTotal },
+    { value: "ORACLEDEV", label: "Oracle Dev (Effluent)", count: counts["ORACLEDEV"] || 0 },
+    { value: "ORACLEDEV_UTILITY", label: "Oracle Dev (Utility)", count: counts["ORACLEDEV_UTILITY"] || 0 },
+    { value: "ORACLEDEV_PRODUCTION", label: "Oracle Dev (Daily Prod)", count: counts["ORACLEDEV_PRODUCTION"] || 0 }
+  ];
+
+  for (const [ckey, clabel] of customMap.entries()) {
+    const kUpper = ckey.toUpperCase();
+    prodOptions.push({
+      value: `ORACLE_${kUpper}`,
+      label: `Oracle Prod (${clabel})`,
+      count: counts[`ORACLE_${kUpper}`] || 0
+    });
+    devOptions.push({
+      value: `ORACLEDEV_${kUpper}`,
+      label: `Oracle Dev (${clabel})`,
+      count: counts[`ORACLEDEV_${kUpper}`] || 0
+    });
+  }
+
+  const octaveOptions = [
+    { value: "J5", label: "Octave", count: counts["J5"] || 0 },
+    { value: "J5DEV", label: "Octave Dev", count: counts["J5DEV"] || 0 }
+  ];
+
+  const allDynamicOptions = [...prodOptions, ...devOptions, ...octaveOptions];
+  const fmtCount = (cnt) => totalCount > 0 ? ` (${cnt})` : "";
+
+  sel.innerHTML = `<option value="ALL">All Endpoints${fmtCount(totalCount)}</option>` +
+    allDynamicOptions.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}${fmtCount(opt.count)}</option>`).join("");
+
+  if (allDynamicOptions.some(o => o.value === previousVal)) {
     sel.value = previousVal;
+    historyEndpointFilter = previousVal;
+  } else {
+    sel.value = "ALL";
+    historyEndpointFilter = "ALL";
   }
+}
+window.populateHistoryEndpointOptions = populateHistoryEndpointOptions;
+
+function syncCustomOracleEndpointsToHistoryFilterDropdown(customEps) {
+  populateHistoryEndpointOptions(customEps);
 }
 
 function syncCustomOracleEndpointsToBulkUploadDropdown(customEps) {
