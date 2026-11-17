@@ -173,14 +173,33 @@ def resolve_endpoint_and_env_targets(
         if dev_slug:
             custom_lookup[dev_slug] = ck
 
+    generic_words = {
+        "oracle", "oracledev", "prod", "dev", "test", "tst",
+        "effluent", "utility", "utilities", "production", "daily", "output",
+        "octave", "j5", "jf", "data", "int", "pims"
+    }
+
     for t in tokens:
         t_slug = normalize_oracle_endpoint_key(t)
         matched_custom_key = custom_lookup.get(t_slug)
-        if not matched_custom_key and t_slug:
+        if not matched_custom_key and t_slug and t_slug not in generic_words:
+            t_words = [w for w in t_slug.split("_") if w and w not in generic_words]
+            # Pass 1: exact word/segment match (e.g. 'emission' in 'department_of_environment_emission')
             for alias_slug, ck in custom_lookup.items():
-                if alias_slug and (alias_slug == t_slug or (len(alias_slug) >= 4 and alias_slug in t_slug)):
+                if not alias_slug:
+                    continue
+                alias_words = alias_slug.split("_")
+                if t_words and all(tw in alias_words for tw in t_words):
                     matched_custom_key = ck
                     break
+            # Pass 2: substring match in either direction (minimum 4 chars)
+            if not matched_custom_key:
+                for alias_slug, ck in custom_lookup.items():
+                    if not alias_slug:
+                        continue
+                    if (len(alias_slug) >= 4 and alias_slug in t_slug) or (len(t_slug) >= 4 and t_slug in alias_slug):
+                        matched_custom_key = ck
+                        break
 
         if matched_custom_key:
             if matched_custom_key not in wants_custom_keys:

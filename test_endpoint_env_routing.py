@@ -592,6 +592,23 @@ class TestEndpointEnvRouting(unittest.TestCase):
                 dispatches = dispatch_res.get("dispatches", [])
                 self.assertEqual(len(dispatches), 1)
                 self.assertEqual(dispatches[0].get("target_type"), "oracledev_steam_boiler_output")
+
+            # 4. Verify partial keyword matching (e.g. '/department_of_environment_emission' matched by 'emission' or 'oracle_emission')
+            updated_settings["oracle_erp"]["custom_endpoints"].append({
+                "key": "department_of_environment_emission",
+                "label": "Department of Environment Emission",
+                "path": "/department_of_environment_emission/"
+            })
+            save_settings(updated_settings)
+
+            en_em_prod, _, _ = resolve_endpoint_and_env_targets({"Endpoint": "emission", "Environment": "Prod"})
+            self.assertEqual(en_em_prod, ["oracle_department_of_environment_emission"])
+
+            en_em_ora_prod, _, _ = resolve_endpoint_and_env_targets({"Endpoint": "oracle_emission", "Environment": "Prod"})
+            self.assertEqual(en_em_ora_prod, ["oracle_department_of_environment_emission"])
+
+            en_em_test, _, _ = resolve_endpoint_and_env_targets({"Endpoint": "emission", "Environment": "Test"})
+            self.assertEqual(en_em_test, ["oracledev_department_of_environment_emission"])
         finally:
             save_settings(orig_settings)
             save_mappings(orig_mappings)

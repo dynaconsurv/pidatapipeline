@@ -846,10 +846,16 @@ function getDeliveryEndpoints(deliv) {
     const rawEnv = String(deliv.raw_payload.Environment || deliv.raw_payload.environment || deliv.raw_payload.env || "prod").toLowerCase();
     const isTest = (rawEnv === "test" || rawEnv === "dev" || rawEnv === "development" || rawEnv === "tst");
     let matchedCustomRaw = false;
+    const rawEpSlug = normalizeOracleEndpointKeyJs(rawEp);
     for (const ce of getUnifiedCustomOracleEndpoints()) {
       const kLow = String(ce.key || "").toLowerCase();
       const lblLow = String(ce.label || "").toLowerCase();
-      if ((kLow && rawEp.includes(kLow)) || (lblLow && rawEp.includes(lblLow))) {
+      const pathSlug = normalizeOracleEndpointKeyJs(ce.prod_path || ce.dev_path || "");
+      if (
+        (kLow && (rawEp.includes(kLow) || (rawEpSlug.length >= 4 && kLow.includes(rawEpSlug)))) ||
+        (lblLow && (rawEp.includes(lblLow) || (rawEpSlug.length >= 4 && lblLow.includes(rawEpSlug)))) ||
+        (pathSlug && rawEpSlug.length >= 4 && (pathSlug.includes(rawEpSlug) || rawEpSlug.includes(pathSlug)))
+      ) {
         eps.add(isTest ? `ORACLEDEV_${ce.key.toUpperCase()}` : `ORACLE_${ce.key.toUpperCase()}`);
         matchedCustomRaw = true;
       }
