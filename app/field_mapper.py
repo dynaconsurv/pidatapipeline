@@ -169,13 +169,17 @@ def build_destination_payload(
         if not src_raw or not tgt_raw:
             continue
         tgt_l = tgt_raw.lower()
-        if tgt_l.replace("_", "") in ("testresult", "testresults"):
-            continue
         if tgt_l in ("timestamp", "readingtimestamp"):
             continue
 
         src_l = src_raw.lower()
         consumed_source_keys.add(src_l)
+        if src_l in ("result", "results") or "result" in tgt_l:
+            consumed_source_keys.update({"result", "results"})
+        if "value" in src_l or "value" in tgt_l:
+            consumed_source_keys.update({"value", "readingvalue"})
+        if src_l in ("hilimit", "lolimit", "high_limit", "low_limit", "limit") or "limit" in tgt_l:
+            consumed_source_keys.add("limit")
 
         # Look up value
         if tgt_l in ("record_at", "recorded_at"):
@@ -185,7 +189,12 @@ def build_destination_payload(
                 transform = "timestamp_zulu"
         elif src_l in lower_sources and lower_sources[src_l] is not None and str(lower_sources[src_l]).strip() != "":
             raw_v = lower_sources[src_l]
+        elif src_l in ("result", "results"):
+            raw_v = lower_sources.get("result") if (lower_sources.get("result") is not None and str(lower_sources.get("result")).strip() != "") else lower_sources.get("results")
         elif "value" in src_l:
+            # If target already has a concrete value from a specific value_* source (e.g. value_eff vs value_emis), keep it
+            if tgt_raw in payload and payload[tgt_raw] is not None and str(payload[tgt_raw]).strip() != "":
+                continue
             # Fallback: check any parameter containing 'value' in lower_sources
             raw_v = None
             for lk, lv in lower_sources.items():
@@ -253,13 +262,13 @@ def build_destination_payload(
             continue
         if uk_l in ("timestamp", "readingtimestamp", "received_at"):
             continue
-        if uk_l.replace("_", "") in ("testresult", "testresults"):
+        if uk_l.startswith("oracle_") or uk_l.startswith("oracledev_") or uk_l in ("oracle", "oracledev", "j5", "j5dev", "octave", "octavedev"):
             continue
-        if is_oracle and uk_l == "quality":
+        if is_oracle and uk_l in ("quality", "limit") and (uv is None or str(uv).strip() == "" or uk_l == "quality"):
             continue
         if uk_l in consumed_source_keys:
             continue
-        if uk in payload:
+        if uk in payload or any(pk.lower() == uk_l for pk in payload.keys()):
             continue
         if uk_l in ("target_endpoint_url", "endpoint_url", "target_endpoint", "endpoint"):
             continue
@@ -282,10 +291,10 @@ def build_destination_payload(
             else:
                 payload[uk] = str(uv)
 
-    # Exclude TEST_RESULT / test_result and timestamp from payload if present
+    # Exclude internal flags and deprecated timestamp parameter from payload if present
     for pk in list(payload.keys()):
         pk_l = pk.lower()
-        if pk_l.replace("_", "") in ("testresult", "testresults") or pk == "_is_utc8_formatted" or pk_l in ("timestamp", "readingtimestamp"):
+        if pk == "_is_utc8_formatted" or pk_l in ("timestamp", "readingtimestamp"):
             payload.pop(pk, None)
 
     # Deduplicate RECORD_AT: ensure only ONE canonical RECORD_AT is present

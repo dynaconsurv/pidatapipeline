@@ -1,6 +1,6 @@
 """
 Application version and repository metadata.
 """
-__version__ = "2.7.6"
+__version__ = "2.7.7"
 APP_NAME = "AVEVA PI to Oracle ERP Cloud Data Pipeline"
 GITHUB_REPO = "dynaconsurv/pidatapipeline"

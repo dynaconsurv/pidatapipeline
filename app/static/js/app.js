@@ -2091,8 +2091,11 @@ async function showOracleResponseModal(deliveryId) {
               "highlimit": ["hilimit", "limit"],
               "lolimit": ["lowlimit", "lowerlimit"],
               "lowlimit": ["lolimit", "lowerlimit"],
-              "value": ["readingvalue", "reading_value", "val"],
-              "tag": ["tagname", "tag_name", "meter_tag", "metercode"]
+              "value": ["readingvalue", "reading_value", "val", "testvalue", "consumptionvalue", "productionvalue"],
+              "tag": ["tagname", "tag_name", "meter_tag", "metercode"],
+              "results": ["testresult", "test_result", "result"],
+              "result": ["testresult", "test_result", "results"],
+              "testresult": ["test_result", "results", "result"]
             };
 
             const aliases = aliasMap[normKey] || [];
@@ -2113,27 +2116,41 @@ async function showOracleResponseModal(deliveryId) {
             return kn === "hilimit" || kn === "highlimit" || kn === "lolimit" || kn === "lowlimit";
           });
 
+          const hasSpecificValueInPayload = Object.keys(payload).some(k => {
+            if (k === "value") return false;
+            const kn = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+            return (kn === "value" || kn.endsWith("value")) && payload[k] !== undefined && payload[k] !== null && String(payload[k]).trim() !== "";
+          });
+
+          const hasSpecificResultInPayload = Object.keys(payload).some(k => {
+            if (k === "results") return false;
+            const kn = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+            return (kn === "results" || kn === "result" || kn === "testresult" || kn === "testresults") && payload[k] !== undefined && payload[k] !== null && String(payload[k]).trim() !== "";
+          });
+
           const hasUpperVariant = (lowerKey) => Object.keys(payload).some(
             k => k !== lowerKey && k.toLowerCase() === lowerKey && payload[k] !== undefined && payload[k] !== null && String(payload[k]).trim() !== ""
           );
 
           const fields = [];
-          if (!hasUpperVariant("tag")) fields.push({ key: "tag", label: "Tag / Meter ID" });
-          if (!hasUpperVariant("description")) fields.push({ key: "description", label: "Description" });
-          if (!hasUpperVariant("value")) fields.push({ key: "value", label: "Reading Value" });
-          if (!hasUpperVariant("uom")) fields.push({ key: "uom", label: "Unit of Measure (UOM)" });
+          if (!hasUpperVariant("tag") && payload.tag !== undefined) fields.push({ key: "tag", label: "TAG" });
+          if (!hasUpperVariant("description") && payload.description !== undefined) fields.push({ key: "description", label: "DESCRIPTION" });
+          if (!hasUpperVariant("value") && !hasSpecificValueInPayload && payload.value !== undefined) fields.push({ key: "value", label: "Reading Value" });
+          if (!hasUpperVariant("uom") && payload.uom !== undefined) fields.push({ key: "uom", label: "UOM" });
 
-          if ((payload.limit !== undefined && payload.limit !== null && String(payload.limit).trim() !== "") || !hasSpecificLimitInPayload) {
+          if ((payload.limit !== undefined && payload.limit !== null && String(payload.limit).trim() !== "") && !hasSpecificLimitInPayload) {
             if (!hasUpperVariant("limit")) fields.push({ key: "limit", label: "Operating Limit" });
           }
 
-          if (!hasUpperVariant("results")) {
-            fields.push({ key: "results", label: "Analysis Results" });
+          if (!hasUpperVariant("results") && !hasSpecificResultInPayload && payload.results !== undefined && String(payload.results).trim() !== "") {
+            fields.push({ key: "results", label: "TEST_RESULT" });
           }
 
           const standardOracleKeys = new Set(["tag", "description", "value", "uom", "limit", "results", "timestamp", "readingTimestamp"]);
           Object.keys(payload).forEach(k => {
-            if (!standardOracleKeys.has(k) && k.toLowerCase() !== "timestamp" && k.toLowerCase() !== "readingtimestamp" && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
+            const kl = k.toLowerCase();
+            if (kl.startsWith("oracle_") || kl.startsWith("oracledev_") || kl === "oracle" || kl === "oracledev" || kl === "j5" || kl === "j5dev") return;
+            if (!standardOracleKeys.has(k) && kl !== "timestamp" && kl !== "readingtimestamp" && payload[k] !== undefined && payload[k] !== null && payload[k] !== "") {
               fields.push({ key: k, label: k });
             }
           });

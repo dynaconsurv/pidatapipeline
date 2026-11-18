@@ -609,6 +609,51 @@ class TestEndpointEnvRouting(unittest.TestCase):
 
             en_em_test, _, _ = resolve_endpoint_and_env_targets({"Endpoint": "emission", "Environment": "Test"})
             self.assertEqual(en_em_test, ["oracledev_department_of_environment_emission"])
+
+            # 5. Verify result -> TEST_RESULT mapping for Effluent and Emission
+            from app.field_mapper import build_destination_payload
+            user_schema = [
+                {"id": "ora-analysis-time", "source": "sourcetime", "target": "RECORD_AT", "transform": "timestamp_zulu", "enabled": True},
+                {"id": "ora-tag", "source": "tag", "target": "TAG", "transform": "string", "enabled": True},
+                {"id": "ora-desc", "source": "description", "target": "DESCRIPTION", "transform": "string", "enabled": True},
+                {"id": "ora-res", "source": "result", "target": "TEST_RESULT", "transform": "string", "enabled": True},
+                {"id": "ora-uom", "source": "uom", "target": "UOM", "transform": "string", "enabled": True},
+                {"id": "ora-hilimit", "source": "hilimit", "target": "HIGH_LIMIT", "transform": "string", "enabled": True},
+                {"id": "ora-lolimit", "source": "lolimit", "target": "LOW_LIMIT", "transform": "string", "enabled": True},
+                {"id": "ora-eff", "source": "value_eff", "target": "TEST_VALUE", "transform": "numeric_scaled", "enabled": True},
+                {"id": "ora-emis", "source": "value_emis", "target": "TEST_VALUE", "transform": "numeric_scaled", "enabled": True},
+            ]
+            eff_attr = {
+                "name": "SC4025.BOD",
+                "tag": "SC4025.BOD",
+                "description": "SC4025 - BOD",
+                "value": 2.0,
+                "results": "PASS",
+                "uom": "mg/L",
+                "oracle_department_of_environment_emission": False,
+                "extra_fields": {"LoLimit": 0.0, "HiLimit": 20.0, "Value_Eff": 2.0, "SourceTime": "2026-11-02T23:00:00Z"}
+            }
+            eff_out = build_destination_payload("oracle", eff_attr, field_mappings_override=user_schema)
+            self.assertEqual(eff_out.get("TEST_RESULT"), "PASS")
+            self.assertEqual(eff_out.get("TEST_VALUE"), 2.0)
+            self.assertNotIn("results", eff_out)
+            self.assertNotIn("oracle_department_of_environment_emission", eff_out)
+
+            emis_attr = {
+                "name": "U900 NOX Concentration Daily Average",
+                "tag": "U900 NOX Concentration Daily Average",
+                "description": "U900 NOX Concentration Current Value",
+                "value": 41.8795,
+                "results": "PASS",
+                "uom": "mg/m3",
+                "oracle_department_of_environment_emission": True,
+                "extra_fields": {"LoLimit": 0.0, "HiLimit": 350.0, "Value_Emis": 41.8795, "SourceTime": "2026-11-17T16:10:00Z"}
+            }
+            emis_out = build_destination_payload("oracle_department_of_environment_emission", emis_attr, field_mappings_override=user_schema)
+            self.assertEqual(emis_out.get("TEST_RESULT"), "PASS")
+            self.assertEqual(emis_out.get("TEST_VALUE"), 41.88)
+            self.assertNotIn("results", emis_out)
+            self.assertNotIn("oracle_department_of_environment_emission", emis_out)
         finally:
             save_settings(orig_settings)
             save_mappings(orig_mappings)
